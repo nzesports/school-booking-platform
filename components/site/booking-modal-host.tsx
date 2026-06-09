@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
+  ArrowRight,
   CalendarDays,
   Clock3,
   Layers3,
@@ -10,10 +11,10 @@ import {
   PencilLine,
   Plus,
   Send,
+  ShieldCheck,
   Trash2,
   UsersRound
 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
@@ -22,38 +23,38 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { PresentationType, Region } from "@/lib/domain/types";
-import { buildAvailabilitySlots, nextBookableDates } from "@/lib/services/availability";
+import {
+  BOOKING_WINDOW_DAYS,
+  buildAvailabilitySlots,
+  isBookableDate,
+  nextBookableDates
+} from "@/lib/services/availability";
 
 type BookingStep = "plan" | "review";
 
 export function BookingModalHost({
+  request,
+  onClose,
   presentations,
   regions,
   action
 }: {
+  request: {
+    id: number;
+    initialStep?: "plan" | "review";
+    presentationSlug?: string;
+    regionSlug?: string;
+    date?: string;
+    time?: string;
+    sessions?: HeroBookingDraftSession[];
+  } | null;
+  onClose: () => void;
   presentations: PresentationType[];
   regions: Region[];
   action: (formData: FormData) => void | Promise<void>;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const isOpen = searchParams.get("booking") === "1";
-
-  const closeModal = useCallback(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("booking");
-    params.delete("presentation");
-    params.delete("region");
-    params.delete("date");
-    params.delete("time");
-
-    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-    router.replace(target, { scroll: false });
-  }, [pathname, router, searchParams]);
-
   useEffect(() => {
-    if (!isOpen) {
+    if (!request) {
       return;
     }
 
@@ -62,7 +63,7 @@ export function BookingModalHost({
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        closeModal();
+        onClose();
       }
     };
 
@@ -72,28 +73,25 @@ export function BookingModalHost({
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [closeModal, isOpen]);
+  }, [onClose, request]);
 
-  if (!isOpen) {
+  if (!request) {
     return null;
   }
 
-  const presentation = searchParams.get("presentation") ?? undefined;
-  const region = searchParams.get("region") ?? undefined;
-  const date = searchParams.get("date") ?? undefined;
-  const time = searchParams.get("time") ?? undefined;
-
   return (
     <BookingModalFlow
-      key={`${presentation ?? "any"}-${region ?? "any"}-${date ?? "any"}-${time ?? "any"}`}
+      key={request.id}
       presentations={presentations}
       regions={regions}
       action={action}
-      initialPresentationSlug={presentation}
-      initialRegionSlug={region}
-      initialDate={date}
-      initialTime={time}
-      onClose={closeModal}
+      initialStep={request.initialStep}
+      initialPresentationSlug={request.presentationSlug}
+      initialRegionSlug={request.regionSlug}
+      initialDate={request.date}
+      initialTime={request.time}
+      initialSessions={request.sessions}
+      onClose={onClose}
     />
   );
 }
@@ -102,48 +100,80 @@ function BookingModalFlow({
   presentations,
   regions,
   action,
+  initialStep,
   initialPresentationSlug,
   initialRegionSlug,
   initialDate,
   initialTime,
+  initialSessions,
   onClose
 }: {
   presentations: PresentationType[];
   regions: Region[];
   action: (formData: FormData) => void | Promise<void>;
+  initialStep?: BookingStep;
   initialPresentationSlug?: string;
   initialRegionSlug?: string;
   initialDate?: string;
   initialTime?: string;
+  initialSessions?: HeroBookingDraftSession[];
   onClose: () => void;
 }) {
-  const dates = nextBookableDates(21);
+  const dates = nextBookableDates(BOOKING_WINDOW_DAYS);
   const firstDate =
     dates.includes(initialDate ?? "") && initialDate ? initialDate : dates[0] ?? "";
+  const maxBookableDate = dates[dates.length - 1] ?? firstDate;
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
   const initialSlots = buildAvailabilitySlots(firstDate);
-  const preferredInitialTime = normalizeTimeToSlot(
-    initialTime ?? initialSlots[0]?.startTime ?? "08:00",
-    initialSlots
-  );
+  const preferredInitialTime = initialTime
+    ? normalizeTimeToSlot(initialTime, initialSlots)
+    : { startTime: "", label: "" };
   const firstRegionSlug =
-    regions.find((item) => item.slug === initialRegionSlug)?.slug ?? regions[0]?.slug ?? "";
+    regions.find((item) => item.slug === initialRegionSlug)?.slug ?? "";
+  const initialDraftSessions =
+    initialSessions && initialSessions.length > 0
+      ? hydrateInitialSessions({
+          sessions: initialSessions,
+          presentations,
+          regions,
+          dates,
+          fallbackDate: firstDate,
+          fallbackPresentation: initialPresentation
+        })
+      : [
+          createDraftSession({
+            id: "session-1",
+            presentation: initialPresentation,
+            date: firstDate,
+            startTime: preferredInitialTime.startTime,
+            timeText: preferredInitialTime.label,
+            regionSlug: firstRegionSlug
+          })
+        ];
+  const initialCanContinue = initialDraftSessions.every(
+    (session) =>
+      Boolean(session.presentationSlug) &&
+      Boolean(session.date) &&
+      Boolean(session.startTime) &&
+      Boolean(session.regionSlug)
+  );
 
-  const [step, setStep] = useState<BookingStep>("plan");
-  const [nextSessionNumber, setNextSessionNumber] = useState(2);
-  const [sessions, setSessions] = useState<HeroBookingDraftSession[]>([
-    createDraftSession({
-      id: "session-1",
-      presentation: initialPresentation,
-      date: firstDate,
-      startTime: preferredInitialTime.startTime,
-      timeText: preferredInitialTime.label,
-      regionSlug: firstRegionSlug
-    })
-  ]);
+  const [step, setStep] = useState<BookingStep>(
+    initialStep === "review" && !initialCanContinue ? "plan" : initialStep ?? "plan"
+  );
+  const [nextSessionNumber, setNextSessionNumber] = useState(initialDraftSessions.length + 1);
+  const [sessions, setSessions] = useState<HeroBookingDraftSession[]>(initialDraftSessions);
+  const [isReturningToDetails, setIsReturningToDetails] = useState(false);
 
   const reviewSessions = normalizeSessions(sessions);
+  const canContinueToReview = sessions.every(
+    (session) =>
+      Boolean(session.presentationSlug) &&
+      Boolean(session.date) &&
+      Boolean(session.startTime) &&
+      Boolean(session.regionSlug)
+  );
 
   return (
     <BookingDialogShell
@@ -159,44 +189,53 @@ function BookingModalFlow({
           : "We'll check availability and confirm the session details with your school before anything is final."
       }
       onClose={onClose}
-      maxWidthClassName="max-w-[1220px]"
+      headerAside={<BookingStepProgress currentStep={step === "plan" ? 1 : 2} />}
+      maxWidthClassName="max-w-[1480px]"
       overlayClassName="z-[60]"
     >
       {step === "plan" ? (
-        <div className="mt-7 rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-5 shadow-[0_28px_62px_rgba(11,24,77,0.12)] backdrop-blur-2xl md:p-6 lg:p-7">
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-              Plan your visit
-            </p>
-            <p className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
-              Choose your sessions here, then confirm everything in the request form.
-            </p>
-            <p className="max-w-3xl text-sm leading-7 text-[color:var(--text-soft)]">
-              Pick the topic, date, time, and region for each session. You can type a preferred
-              time or choose from the suggestion list, and we&apos;ll tidy it into the closest
-              available 10-minute slot.
-            </p>
+        <div className="mt-5 overflow-hidden rounded-[32px] border border-[rgba(164,202,227,0.48)] bg-[linear-gradient(180deg,rgba(248,252,255,0.96),rgba(255,255,255,0.98))] shadow-[0_30px_68px_rgba(11,24,77,0.12)]">
+          <div className="border-b border-[rgba(4,15,75,0.08)] px-5 py-5 md:px-7 lg:px-8">
+            <div className="flex flex-col gap-5 md:flex-row md:items-start">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[rgba(24,168,59,0.08)] text-[color:var(--green)] shadow-[inset_0_0_0_1px_rgba(24,168,59,0.08)]">
+                <CalendarDays className="h-7 w-7" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[2rem] font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  Plan your visit
+                </h3>
+                <p className="mt-3 max-w-4xl text-base leading-8 text-[color:var(--text-soft)]">
+                  Pick the topic, date, time, and region for each session. Choose from the
+                  available 10-minute slots between 8:00am and 4:00pm, then continue once each
+                  session is ready.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-6 grid gap-3">
+          <div className="px-5 py-4 md:px-7 lg:px-8">
+            <div className="grid gap-4">
             {sessions.map((session, index) => {
-              const timeOptions = buildAvailabilitySlots(session.date);
+              const selectedDateIsBookable = isBookableDate(session.date);
+              const timeOptions = selectedDateIsBookable
+                ? buildAvailabilitySlots(session.date)
+                : [];
 
               return (
                 <div
                   key={session.id}
-                  className="rounded-[24px] border border-white/75 bg-white/70 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)] backdrop-blur-xl md:p-5"
+                  className="rounded-[26px] border border-[rgba(164,202,227,0.42)] bg-[linear-gradient(180deg,rgba(243,249,255,0.84),rgba(255,255,255,0.94))] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.62)] md:p-5"
                 >
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-[0_10px_22px_rgba(11,24,77,0.06)]">
-                        <UsersRound className="h-4 w-4 text-[color:var(--navy)]" />
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(164,202,227,0.28)] text-[color:var(--navy)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.62)]">
+                        <UsersRound className="h-5 w-5" />
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                           Session {index + 1}
                         </p>
-                        <p className="text-sm text-[color:var(--text-soft)]">
+                        <p className="mt-1 text-base text-[color:var(--text-soft)]">
                           Add the topic, date, time, and region for this session.
                         </p>
                       </div>
@@ -216,12 +255,13 @@ function BookingModalFlow({
                     ) : null}
                   </div>
 
-                  <div className="grid gap-3 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]">
+                  <div className="grid gap-4 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]">
                     <PlannerField
                       icon={<MonitorPlay className="h-4 w-4" />}
                       label="Presentation"
                     >
                       <Select
+                        className="h-[56px] text-base"
                         value={session.presentationSlug}
                         onChange={(event) =>
                           setSessions((current) =>
@@ -252,68 +292,32 @@ function BookingModalFlow({
                     </PlannerField>
 
                     <PlannerField icon={<CalendarDays className="h-4 w-4" />} label="Date">
-                      <Select
-                        value={session.date}
-                        onChange={(event) =>
+                      <div>
+                        <Input
+                          type="date"
+                          className="h-[56px] text-base"
+                          min={firstDate}
+                          max={maxBookableDate}
+                          value={session.date}
+                          onChange={(event) =>
                           setSessions((current) =>
                             current.map((item) => {
                               if (item.id !== session.id) {
                                 return item;
                               }
 
-                              const nextTimeOptions = buildAvailabilitySlots(event.target.value);
-                              const normalized = normalizeTimeToSlot(
-                                item.startTime,
-                                nextTimeOptions
-                              );
-
-                              return {
-                                ...item,
-                                date: event.target.value,
-                                startTime: normalized.startTime,
-                                timeText: normalized.label
-                              };
-                            })
-                          )
-                        }
-                      >
-                        {dates.map((item) => (
-                          <option key={item} value={item}>
-                            {formatDisplayDate(item)}
-                          </option>
-                        ))}
-                      </Select>
-                    </PlannerField>
-
-                    <PlannerField icon={<Clock3 className="h-4 w-4" />} label="Time">
-                      <div>
-                        <Input
-                          list={`time-options-${session.id}`}
-                          value={session.timeText}
-                          placeholder="Type 8:30am or choose"
-                          onChange={(event) =>
-                            setSessions((current) =>
-                              current.map((item) =>
-                                item.id === session.id
-                                  ? { ...item, timeText: event.target.value }
-                                  : item
-                              )
-                            )
-                          }
-                          onBlur={(event) =>
-                            setSessions((current) =>
-                              current.map((item) => {
-                                if (item.id !== session.id) {
-                                  return item;
-                                }
-
-                                const normalized = normalizeTimeToSlot(
-                                  event.target.value || item.startTime,
-                                  timeOptions
-                                );
+                                const nextDate = event.target.value;
+                                const nextDateIsBookable = isBookableDate(nextDate);
+                                const nextTimeOptions = nextDateIsBookable
+                                  ? buildAvailabilitySlots(nextDate)
+                                  : [];
+                                const normalized = nextDateIsBookable
+                                  ? normalizeTimeToSlot(item.startTime, nextTimeOptions)
+                                  : { startTime: "", label: "" };
 
                                 return {
                                   ...item,
+                                  date: nextDate,
                                   startTime: normalized.startTime,
                                   timeText: normalized.label
                                 };
@@ -321,19 +325,64 @@ function BookingModalFlow({
                             )
                           }
                         />
-                        <datalist id={`time-options-${session.id}`}>
-                          {timeOptions.map((slot) => (
-                            <option key={slot.startTime} value={slot.label} />
-                          ))}
-                        </datalist>
                         <p className="mt-2 text-xs text-[color:var(--text-soft)]">
-                          Available between 8:00am and 4:00pm in 10-minute slots.
+                          Choose a weekday date up to 12 months in advance.
                         </p>
+                      </div>
+                    </PlannerField>
+
+                    <PlannerField icon={<Clock3 className="h-4 w-4" />} label="Time">
+                      <div>
+                        <Select
+                          className="h-[56px] text-base"
+                          value={session.startTime}
+                          disabled={!selectedDateIsBookable}
+                          onChange={(event) =>
+                            setSessions((current) =>
+                              current.map((item) => {
+                                if (item.id !== session.id) {
+                                  return item;
+                                }
+
+                                const selectedSlot =
+                                  timeOptions.find((slot) => slot.startTime === event.target.value) ??
+                                  null;
+
+                                return {
+                                  ...item,
+                                  startTime: selectedSlot?.startTime ?? "",
+                                  timeText: selectedSlot?.label ?? ""
+                                };
+                              })
+                            )
+                          }
+                        >
+                          <option value="">
+                            {selectedDateIsBookable
+                              ? "Select a time"
+                              : "Choose a weekday date first"}
+                          </option>
+                          {timeOptions.map((slot) => (
+                            <option key={slot.startTime} value={slot.startTime}>
+                              {slot.label}
+                            </option>
+                          ))}
+                        </Select>
+                        {selectedDateIsBookable ? (
+                          <p className="mt-2 text-xs text-[color:var(--text-soft)]">
+                            Available between 8:00am and 4:00pm in 10-minute slots.
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-[#9d2424]">
+                            Weekends and listed public holidays are unavailable for bookings.
+                          </p>
+                        )}
                       </div>
                     </PlannerField>
 
                     <PlannerField icon={<MapPin className="h-4 w-4" />} label="Region">
                       <Select
+                        className="h-[56px] text-base"
                         value={session.regionSlug}
                         onChange={(event) =>
                           setSessions((current) =>
@@ -345,6 +394,7 @@ function BookingModalFlow({
                           )
                         }
                       >
+                        <option value="">Select your region</option>
                         {regions.map((item) => (
                           <option key={item.id} value={item.slug}>
                             {item.name}
@@ -357,16 +407,10 @@ function BookingModalFlow({
               );
             })}
           </div>
+          </div>
 
-          <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/70 px-4 py-2.5 text-sm text-[color:var(--text-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.45)]">
-              <span>Proudly supported by</span>
-              <span className="rounded-full bg-[linear-gradient(135deg,#198d3d,#0c5f2b)] px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-white">
-                Berocca
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="border-t border-[rgba(4,15,75,0.08)] px-5 py-4 md:px-7 lg:px-8">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <Button
                 type="button"
                 variant="secondary"
@@ -383,39 +427,66 @@ function BookingModalFlow({
                         id: `session-${nextSessionNumber}`,
                         presentation: nextPresentation,
                         date: previous?.date ?? firstDate,
-                        startTime: previous?.startTime ?? preferredInitialTime.startTime,
-                        timeText: previous?.timeText ?? preferredInitialTime.label,
-                        regionSlug: previous?.regionSlug ?? firstRegionSlug
+                        startTime: "",
+                        timeText: "",
+                        regionSlug: previous?.regionSlug ?? ""
                       })
                     ];
                   });
                   setNextSessionNumber((current) => current + 1);
                 }}
-                className="rounded-full px-5 py-2.5 text-sm"
+                className="min-h-[54px] rounded-[18px] px-6 py-3 text-base"
               >
                 <Plus className="h-4 w-4" />
                 Add another session
               </Button>
 
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setSessions((current) => normalizeSessions(current))}
-                className="rounded-full border border-[rgba(4,15,75,0.08)] bg-white/70 px-4 py-2.5 text-sm"
-              >
-                Review times
-              </Button>
+              <div className="flex flex-col gap-3 xl:items-end">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!canContinueToReview) {
+                      return;
+                    }
 
-              <Button
-                type="button"
-                onClick={() => {
-                  setSessions((current) => normalizeSessions(current));
-                  setStep("review");
-                }}
-                className="min-h-[50px] rounded-[18px] px-5 py-2.5"
-              >
-                Book now
-              </Button>
+                    setSessions((current) => normalizeSessions(current));
+                    setIsReturningToDetails(false);
+                    setStep("review");
+                  }}
+                  className="min-h-[54px] rounded-[18px] px-7 py-3 text-base"
+                  disabled={!canContinueToReview}
+                >
+                  {isReturningToDetails ? "Save and return to details" : "Continue to details"}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+                <p className="text-sm text-[color:var(--text-soft)] xl:text-right">
+                  Next, you&apos;ll add your school details and submit your request.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-[rgba(4,15,75,0.08)] px-5 py-3 md:px-7 lg:px-8">
+            <div className="flex flex-col gap-4 text-sm text-[color:var(--text-soft)] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(24,168,59,0.08)] text-[color:var(--green)]">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <span>Proudly supported by</span>
+                <span className="rounded-full bg-[linear-gradient(135deg,#198d3d,#0c5f2b)] px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-white">
+                  Berocca
+                </span>
+              </div>
+
+              <div className="text-sm text-[color:var(--text-soft)] lg:text-right">
+                {!canContinueToReview ? (
+                  <span>Choose a time and region for each session before continuing.</span>
+                ) : isReturningToDetails ? (
+                  <span>Save your session updates here, then return to the school details form.</span>
+                ) : (
+                  <span>You&apos;ll be able to review and edit your selections in the next step.</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -443,7 +514,10 @@ function BookingModalFlow({
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setStep("plan")}
+                onClick={() => {
+                  setIsReturningToDetails(true);
+                  setStep("plan");
+                }}
                 className="min-h-[46px] rounded-[16px] px-5 py-2.5 text-sm"
               >
                 <PencilLine className="h-4 w-4" />
@@ -621,7 +695,10 @@ function BookingModalFlow({
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setStep("plan")}
+                  onClick={() => {
+                    setIsReturningToDetails(true);
+                    setStep("plan");
+                  }}
                   className="min-h-[48px] rounded-[18px] px-6 py-2.5"
                 >
                   Back to booking
@@ -639,6 +716,57 @@ function BookingModalFlow({
   );
 }
 
+function BookingStepProgress({ currentStep }: { currentStep: 1 | 2 }) {
+  const steps = [
+    { step: 1 as const, label: "Choose sessions" },
+    { step: 2 as const, label: "School details" }
+  ];
+
+  return (
+    <div className="flex items-start justify-end">
+      <div className="flex items-start gap-3 sm:gap-5">
+        {steps.map((item, index) => {
+          const isActive = item.step === currentStep;
+          const isComplete = item.step < currentStep;
+
+          return (
+            <div key={item.step} className="flex items-center gap-2 sm:gap-4">
+              <div className="text-center">
+                <span
+                  className={[
+                    "mx-auto flex h-11 w-11 items-center justify-center rounded-full border text-base font-semibold transition",
+                    isActive
+                      ? "border-[color:var(--green)] bg-[color:var(--green)] text-white shadow-[0_12px_28px_rgba(24,168,59,0.22)]"
+                      : isComplete
+                        ? "border-[rgba(24,168,59,0.2)] bg-[rgba(24,168,59,0.08)] text-[color:var(--green)]"
+                        : "border-[rgba(4,15,75,0.16)] bg-white text-[color:var(--text-soft)]"
+                  ].join(" ")}
+                >
+                  {item.step}
+                </span>
+                <p
+                  className={[
+                    "mt-2 whitespace-nowrap text-sm font-medium",
+                    isActive || isComplete
+                      ? "text-[color:var(--green)]"
+                      : "text-[color:var(--text-soft)]"
+                  ].join(" ")}
+                >
+                  {item.label}
+                </p>
+              </div>
+
+              {index < steps.length - 1 ? (
+                <div className="mt-5 h-px w-10 bg-[rgba(4,15,75,0.14)] sm:w-28" />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PlannerField({
   label,
   icon,
@@ -649,7 +777,7 @@ function PlannerField({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-[20px] border border-white/75 bg-white/66 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.52)] backdrop-blur-xl">
+    <div className="rounded-[20px] border border-[rgba(164,202,227,0.34)] bg-white/82 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-xl">
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold tracking-[0.02em] text-[color:var(--navy)]">
         {icon}
         {label}
@@ -725,8 +853,58 @@ function createDraftSession({
   };
 }
 
+function hydrateInitialSessions({
+  sessions,
+  presentations,
+  regions,
+  dates,
+  fallbackDate,
+  fallbackPresentation
+}: {
+  sessions: HeroBookingDraftSession[];
+  presentations: PresentationType[];
+  regions: Region[];
+  dates: string[];
+  fallbackDate: string;
+  fallbackPresentation?: PresentationType;
+}) {
+  return sessions.map((session, index) => {
+    const presentation =
+      presentations.find((item) => item.slug === session.presentationSlug) ?? fallbackPresentation;
+    const date = dates.includes(session.date) ? session.date : fallbackDate;
+    const regionSlug = regions.some((item) => item.slug === session.regionSlug)
+      ? session.regionSlug
+      : "";
+    const normalizedTime =
+      session.startTime || session.timeText
+        ? normalizeTimeToSlot(
+            session.startTime || session.timeText,
+            buildAvailabilitySlots(date)
+          )
+        : { startTime: "", label: "" };
+
+    return {
+      id: session.id || `session-${index + 1}`,
+      presentationSlug: presentation?.slug ?? "",
+      date,
+      startTime: normalizedTime.startTime,
+      timeText: normalizedTime.label,
+      regionSlug,
+      yearLevels: session.yearLevels || presentation?.yearLevels || "Years 7 to 8",
+      expectedStudentCount:
+        session.expectedStudentCount && session.expectedStudentCount > 0
+          ? session.expectedStudentCount
+          : 120
+    };
+  });
+}
+
 function normalizeSessions(current: HeroBookingDraftSession[]) {
   return current.map((session) => {
+    if (!session.timeText && !session.startTime) {
+      return session;
+    }
+
     const timeOptions = buildAvailabilitySlots(session.date);
     const normalized = normalizeTimeToSlot(session.timeText || session.startTime, timeOptions);
 
@@ -756,6 +934,10 @@ function normalizeTimeToSlot(
   value: string,
   timeOptions: Array<{ startTime: string; label: string }>
 ) {
+  if (!value.trim()) {
+    return { startTime: "", label: "" };
+  }
+
   const fallback = timeOptions[0] ?? { startTime: "08:00", label: "8:00 AM - 8:10 AM" };
   const directMatch =
     timeOptions.find(

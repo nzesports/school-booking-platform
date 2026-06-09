@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
-import { BookingModalHost } from "@/components/site/booking-modal-host";
+import { BookingModalProvider } from "@/components/site/booking-modal-provider";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
 import type { PresentationType, Region } from "@/lib/domain/types";
@@ -27,14 +27,19 @@ export function AppChrome({
 
   return (
     <div className={cn("relative min-h-screen overflow-hidden", isPortalRoute ? "portal-surface" : "marketing-surface")}>
-      {!isPortalRoute ? <SiteHeader /> : null}
-      <div className="relative z-10">{children}</div>
-      {!isPortalRoute ? <SiteFooter /> : null}
-      {!isPortalRoute ? (
-        <Suspense fallback={null}>
-          <BookingModalHost presentations={presentations} regions={regions} action={bookingAction} />
-        </Suspense>
-      ) : null}
+      {isPortalRoute ? (
+        <div className="relative z-10">{children}</div>
+      ) : (
+        <BookingModalProvider
+          presentations={presentations}
+          regions={regions}
+          action={bookingAction}
+        >
+          <SiteHeader />
+          <div className="relative z-10">{children}</div>
+          <SiteFooter />
+        </BookingModalProvider>
+      )}
     </div>
   );
 }

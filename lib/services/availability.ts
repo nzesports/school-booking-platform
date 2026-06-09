@@ -2,6 +2,8 @@ import { addDays, addMinutes, format, isAfter, isBefore, set } from "date-fns";
 
 import type { AvailabilitySlot } from "@/lib/domain/types";
 
+export const BOOKING_WINDOW_DAYS = 365;
+
 const holidayDates = new Set([
   "2026-01-01",
   "2026-01-02",
@@ -20,6 +22,11 @@ const slotStarts = Array.from({ length: 48 }, (_, index) => 8 * 60 + index * 10)
 
 export function isBookableDate(dateString: string) {
   const date = new Date(`${dateString}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
   const day = date.getDay();
   return day !== 0 && day !== 6 && !holidayDates.has(dateString);
 }

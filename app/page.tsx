@@ -11,7 +11,6 @@ import {
   UsersRound
 } from "lucide-react";
 
-import { submitBookingRequestAction } from "@/app/actions";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
@@ -99,7 +98,6 @@ export default async function HomePage() {
           <HeroBookingWidget
             presentations={presentations}
             regions={regions}
-            action={submitBookingRequestAction}
           />
         </div>
       </section>
