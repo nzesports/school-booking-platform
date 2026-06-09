@@ -16,7 +16,7 @@ const holidayDates = new Set([
   "2026-12-28"
 ]);
 
-const slotStarts = Array.from({ length: 43 }, (_, index) => 9 * 60 + index * 10);
+const slotStarts = Array.from({ length: 48 }, (_, index) => 8 * 60 + index * 10);
 
 export function isBookableDate(dateString: string) {
   const date = new Date(`${dateString}T00:00:00`);

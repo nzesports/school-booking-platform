@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { submitBookingRequestAction } from "@/app/actions";
+import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
 import { ButtonLink } from "@/components/ui/button";
@@ -249,25 +250,24 @@ export default async function HomePage() {
                 Inspire your students with a session designed for real school contexts.
               </h2>
               <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                Spaces fill fast, especially for grouped school visits and preferred time slots.
-                Start the booking flow now and we’ll take it from there.
+                Presentations are delivered by NZ Esports, the national sporting organisation
+                for esports in New Zealand. Spaces fill fast, especially for grouped school
+                visits and preferred time slots, so start the booking flow now and we&apos;ll
+                take it from there.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <ButtonLink
-                href="/book"
-                className="min-h-[48px] rounded-[16px] px-5 py-2.5"
-              >
+              <BookPresentationButton className="min-h-[48px] rounded-[16px] px-5 py-2.5">
                 Book a Presentation
                 <ArrowRight className="h-4 w-4" />
-              </ButtonLink>
+              </BookPresentationButton>
               <ButtonLink
-                href="/presentations"
+                href="mailto:schools@esf.nz"
                 variant="secondary"
                 className="min-h-[48px] rounded-[16px] px-5 py-2.5"
               >
-                Explore topics
+                Email us
               </ButtonLink>
             </div>
           </div>

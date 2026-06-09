@@ -1,7 +1,7 @@
 import { ArrowRight, Sparkles } from "lucide-react";
 
+import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { PresentationCard } from "@/components/site/presentation-card";
-import { ButtonLink } from "@/components/ui/button";
 import { listPublicPresentations } from "@/lib/services/presentations";
 
 export default async function PresentationsPage() {
@@ -37,13 +37,10 @@ export default async function PresentationsPage() {
               Choose a topic, then head into the multi-session booking flow for dates,
               timing, contact details, and operational notes.
             </p>
-            <ButtonLink
-              href="/book"
-              className="mt-6 min-h-[46px] rounded-[16px] px-5 py-2.5"
-            >
+            <BookPresentationButton className="mt-6 min-h-[46px] rounded-[16px] px-5 py-2.5">
               Start a booking
               <ArrowRight className="h-4 w-4" />
-            </ButtonLink>
+            </BookPresentationButton>
           </div>
         </div>
       </section>

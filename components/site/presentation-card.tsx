@@ -7,7 +7,7 @@ import {
   UsersRound
 } from "lucide-react";
 
-import { ButtonLink } from "@/components/ui/button";
+import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { Card } from "@/components/ui/card";
 import type { PresentationType } from "@/lib/domain/types";
 
@@ -45,12 +45,12 @@ export function PresentationCard({ presentation }: { presentation: PresentationT
             Learn more
           </Link>
 
-          <ButtonLink
-            href={`/book/${presentation.slug}`}
+          <BookPresentationButton
+            presentationSlug={presentation.slug}
             className="min-h-[48px] rounded-[20px] px-5 py-2.5 text-sm"
           >
             Book now
-          </ButtonLink>
+          </BookPresentationButton>
         </div>
       </div>
     </Card>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BrandLockup } from "@/components/site/brand-lockup";
+import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { ButtonLink } from "@/components/ui/button";
 
 const navItems = [
@@ -13,7 +14,7 @@ const navItems = [
 
 export function SiteHeader() {
   return (
-    <div className="sticky top-0 z-50 border-b border-[rgba(4,15,75,0.06)] bg-[rgba(248,251,255,0.82)] backdrop-blur-xl">
+    <div className="relative z-20 border-b border-[rgba(4,15,75,0.06)] bg-[rgba(248,251,255,0.88)]">
       <header className="site-shell flex min-h-[84px] items-center justify-between gap-6 py-4">
         <BrandLockup compact />
 
@@ -37,9 +38,9 @@ export function SiteHeader() {
           >
             Ambassadors
           </ButtonLink>
-          <ButtonLink href="/book" className="min-h-[46px] rounded-[16px] px-5 py-2.5">
+          <BookPresentationButton className="min-h-[46px] rounded-[16px] px-5 py-2.5">
             Book a Presentation
-          </ButtonLink>
+          </BookPresentationButton>
         </div>
       </header>
     </div>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Clock3, MonitorPlay, UsersRound } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getPresentationBySlug } from "@/lib/services/presentations";
@@ -93,7 +94,9 @@ export default async function PresentationDetailPage({
               </div>
             </div>
             <div className="mt-8 grid gap-3">
-              <ButtonLink href={`/book/${presentation.slug}`}>Request this presentation</ButtonLink>
+              <BookPresentationButton presentationSlug={presentation.slug}>
+                Request this presentation
+              </BookPresentationButton>
               <ButtonLink href="/presentations" variant="secondary" className="text-white">
                 Back to all presentations
               </ButtonLink>

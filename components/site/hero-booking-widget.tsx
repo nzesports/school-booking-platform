@@ -1,13 +1,14 @@
 "use client";
 
 import { CalendarDays, Clock3, MapPin, MonitorPlay, Plus, Trash2, UsersRound } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import {
   HeroBookingModal,
   type HeroBookingDraftSession
 } from "@/components/site/hero-booking-modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { buildAvailabilitySlots, nextBookableDates } from "@/lib/services/availability";
 import type { PresentationType, Region } from "@/lib/domain/types";
@@ -15,48 +16,81 @@ import type { PresentationType, Region } from "@/lib/domain/types";
 export function HeroBookingWidget({
   presentations,
   regions,
-  action
+  action,
+  initialPresentationSlug,
+  initialRegionSlug,
+  initialDate,
+  initialTime,
+  mode = "homepage"
 }: {
   presentations: PresentationType[];
   regions: Region[];
   action: (formData: FormData) => void | Promise<void>;
+  initialPresentationSlug?: string;
+  initialRegionSlug?: string;
+  initialDate?: string;
+  initialTime?: string;
+  mode?: "homepage" | "page";
 }) {
   const dates = nextBookableDates(21);
-  const initialPresentation = presentations[0];
-  const initialDate = dates[0] ?? "";
-  const initialSlots = buildAvailabilitySlots(initialDate);
+  const firstDate = dates.includes(initialDate ?? "") ? (initialDate as string) : dates[0] ?? "";
+  const initialPresentation =
+    presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
+  const initialSlots = buildAvailabilitySlots(firstDate);
+  const preferredInitialTime = normalizeTimeToSlot(
+    initialTime ?? initialSlots[0]?.startTime ?? "08:00",
+    initialSlots
+  );
+  const firstRegionSlug =
+    regions.find((item) => item.slug === initialRegionSlug)?.slug ?? regions[0]?.slug ?? "";
   const [sessions, setSessions] = useState<HeroBookingDraftSession[]>([
     createDraftSession({
       id: "session-1",
       presentation: initialPresentation,
-      date: initialDate,
-      startTime: initialSlots[0]?.startTime ?? "09:00",
-      regionSlug: regions[0]?.slug ?? ""
+      date: firstDate,
+      startTime: preferredInitialTime.startTime,
+      timeText: preferredInitialTime.label,
+      regionSlug: firstRegionSlug
     })
   ]);
   const [nextSessionNumber, setNextSessionNumber] = useState(2);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const shellClassName =
+    mode === "page"
+      ? "rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-5 shadow-[0_28px_62px_rgba(11,24,77,0.12)] backdrop-blur-2xl md:p-6 lg:p-7"
+      : "mt-12 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(255,255,255,0.76))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5 lg:p-6";
+
+  const helperText = useMemo(
+    () =>
+      mode === "page"
+        ? "Choose your sessions here, then confirm everything in the request form."
+        : "Build one or more school presentation sessions.",
+    [mode]
+  );
+
   return (
     <>
-      <div
-        id="regions"
-        className="mt-12 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(255,255,255,0.76))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5 lg:p-6"
-      >
-        <div>
+      <div id="regions" className={shellClassName}>
+        <div className="flex flex-col gap-2">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
             Plan your visit
           </p>
-          <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
-            Build one or more school presentation sessions.
+          <p className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
+            {helperText}
           </p>
+          {mode === "page" ? (
+            <p className="max-w-3xl text-sm leading-7 text-[color:var(--text-soft)]">
+              Pick the topic, date, time, and region for each session. You can type a preferred
+              time or choose from the suggestion list, and we’ll tidy it into the closest
+              available 10-minute slot.
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-6 grid gap-3">
           {sessions.map((session, index) => {
             const timeOptions = buildAvailabilitySlots(session.date);
-            const activeTime = timeOptions.find((slot) => slot.startTime === session.startTime);
-            const fallbackTime = timeOptions[0]?.startTime ?? session.startTime;
 
             return (
               <div
@@ -83,9 +117,7 @@ export function HeroBookingWidget({
                       type="button"
                       className="inline-flex items-center gap-2 rounded-full border border-[rgba(157,36,36,0.12)] bg-[#fff6f6] px-4 py-2 text-sm font-semibold text-[#9d2424]"
                       onClick={() =>
-                        setSessions((current) =>
-                          current.filter((item) => item.id !== session.id)
-                        )
+                        setSessions((current) => current.filter((item) => item.id !== session.id))
                       }
                     >
                       <Trash2 className="h-4 w-4" />
@@ -94,7 +126,7 @@ export function HeroBookingWidget({
                   ) : null}
                 </div>
 
-                <div className="grid gap-3 xl:grid-cols-[1.2fr_0.95fr_0.95fr_1fr]">
+                <div className="grid gap-3 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]">
                   <Field icon={<MonitorPlay className="h-4 w-4" />} label="Presentation">
                     <Select
                       value={session.presentationSlug}
@@ -137,16 +169,13 @@ export function HeroBookingWidget({
                             }
 
                             const nextTimeOptions = buildAvailabilitySlots(event.target.value);
+                            const normalized = normalizeTimeToSlot(item.startTime, nextTimeOptions);
 
                             return {
                               ...item,
                               date: event.target.value,
-                              startTime:
-                                nextTimeOptions.find(
-                                  (slot) => slot.startTime === item.startTime
-                                )?.startTime ??
-                                nextTimeOptions[0]?.startTime ??
-                                item.startTime
+                              startTime: normalized.startTime,
+                              timeText: normalized.label
                             };
                           })
                         )
@@ -161,24 +190,50 @@ export function HeroBookingWidget({
                   </Field>
 
                   <Field icon={<Clock3 className="h-4 w-4" />} label="Time">
-                    <Select
-                      value={activeTime?.startTime ?? fallbackTime}
-                      onChange={(event) =>
-                        setSessions((current) =>
-                          current.map((item) =>
-                            item.id === session.id
-                              ? { ...item, startTime: event.target.value }
-                              : item
+                    <div>
+                      <Input
+                        list={`time-options-${session.id}`}
+                        value={session.timeText}
+                        placeholder="Type 8:30am or choose"
+                        onChange={(event) =>
+                          setSessions((current) =>
+                            current.map((item) =>
+                              item.id === session.id
+                                ? { ...item, timeText: event.target.value }
+                                : item
+                            )
                           )
-                        )
-                      }
-                    >
-                      {timeOptions.map((slot) => (
-                        <option key={slot.startTime} value={slot.startTime}>
-                          {slot.label}
-                        </option>
-                      ))}
-                    </Select>
+                        }
+                        onBlur={(event) =>
+                          setSessions((current) =>
+                            current.map((item) => {
+                              if (item.id !== session.id) {
+                                return item;
+                              }
+
+                              const normalized = normalizeTimeToSlot(
+                                event.target.value || item.startTime,
+                                timeOptions
+                              );
+
+                              return {
+                                ...item,
+                                startTime: normalized.startTime,
+                                timeText: normalized.label
+                              };
+                            })
+                          )
+                        }
+                      />
+                      <datalist id={`time-options-${session.id}`}>
+                        {timeOptions.map((slot) => (
+                          <option key={slot.startTime} value={slot.label} />
+                        ))}
+                      </datalist>
+                      <p className="mt-2 text-xs text-[color:var(--text-soft)]">
+                        Available between 8:00am and 4:00pm in 10-minute slots.
+                      </p>
+                    </div>
                   </Field>
 
                   <Field icon={<MapPin className="h-4 w-4" />} label="Region">
@@ -231,9 +286,10 @@ export function HeroBookingWidget({
                     createDraftSession({
                       id: `session-${nextSessionNumber}`,
                       presentation,
-                      date: previous?.date ?? initialDate,
-                      startTime: previous?.startTime ?? initialSlots[0]?.startTime ?? "09:00",
-                      regionSlug: previous?.regionSlug ?? regions[0]?.slug ?? ""
+                      date: previous?.date ?? firstDate,
+                      startTime: previous?.startTime ?? preferredInitialTime.startTime,
+                      timeText: previous?.timeText ?? preferredInitialTime.label,
+                      regionSlug: previous?.regionSlug ?? firstRegionSlug
                     })
                   ];
                 });
@@ -243,6 +299,28 @@ export function HeroBookingWidget({
             >
               <Plus className="h-4 w-4" />
               Add another session
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() =>
+                setSessions((current) =>
+                  current.map((session) => {
+                    const timeOptions = buildAvailabilitySlots(session.date);
+                    const normalized = normalizeTimeToSlot(session.timeText, timeOptions);
+
+                    return {
+                      ...session,
+                      startTime: normalized.startTime,
+                      timeText: normalized.label
+                    };
+                  })
+                )
+              }
+              variant="ghost"
+              className="rounded-full border border-[rgba(4,15,75,0.08)] bg-white/70 px-4 py-2.5 text-sm"
+            >
+              Review times
             </Button>
 
             <Button
@@ -261,7 +339,16 @@ export function HeroBookingWidget({
         onClose={() => setIsModalOpen(false)}
         regions={regions}
         presentations={presentations}
-        sessions={sessions}
+        sessions={sessions.map((session) => {
+          const timeOptions = buildAvailabilitySlots(session.date);
+          const normalized = normalizeTimeToSlot(session.timeText || session.startTime, timeOptions);
+
+          return {
+            ...session,
+            startTime: normalized.startTime,
+            timeText: normalized.label
+          };
+        })}
         action={action}
       />
     </>
@@ -293,12 +380,14 @@ function createDraftSession({
   presentation,
   date,
   startTime,
+  timeText,
   regionSlug
 }: {
   id: string;
   presentation?: PresentationType;
   date: string;
   startTime: string;
+  timeText: string;
   regionSlug: string;
 }): HeroBookingDraftSession {
   return {
@@ -306,6 +395,7 @@ function createDraftSession({
     presentationSlug: presentation?.slug ?? "",
     date,
     startTime,
+    timeText,
     regionSlug,
     yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
     expectedStudentCount: 120
@@ -323,5 +413,91 @@ function formatDisplayDate(value: string) {
     weekday: "short",
     day: "numeric",
     month: "short"
+  }).format(date);
+}
+
+function normalizeTimeToSlot(value: string, timeOptions: Array<{ startTime: string; label: string }>) {
+  const fallback = timeOptions[0] ?? { startTime: "08:00", label: "8:00 AM - 8:10 AM" };
+  const directMatch =
+    timeOptions.find(
+      (slot) =>
+        slot.label.toLowerCase() === value.trim().toLowerCase() ||
+        slot.startTime === value.trim()
+    ) ?? null;
+
+  if (directMatch) {
+    return { startTime: directMatch.startTime, label: formatTimeLabel(directMatch.startTime) };
+  }
+
+  const parsedMinutes = parseTypedTime(value);
+
+  if (parsedMinutes === null) {
+    return { startTime: fallback.startTime, label: formatTimeLabel(fallback.startTime) };
+  }
+
+  const nearest = timeOptions.reduce((closest, slot) => {
+    const slotMinutes = toMinutes(slot.startTime);
+    const slotDistance = Math.abs(slotMinutes - parsedMinutes);
+    const closestDistance = Math.abs(toMinutes(closest.startTime) - parsedMinutes);
+
+    return slotDistance < closestDistance ? slot : closest;
+  }, fallback);
+
+  return { startTime: nearest.startTime, label: formatTimeLabel(nearest.startTime) };
+}
+
+function parseTypedTime(value: string) {
+  const normalised = value.trim().toLowerCase().replace(/\s+/g, "");
+
+  if (!normalised) {
+    return null;
+  }
+
+  const meridiemMatch = normalised.match(/^(\d{1,2})(?::?(\d{2}))?(am|pm)$/);
+
+  if (meridiemMatch) {
+    let hours = Number(meridiemMatch[1]);
+    const minutes = Number(meridiemMatch[2] ?? "0");
+    const meridiem = meridiemMatch[3];
+
+    if (meridiem === "pm" && hours !== 12) {
+      hours += 12;
+    }
+
+    if (meridiem === "am" && hours === 12) {
+      hours = 0;
+    }
+
+    return hours * 60 + minutes;
+  }
+
+  const plainMatch = normalised.match(/^(\d{1,2})(?::?(\d{2}))?$/);
+
+  if (!plainMatch) {
+    return null;
+  }
+
+  const hours = Number(plainMatch[1]);
+  const minutes = Number(plainMatch[2] ?? "0");
+
+  return hours * 60 + minutes;
+}
+
+function toMinutes(value: string) {
+  const [hoursString, minutesString] = value.split(":");
+  return Number(hoursString) * 60 + Number(minutesString);
+}
+
+function formatTimeLabel(value: string) {
+  const [hoursString, minutesString] = value.split(":");
+  const hours = Number(hoursString);
+  const minutes = Number(minutesString);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+
+  return new Intl.DateTimeFormat("en-NZ", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
   }).format(date);
 }
