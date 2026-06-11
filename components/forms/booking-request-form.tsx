@@ -65,6 +65,14 @@ export function BookingRequestForm({
   return (
     <form action={action} className="grid gap-6">
       <input type="hidden" name="sessionsCount" value={sessions.length} />
+      <input
+        type="text"
+        name="website2"
+        className="hidden"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+      />
 
       <Card className="rounded-[34px] p-4 md:p-5">
         <div className="grid gap-4 md:grid-cols-4">

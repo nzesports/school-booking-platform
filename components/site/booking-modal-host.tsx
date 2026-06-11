@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { PresentationType, Region } from "@/lib/domain/types";
 import {
   BOOKING_WINDOW_DAYS,
+  type AvailabilityConfig,
   buildAvailabilitySlots,
   isBookableDate,
   nextBookableDates
@@ -37,6 +38,7 @@ export function BookingModalHost({
   onClose,
   presentations,
   regions,
+  availabilityConfig,
   action
 }: {
   request: {
@@ -51,6 +53,7 @@ export function BookingModalHost({
   onClose: () => void;
   presentations: PresentationType[];
   regions: Region[];
+  availabilityConfig?: AvailabilityConfig;
   action: (formData: FormData) => void | Promise<void>;
 }) {
   useEffect(() => {
@@ -84,6 +87,7 @@ export function BookingModalHost({
       key={request.id}
       presentations={presentations}
       regions={regions}
+      availabilityConfig={availabilityConfig}
       action={action}
       initialStep={request.initialStep}
       initialPresentationSlug={request.presentationSlug}
@@ -99,6 +103,7 @@ export function BookingModalHost({
 function BookingModalFlow({
   presentations,
   regions,
+  availabilityConfig,
   action,
   initialStep,
   initialPresentationSlug,
@@ -110,6 +115,7 @@ function BookingModalFlow({
 }: {
   presentations: PresentationType[];
   regions: Region[];
+  availabilityConfig?: AvailabilityConfig;
   action: (formData: FormData) => void | Promise<void>;
   initialStep?: BookingStep;
   initialPresentationSlug?: string;
@@ -119,13 +125,13 @@ function BookingModalFlow({
   initialSessions?: HeroBookingDraftSession[];
   onClose: () => void;
 }) {
-  const dates = nextBookableDates(BOOKING_WINDOW_DAYS);
+  const dates = nextBookableDates(BOOKING_WINDOW_DAYS, availabilityConfig);
   const firstDate =
     dates.includes(initialDate ?? "") && initialDate ? initialDate : dates[0] ?? "";
   const maxBookableDate = dates[dates.length - 1] ?? firstDate;
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
-  const initialSlots = buildAvailabilitySlots(firstDate);
+  const initialSlots = buildAvailabilitySlots(firstDate, availabilityConfig);
   const preferredInitialTime = initialTime
     ? normalizeTimeToSlot(initialTime, initialSlots)
     : { startTime: "", label: "" };
@@ -139,7 +145,8 @@ function BookingModalFlow({
           regions,
           dates,
           fallbackDate: firstDate,
-          fallbackPresentation: initialPresentation
+          fallbackPresentation: initialPresentation,
+          availabilityConfig
         })
       : [
           createDraftSession({
@@ -166,7 +173,7 @@ function BookingModalFlow({
   const [sessions, setSessions] = useState<HeroBookingDraftSession[]>(initialDraftSessions);
   const [isReturningToDetails, setIsReturningToDetails] = useState(false);
 
-  const reviewSessions = normalizeSessions(sessions);
+  const reviewSessions = normalizeSessions(sessions, availabilityConfig);
   const canContinueToReview = sessions.every(
     (session) =>
       Boolean(session.presentationSlug) &&
@@ -216,9 +223,9 @@ function BookingModalFlow({
           <div className="px-5 py-4 md:px-7 lg:px-8">
             <div className="grid gap-4">
             {sessions.map((session, index) => {
-              const selectedDateIsBookable = isBookableDate(session.date);
+              const selectedDateIsBookable = isBookableDate(session.date, availabilityConfig);
               const timeOptions = selectedDateIsBookable
-                ? buildAvailabilitySlots(session.date)
+                ? buildAvailabilitySlots(session.date, availabilityConfig)
                 : [];
 
               return (
@@ -307,9 +314,9 @@ function BookingModalFlow({
                               }
 
                                 const nextDate = event.target.value;
-                                const nextDateIsBookable = isBookableDate(nextDate);
+                                const nextDateIsBookable = isBookableDate(nextDate, availabilityConfig);
                                 const nextTimeOptions = nextDateIsBookable
-                                  ? buildAvailabilitySlots(nextDate)
+                                  ? buildAvailabilitySlots(nextDate, availabilityConfig)
                                   : [];
                                 const normalized = nextDateIsBookable
                                   ? normalizeTimeToSlot(item.startTime, nextTimeOptions)
@@ -449,7 +456,7 @@ function BookingModalFlow({
                       return;
                     }
 
-                    setSessions((current) => normalizeSessions(current));
+                    setSessions((current) => normalizeSessions(current, availabilityConfig));
                     setIsReturningToDetails(false);
                     setStep("review");
                   }}
@@ -859,7 +866,8 @@ function hydrateInitialSessions({
   regions,
   dates,
   fallbackDate,
-  fallbackPresentation
+  fallbackPresentation,
+  availabilityConfig
 }: {
   sessions: HeroBookingDraftSession[];
   presentations: PresentationType[];
@@ -867,6 +875,7 @@ function hydrateInitialSessions({
   dates: string[];
   fallbackDate: string;
   fallbackPresentation?: PresentationType;
+  availabilityConfig?: AvailabilityConfig;
 }) {
   return sessions.map((session, index) => {
     const presentation =
@@ -879,7 +888,7 @@ function hydrateInitialSessions({
       session.startTime || session.timeText
         ? normalizeTimeToSlot(
             session.startTime || session.timeText,
-            buildAvailabilitySlots(date)
+            buildAvailabilitySlots(date, availabilityConfig)
           )
         : { startTime: "", label: "" };
 
@@ -899,13 +908,13 @@ function hydrateInitialSessions({
   });
 }
 
-function normalizeSessions(current: HeroBookingDraftSession[]) {
+function normalizeSessions(current: HeroBookingDraftSession[], availabilityConfig?: AvailabilityConfig) {
   return current.map((session) => {
     if (!session.timeText && !session.startTime) {
       return session;
     }
 
-    const timeOptions = buildAvailabilitySlots(session.date);
+    const timeOptions = buildAvailabilitySlots(session.date, availabilityConfig);
     const normalized = normalizeTimeToSlot(session.timeText || session.startTime, timeOptions);
 
     return {

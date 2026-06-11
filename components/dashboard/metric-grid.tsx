@@ -37,7 +37,7 @@ const toneMap = {
 
 export function MetricGrid({ metrics }: { metrics: DashboardMetric[] }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
       {metrics.map((metric) => {
         const Icon = iconMap[metric.icon ?? "sparkles"];
         return (

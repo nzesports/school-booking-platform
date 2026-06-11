@@ -10,36 +10,6 @@ begin
 end;
 $$;
 
-create or replace function public.current_role()
-returns text
-language sql
-stable
-as $$
-  select role
-  from public.profiles
-  where id = auth.uid()
-  limit 1
-$$;
-
-create or replace function public.is_staff_like()
-returns boolean
-language sql
-stable
-as $$
-  select coalesce(public.current_role() in ('staff', 'super_admin'), false)
-$$;
-
-create or replace function public.current_ambassador_profile_id()
-returns uuid
-language sql
-stable
-as $$
-  select id
-  from public.ambassador_profiles
-  where user_id = auth.uid()
-  limit 1
-$$;
-
 create table if not exists public.roles (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -193,6 +163,36 @@ create table if not exists public.ambassador_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create or replace function public.current_role()
+returns text
+language sql
+stable
+as $$
+  select role
+  from public.profiles
+  where id = auth.uid()
+  limit 1
+$$;
+
+create or replace function public.is_staff_like()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(public.current_role() in ('staff', 'super_admin'), false)
+$$;
+
+create or replace function public.current_ambassador_profile_id()
+returns uuid
+language sql
+stable
+as $$
+  select id
+  from public.ambassador_profiles
+  where user_id = auth.uid()
+  limit 1
+$$;
 
 create table if not exists public.ambassador_travel_regions (
   id uuid primary key default gen_random_uuid(),

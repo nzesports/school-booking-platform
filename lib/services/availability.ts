@@ -4,6 +4,24 @@ import type { AvailabilitySlot } from "@/lib/domain/types";
 
 export const BOOKING_WINDOW_DAYS = 365;
 
+export type AvailabilityRuleConfig = {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  slotIntervalMinutes: number;
+};
+
+export type AvailabilityOverrideConfig = {
+  date: string;
+  isAvailable: boolean;
+  reason?: string;
+};
+
+export type AvailabilityConfig = {
+  rules: AvailabilityRuleConfig[];
+  overrides: AvailabilityOverrideConfig[];
+};
+
 const holidayDates = new Set([
   "2026-01-01",
   "2026-01-02",
@@ -20,25 +38,66 @@ const holidayDates = new Set([
 
 const slotStarts = Array.from({ length: 48 }, (_, index) => 8 * 60 + index * 10);
 
-export function isBookableDate(dateString: string) {
+function timeToMinutes(time: string) {
+  const [hours = "0", minutes = "0"] = time.split(":");
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function getRulesForDate(date: Date, config?: AvailabilityConfig) {
+  return config?.rules.filter((rule) => rule.dayOfWeek === date.getDay()) ?? [];
+}
+
+function getOverrideForDate(dateString: string, config?: AvailabilityConfig) {
+  return config?.overrides.find((override) => override.date === dateString);
+}
+
+export function isBookableDate(dateString: string, config?: AvailabilityConfig) {
   const date = new Date(`${dateString}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return false;
   }
 
+  const override = getOverrideForDate(dateString, config);
+
+  if (override) {
+    return override.isAvailable;
+  }
+
+  const rules = getRulesForDate(date, config);
+
+  if (rules.length > 0) {
+    return true;
+  }
+
   const day = date.getDay();
   return day !== 0 && day !== 6 && !holidayDates.has(dateString);
 }
 
-export function buildAvailabilitySlots(dateString: string): AvailabilitySlot[] {
-  if (!isBookableDate(dateString)) {
+export function buildAvailabilitySlots(dateString: string, config?: AvailabilityConfig): AvailabilitySlot[] {
+  if (!isBookableDate(dateString, config)) {
     return [];
   }
 
   const baseDate = new Date(`${dateString}T00:00:00`);
+  const rules = getRulesForDate(baseDate, config);
+  const starts =
+    rules.length > 0
+      ? rules.flatMap((rule) => {
+          const startMinutes = timeToMinutes(rule.startTime);
+          const endMinutes = timeToMinutes(rule.endTime);
+          const interval = Math.max(rule.slotIntervalMinutes, 10);
+          const values: number[] = [];
 
-  return slotStarts.map((totalMinutes) => {
+          for (let totalMinutes = startMinutes; totalMinutes < endMinutes; totalMinutes += interval) {
+            values.push(totalMinutes);
+          }
+
+          return values;
+        })
+      : slotStarts;
+
+  return starts.map((totalMinutes) => {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     const start = set(baseDate, { hours, minutes, seconds: 0, milliseconds: 0 });
@@ -53,7 +112,7 @@ export function buildAvailabilitySlots(dateString: string): AvailabilitySlot[] {
   });
 }
 
-export function nextBookableDates(daysAhead = 21) {
+export function nextBookableDates(daysAhead = 21, config?: AvailabilityConfig) {
   const dates: string[] = [];
   const now = new Date();
 
@@ -61,7 +120,7 @@ export function nextBookableDates(daysAhead = 21) {
     const date = addDays(now, offset);
     const day = format(date, "yyyy-MM-dd");
 
-    if (isBookableDate(day) && isBefore(now, date)) {
+    if (isBookableDate(day, config) && isBefore(now, date)) {
       dates.push(day);
     }
   }

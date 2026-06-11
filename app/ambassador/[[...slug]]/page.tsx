@@ -7,23 +7,24 @@ import {
   UserRound
 } from "lucide-react";
 
-import { submitPortalAction } from "@/app/actions";
+import { logoutAction } from "@/app/auth/actions";
+import {
+  applyToSessionAction,
+  markTrainingCompleteAction,
+  submitAmbassadorReportAction
+} from "@/app/portal/actions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { MetricGrid } from "@/components/dashboard/metric-grid";
+import { ResourceLibrary } from "@/components/dashboard/resource-library";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  paymentRecords,
-  reportSummaries,
-  resources,
-  trainingModules
-} from "@/lib/domain/demo-data";
 import type { DashboardMetric } from "@/lib/domain/types";
-import { getAmbassadorPortalData } from "@/lib/services/bookings";
+import { requirePortalAccess } from "@/lib/services/auth";
+import { getAmbassadorPortalData } from "@/lib/services/portal";
 import {
   formatCurrency,
   formatShortDate,
@@ -41,25 +42,45 @@ const navItems = [
 ];
 
 export default async function AmbassadorPortalPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ slug?: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
-  const portal = await getAmbassadorPortalData();
-  const ownedSessions = portal.assignedSessions.filter(
-    (session) => session.assignedAmbassadorName === portal.ambassador.name
+  const actor = await requirePortalAccess("ambassador");
+  const portal = await getAmbassadorPortalData(actor.id);
+  const ownedSessions = portal.assignedSessions;
+  const now = new Date();
+  const upcomingSessions = ownedSessions.filter(
+    (session) => new Date(session.startsAt).getTime() > now.getTime() && session.status !== "cancelled"
   );
-  const ambassadorPayments = paymentRecords.filter(
-    (record) => record.ambassadorName === portal.ambassador.name
+  const completedSessions = ownedSessions.filter(
+    (session) => new Date(session.endsAt).getTime() <= now.getTime() && session.status !== "cancelled"
   );
+  const ambassadorPayments = portal.payments;
+  const selectedReportSessionId = route.startsWith("report/")
+    ? slug?.[1]
+    : route.startsWith("reports/")
+      ? slug?.[1]
+      : null;
+  const trainingProgress =
+    portal.trainingModules.length > 0
+      ? Math.round(
+          portal.trainingModules.reduce((total, module) => total + module.progress, 0) /
+            portal.trainingModules.length
+        )
+      : 0;
+  const notice = getAmbassadorNotice(resolvedSearchParams);
 
   const metrics: DashboardMetric[] = [
     {
       label: "Estimated earnings",
       value: formatCurrency(portal.ambassador.estimatedEarningsCents),
-      trend: "+12% vs last month",
+      trend: "All time",
       detail: "Across assigned and eligible sessions",
       icon: "banknote",
       tone: "green"
@@ -74,7 +95,7 @@ export default async function AmbassadorPortalPage({
     },
     {
       label: "Upcoming sessions",
-      value: String(ownedSessions.length),
+      value: String(upcomingSessions.length),
       trend: "Assigned to you",
       detail: "Confirmed and report-ready",
       icon: "calendar",
@@ -82,7 +103,7 @@ export default async function AmbassadorPortalPage({
     },
     {
       label: "Training progress",
-      value: "70%",
+      value: `${trainingProgress}%`,
       trend: "Across current modules",
       detail: "Presenter induction plus session packs",
       icon: "sparkles",
@@ -92,7 +113,7 @@ export default async function AmbassadorPortalPage({
 
   const headline =
     route === ""
-      ? "Kia ora, Alex Tane"
+      ? `Kia ora, ${actor.fullName.split(" ")[0]}`
       : route.startsWith("open-bookings")
         ? "Review privacy-safe open opportunities"
         : route.startsWith("reports")
@@ -120,11 +141,18 @@ export default async function AmbassadorPortalPage({
         headline={headline}
         subheadline={subheadline}
         dateLabel="This month"
+        logoutAction={logoutAction}
         profile={{
-          name: "Alex Tane",
+          name: actor.fullName,
           subtitle: "NZ Esports Ambassador"
         }}
       >
+        {notice ? (
+          <Card className="rounded-[24px] border-[#b9e2c7] bg-[#f4fbf6] px-5 py-4 text-sm font-semibold text-[#1d6f35]">
+            {notice}
+          </Card>
+        ) : null}
+
         {route === "" ? (
           <>
             <MetricGrid metrics={metrics} />
@@ -166,13 +194,24 @@ export default async function AmbassadorPortalPage({
                         </div>
                         <StatusBadge value={session.status} />
                       </div>
-                      <ButtonLink
-                        href={`/ambassador/open-bookings/${session.id}`}
-                        variant="secondary"
-                        className="mt-4"
-                      >
-                        View safe details
-                      </ButtonLink>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <ButtonLink
+                          href={`/ambassador/open-bookings/${session.id}`}
+                          variant="secondary"
+                        >
+                          View safe details
+                        </ButtonLink>
+                        <form action={applyToSessionAction}>
+                          <input type="hidden" name="bookingSessionId" value={session.id} />
+                          <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                          <button
+                            type="submit"
+                            className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
+                          >
+                            Apply
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -194,7 +233,7 @@ export default async function AmbassadorPortalPage({
                 </div>
 
                 <div className="mt-6 grid gap-4">
-                  {ownedSessions.map((session) => (
+                  {upcomingSessions.map((session) => (
                     <div
                       key={session.id}
                       className="rounded-[24px] bg-[linear-gradient(135deg,#f7fbff,#f9fcff)] p-5 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]"
@@ -225,7 +264,7 @@ export default async function AmbassadorPortalPage({
                   Training progress
                 </p>
                 <div className="mt-5 grid gap-4">
-                  {trainingModules.map((module) => (
+                  {portal.trainingModules.map((module) => (
                     <div key={module.id}>
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -254,7 +293,7 @@ export default async function AmbassadorPortalPage({
                   Recent reports
                 </p>
                 <div className="mt-5 grid gap-4">
-                  {reportSummaries.map((report) => (
+                  {portal.reports.map((report) => (
                     <div
                       key={report.id}
                       className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4"
@@ -281,14 +320,18 @@ export default async function AmbassadorPortalPage({
                   Resource library
                 </p>
                 <div className="mt-5 grid gap-4">
-                  {resources
-                    .filter((resource) => resource.audience === "ambassador")
+                  {portal.resources
                     .map((resource) => (
                       <div key={resource.id}>
                         <p className="font-semibold text-[color:var(--navy)]">{resource.title}</p>
                         <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
                           {resource.description}
                         </p>
+                        {resource.downloadUrl ? (
+                          <ButtonLink href={resource.downloadUrl} variant="secondary" className="mt-4">
+                            Download
+                          </ButtonLink>
+                        ) : null}
                       </div>
                     ))}
                 </div>
@@ -303,7 +346,7 @@ export default async function AmbassadorPortalPage({
           </>
         ) : null}
 
-        {route === "open-bookings" || route.startsWith("open-bookings/") ? (
+        {route === "open-bookings" ? (
           <DataTable
             title="Open booking opportunities"
             columns={["Presentation", "Schedule", "Region", "Status", "Action"]}
@@ -312,13 +355,13 @@ export default async function AmbassadorPortalPage({
               `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
               session.regionSlug,
               <StatusBadge key={`${session.id}-status`} value={session.status} />,
-              <ButtonLink
-                key={`${session.id}-apply`}
-                href={`/ambassador/open-bookings/${session.id}`}
-                variant="secondary"
-              >
-                Open safe view
-              </ButtonLink>
+              <form key={`${session.id}-apply`} action={applyToSessionAction} className="flex flex-wrap gap-2">
+                <input type="hidden" name="bookingSessionId" value={session.id} />
+                <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                <Button type="submit" variant="secondary">
+                  Apply
+                </Button>
+              </form>
             ])}
           />
         ) : null}
@@ -332,9 +375,9 @@ export default async function AmbassadorPortalPage({
               The staff team will review applications and decide assignment. Teacher contact
               details stay hidden at this stage.
             </p>
-            <form action={submitPortalAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="scope" value="ambassador" />
-              <input type="hidden" name="id" value={slug?.[1] ?? ""} />
+            <form action={applyToSessionAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
+              <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
               <Textarea
                 name="message"
                 placeholder="Share why you're a strong fit for this presentation."
@@ -349,36 +392,83 @@ export default async function AmbassadorPortalPage({
           <DataTable
             title={route === "upcoming" ? "Assigned upcoming sessions" : "Completed sessions"}
             columns={["Presentation", "School", "Time", "Status", "Report"]}
-            rows={ownedSessions.map((session) => [
+            rows={(route === "upcoming" ? upcomingSessions : completedSessions).map((session) => [
               session.presentationTitle,
               session.schoolName,
               `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
               <StatusBadge key={`${session.id}-session`} value={session.status} />,
-              <ButtonLink
-                key={`${session.id}-report`}
-                href={`/ambassador/reports/${session.id}/new`}
-                variant="secondary"
-              >
-                Report flow
-              </ButtonLink>
+              route === "completed" && session.reportStatus === "not_submitted" ? (
+                <ButtonLink
+                  key={`${session.id}-report`}
+                  href={`/ambassador/report/${session.id}`}
+                  variant="secondary"
+                >
+                  Submit report
+                </ButtonLink>
+              ) : route === "completed" ? (
+                <StatusBadge key={`${session.id}-report-status`} value={session.reportStatus} />
+              ) : (
+                "Available after delivery"
+              )
             ])}
           />
         ) : null}
 
-        {route.startsWith("reports/") ? (
+        {selectedReportSessionId ? (
           <Card className="rounded-[34px]">
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Submit ambassador report
             </h2>
-            <form action={submitPortalAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="scope" value="ambassador" />
-              <input type="hidden" name="id" value={slug?.[1] ?? ""} />
-              <Input name="attendeeCount" type="number" min={1} placeholder="168" required />
+            <form action={submitAmbassadorReportAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingSessionId" value={selectedReportSessionId} />
+              <input type="hidden" name="returnTo" value="/ambassador/completed" />
+              <div className="grid gap-4 md:grid-cols-3">
+                <Input name="attendeeCount" type="number" min={0} placeholder="Attendees" required />
+                <Input name="yearLevels" placeholder="Year levels, e.g. Years 9-10" required />
+                <select
+                  name="teacherResponseRating"
+                  required
+                  className="min-h-[48px] rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Teacher response
+                  </option>
+                  {[1, 2, 3, 4, 5].map((rating) => (
+                    <option key={rating} value={rating}>
+                      {rating}/5
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <select
+                name="studentEngagementRating"
+                required
+                className="min-h-[48px] rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]"
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  Student engagement rating
+                </option>
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <option key={rating} value={rating}>
+                    {rating}/5
+                  </option>
+                ))}
+              </select>
               <Textarea
                 name="presentationFeedback"
                 placeholder="Capture attendance, audience reaction, themes, and next-step notes."
                 required
               />
+              <Textarea
+                name="notableQuestions"
+                placeholder="Any notable student questions or themes?"
+              />
+              <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                <input type="checkbox" name="mediaConsentObtained" />
+                Media consent was checked or obtained where needed.
+              </label>
               <Button type="submit">Submit report</Button>
             </form>
           </Card>
@@ -399,7 +489,7 @@ export default async function AmbassadorPortalPage({
 
         {route === "resources" || route === "training" || route.startsWith("training/") ? (
           <div className="grid gap-4 xl:grid-cols-2">
-            {trainingModules.map((module) => (
+            {portal.trainingModules.map((module) => (
               <Card key={module.id} className="rounded-[32px]">
                 <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                   {module.title}
@@ -410,20 +500,18 @@ export default async function AmbassadorPortalPage({
                 <p className="mt-4 text-sm font-semibold text-[color:var(--green)]">
                   Progress: {module.progress}%
                 </p>
+                <form action={markTrainingCompleteAction} className="mt-5">
+                  <input type="hidden" name="trainingModuleId" value={module.id} />
+                  <input type="hidden" name="returnTo" value="/ambassador/training" />
+                  <Button type="submit" variant="secondary">
+                    Mark complete
+                  </Button>
+                </form>
               </Card>
             ))}
-            {resources
-              .filter((resource) => resource.audience === "ambassador")
-              .map((resource) => (
-                <Card key={resource.id} className="rounded-[32px]">
-                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                    {resource.title}
-                  </h2>
-                  <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                    {resource.description}
-                  </p>
-                </Card>
-              ))}
+            <div className="xl:col-span-2">
+              <ResourceLibrary resources={portal.resources} />
+            </div>
           </div>
         ) : null}
 
@@ -443,7 +531,7 @@ export default async function AmbassadorPortalPage({
           <DataTable
             title="Submitted reports"
             columns={["School", "Presentation", "Submitted", "Attendees", "Status"]}
-            rows={reportSummaries.map((report) => [
+            rows={portal.reports.map((report) => [
               report.schoolName,
               report.presentationTitle,
               formatShortDate(report.submittedAt),
@@ -455,4 +543,32 @@ export default async function AmbassadorPortalPage({
       </DashboardShell>
     </main>
   );
+}
+
+function getAmbassadorNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const submitted = readSearchParam(searchParams, "submitted");
+  const applied = readSearchParam(searchParams, "applied");
+  const completed = readSearchParam(searchParams, "completed");
+
+  if (submitted === "report") {
+    return "Report submitted. Staff can now review the session and payment eligibility.";
+  }
+
+  if (applied === "1") {
+    return "Application submitted. Staff will review and assign the best-fit ambassador.";
+  }
+
+  if (completed === "training") {
+    return "Training progress saved.";
+  }
+
+  return null;
+}
+
+function readSearchParam(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
 }

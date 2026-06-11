@@ -1,0 +1,250 @@
+alter table public.notifications
+add column if not exists resolved_at timestamptz;
+
+alter table public.presentation_types
+add column if not exists image_url text;
+
+create or replace function public.region_id_from_slug(target_slug text)
+returns uuid
+language sql
+stable
+as $$
+  select id
+  from public.regions
+  where slug = target_slug
+  limit 1
+$$;
+
+create or replace function public.active_super_admin_count()
+returns integer
+language sql
+stable
+as $$
+  select count(*)::int
+  from public.profiles
+  where role = 'super_admin'
+    and status = 'active'
+$$;
+
+create or replace function public.prevent_removing_last_super_admin()
+returns trigger
+language plpgsql
+as $$
+declare
+  still_active_super_admins integer;
+begin
+  if tg_op = 'DELETE' then
+    if old.role = 'super_admin' and old.status = 'active' then
+      select count(*)::int
+      into still_active_super_admins
+      from public.profiles
+      where role = 'super_admin'
+        and status = 'active'
+        and id <> old.id;
+
+      if still_active_super_admins = 0 then
+        raise exception 'At least one active super admin is required.';
+      end if;
+    end if;
+
+    return old;
+  end if;
+
+  if old.role = 'super_admin'
+    and old.status = 'active'
+    and (
+      new.role <> 'super_admin'
+      or new.status <> 'active'
+    ) then
+    select count(*)::int
+    into still_active_super_admins
+    from public.profiles
+    where role = 'super_admin'
+      and status = 'active'
+      and id <> old.id;
+
+    if still_active_super_admins = 0 then
+      raise exception 'At least one active super admin is required.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_removing_last_super_admin on public.profiles;
+
+create trigger prevent_removing_last_super_admin
+before update or delete on public.profiles
+for each row execute function public.prevent_removing_last_super_admin();
+
+create or replace function public.notify_staff_about_ambassador_application(
+  ambassador_profile_id uuid,
+  ambassador_name text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.notifications (
+    user_id,
+    title,
+    body,
+    notification_type,
+    related_url
+  )
+  select
+    id,
+    'New ambassador application',
+    coalesce(ambassador_name, 'A new ambassador') || ' has signed up and is awaiting review.',
+    'ambassador_application_submitted',
+    '/staff/ambassadors/' || ambassador_profile_id::text
+  from public.profiles
+  where role in ('staff', 'super_admin')
+    and status = 'active';
+end;
+$$;
+
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  metadata jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  selected_role text := coalesce(metadata->>'role', 'school');
+  selected_region_id uuid;
+  school_record_id uuid;
+  school_contact_id uuid;
+  ambassador_profile_id uuid;
+  travel_region_slug text;
+begin
+  selected_region_id := public.region_id_from_slug(metadata->>'region_slug');
+
+  insert into public.profiles (
+    id,
+    email,
+    full_name,
+    phone,
+    role,
+    status
+  )
+  values (
+    new.id,
+    coalesce(new.email, metadata->>'email', ''),
+    metadata->>'full_name',
+    metadata->>'phone',
+    selected_role,
+    'active'
+  )
+  on conflict (id) do update
+  set
+    email = excluded.email,
+    full_name = coalesce(excluded.full_name, public.profiles.full_name),
+    phone = coalesce(excluded.phone, public.profiles.phone),
+    role = excluded.role;
+
+  if selected_role = 'school' then
+    select id
+    into school_record_id
+    from public.schools
+    where lower(name) = lower(coalesce(metadata->>'school_name', ''))
+    limit 1;
+
+    if school_record_id is null then
+      insert into public.schools (
+        name,
+        region_id,
+        status
+      )
+      values (
+        coalesce(metadata->>'school_name', split_part(coalesce(new.email, ''), '@', 1)),
+        selected_region_id,
+        'active'
+      )
+      returning id into school_record_id;
+    end if;
+
+    insert into public.school_contacts (
+      school_id,
+      full_name,
+      email,
+      phone,
+      is_primary,
+      can_access_portal,
+      marketing_consent
+    )
+    values (
+      school_record_id,
+      coalesce(metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
+      coalesce(new.email, metadata->>'email', ''),
+      metadata->>'phone',
+      true,
+      true,
+      coalesce((metadata->>'marketing_consent')::boolean, false)
+    )
+    returning id into school_contact_id;
+
+    insert into public.school_contact_users (
+      school_contact_id,
+      user_id
+    )
+    values (
+      school_contact_id,
+      new.id
+    )
+    on conflict (school_contact_id, user_id) do nothing;
+  elsif selected_role = 'ambassador' then
+    insert into public.ambassador_profiles (
+      user_id,
+      region_id,
+      bio,
+      experience,
+      open_to_travel,
+      status
+    )
+    values (
+      new.id,
+      selected_region_id,
+      metadata->>'experience',
+      metadata->>'experience',
+      coalesce((metadata->>'open_to_travel')::boolean, false),
+      'applied'
+    )
+    returning id into ambassador_profile_id;
+
+    if jsonb_typeof(metadata->'travel_regions') = 'array' then
+      for travel_region_slug in
+        select jsonb_array_elements_text(metadata->'travel_regions')
+      loop
+        insert into public.ambassador_travel_regions (
+          ambassador_profile_id,
+          region_id
+        )
+        select
+          ambassador_profile_id,
+          id
+        from public.regions
+        where slug = travel_region_slug
+        on conflict do nothing;
+      end loop;
+    end if;
+
+    perform public.notify_staff_about_ambassador_application(
+      ambassador_profile_id,
+      coalesce(metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1))
+    );
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_auth_user();

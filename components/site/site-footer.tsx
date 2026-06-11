@@ -3,8 +3,9 @@ import { ArrowRight, Instagram, Linkedin, Mail, Youtube } from "lucide-react";
 
 import { BrandLockup } from "@/components/site/brand-lockup";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function SiteFooter() {
+export function SiteFooter({ compact = false }: { compact?: boolean }) {
   const socialLinks = [
     {
       href: "https://instagram.com/esports_nz",
@@ -33,7 +34,14 @@ export function SiteFooter() {
       id="contact"
       className="border-t border-[rgba(4,15,75,0.08)] bg-[linear-gradient(180deg,rgba(247,250,252,0.66),rgba(238,247,252,0.94))]"
     >
-      <div className="site-shell grid gap-10 py-[clamp(3rem,6vw,5rem)] lg:grid-cols-[1.1fr_0.7fr_0.7fr_1fr]">
+      <div
+        className={cn(
+          "site-shell grid lg:grid-cols-[1.1fr_0.7fr_0.7fr_1fr]",
+          compact
+            ? "gap-6 py-[clamp(1rem,1.8vw,1.45rem)]"
+            : "gap-10 py-[clamp(3rem,6vw,5rem)]"
+        )}
+      >
         <div id="about">
           <BrandLockup />
           <p className="mt-4 max-w-sm text-sm leading-7 text-[color:var(--text-soft)]">
@@ -103,7 +111,12 @@ export function SiteFooter() {
       </div>
 
       <div className="border-t border-[rgba(4,15,75,0.08)]">
-        <div className="site-shell flex flex-col gap-2 py-4 text-sm text-[color:var(--text-soft)] md:flex-row md:items-center md:justify-between">
+        <div
+          className={cn(
+            "site-shell flex flex-col gap-2 text-sm text-[color:var(--text-soft)] md:flex-row md:items-center md:justify-between",
+            compact ? "py-3" : "py-4"
+          )}
+        >
           <p>&copy; 2026 NZ Esports. All rights reserved.</p>
           <p>Proudly designed for school presentation operations in Aotearoa New Zealand.</p>
         </div>

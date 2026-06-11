@@ -10,6 +10,21 @@ type CalendarEventInput = {
   location: string;
 };
 
+function toGraphNzDateTime(value: string) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  })
+    .format(new Date(value))
+    .replace(" ", "T");
+}
+
 async function getGraphToken() {
   const params = new URLSearchParams({
     client_id: config.microsoftClientId as string,
@@ -44,9 +59,11 @@ export async function createOutlookCalendarEvent(input: CalendarEventInput) {
   }
 
   const token = await getGraphToken();
+  const userId = encodeURIComponent(config.microsoftUserId as string);
+  const calendarId = encodeURIComponent(config.microsoftCalendarId as string);
 
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/me/calendars/${config.microsoftCalendarId}/events`,
+    `https://graph.microsoft.com/v1.0/users/${userId}/calendars/${calendarId}/events`,
     {
       method: "POST",
       headers: {
@@ -60,11 +77,11 @@ export async function createOutlookCalendarEvent(input: CalendarEventInput) {
           content: input.description
         },
         start: {
-          dateTime: input.startsAt,
+          dateTime: toGraphNzDateTime(input.startsAt),
           timeZone: "Pacific/Auckland"
         },
         end: {
-          dateTime: input.endsAt,
+          dateTime: toGraphNzDateTime(input.endsAt),
           timeZone: "Pacific/Auckland"
         },
         location: {

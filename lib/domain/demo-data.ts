@@ -440,7 +440,13 @@ export const reportSummaries: ReportSummary[] = [
     presentationTitle: "Digital Wellbeing",
     submittedAt: "2026-06-19T02:00:00.000Z",
     attendeeCount: 168,
-    status: "submitted"
+    status: "submitted",
+    ambassadorName: "Alex Tane",
+    teacherResponseRating: 5,
+    presentationFeedback:
+      "Students were engaged throughout and the wellbeing discussion opened up useful questions from Year 9 and 10.",
+    yearLevels: "Years 9 to 10",
+    sessionStartsAt: "2026-06-18T09:00:00.000Z"
   },
   {
     id: "report-2",
@@ -448,7 +454,13 @@ export const reportSummaries: ReportSummary[] = [
     presentationTitle: "Esports Pathways",
     submittedAt: "2026-05-30T00:30:00.000Z",
     attendeeCount: 104,
-    status: "reviewed"
+    status: "reviewed",
+    ambassadorName: "Mia Rangi",
+    teacherResponseRating: 4,
+    presentationFeedback:
+      "The pathways examples worked well. A follow-up resource for teachers would make the session easier to extend in class.",
+    yearLevels: "Years 7 to 8",
+    sessionStartsAt: "2026-05-29T10:00:00.000Z"
   }
 ];
 

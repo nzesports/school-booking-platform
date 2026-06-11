@@ -11,13 +11,20 @@ import {
   UsersRound
 } from "lucide-react";
 
+import { AuthModalButton } from "@/components/auth/auth-modal-trigger";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
 import { ButtonLink } from "@/components/ui/button";
-import { testimonials } from "@/lib/domain/demo-data";
 import { config } from "@/lib/env";
-import { listPublicPresentations, listRegions } from "@/lib/services/presentations";
+import { loadAvailabilityConfig } from "@/lib/services/availability-server";
+import {
+  listHomepageSections,
+  listPublicPresentations,
+  listPublicTestimonials,
+  listRegions
+} from "@/lib/services/presentations";
+import { sanitizeRichText } from "@/lib/services/sanitize";
 
 const howItWorks = [
   {
@@ -53,11 +60,20 @@ const highlights = [
 ];
 
 export default async function HomePage() {
-  const [presentations, regions] = await Promise.all([
+  const [presentations, regions, homepageSections, testimonials, availabilityConfig] = await Promise.all([
     listPublicPresentations(),
-    listRegions()
+    listRegions(),
+    listHomepageSections(),
+    listPublicTestimonials(8),
+    loadAvailabilityConfig(21)
   ]);
   const showDemoFeedbackNote = !config.isSupabaseConfigured;
+  const homepageSectionMap = new Map(
+    homepageSections.map((section) => [section.sectionKey, section])
+  );
+  const heroSection = homepageSectionMap.get("hero");
+  const howItWorksSection = homepageSectionMap.get("how_it_works");
+  const ctaSection = homepageSectionMap.get("cta");
 
   return (
     <main className="public-stack">
@@ -71,13 +87,26 @@ export default async function HomePage() {
             <div className="max-w-3xl py-4">
               <span className="section-kicker">School presentations</span>
               <h1 className="mt-6 text-5xl font-semibold leading-[0.97] tracking-[-0.06em] text-[color:var(--navy)] md:text-7xl">
-                Inspiring the next generation through{" "}
-                <span className="text-[color:var(--green)]">esports.</span>
+                {heroSection?.title ? (
+                  heroSection.title
+                ) : (
+                  <>
+                    Inspiring the next generation through{" "}
+                    <span className="text-[color:var(--green)]">esports.</span>
+                  </>
+                )}
               </h1>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-[color:var(--text-soft)]">
-                Curriculum-aligned, engaging presentations that educate, inspire, and empower
-                students to thrive in the digital age.
-              </p>
+              {heroSection?.body ? (
+                <div
+                  className="rich-text-prose mt-6 max-w-2xl text-lg leading-8 text-[color:var(--text-soft)]"
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichText(heroSection.body) }}
+                />
+              ) : (
+                <p className="mt-6 max-w-2xl text-lg leading-8 text-[color:var(--text-soft)]">
+                  Curriculum-aligned, engaging presentations that educate, inspire, and empower
+                  students to thrive in the digital age.
+                </p>
+              )}
 
               <div className="mt-10 flex flex-wrap gap-3">
                 {highlights.map(({ label, icon: Icon }) => (
@@ -98,6 +127,7 @@ export default async function HomePage() {
           <HeroBookingWidget
             presentations={presentations}
             regions={regions}
+            availabilityConfig={availabilityConfig}
           />
         </div>
       </section>
@@ -144,15 +174,22 @@ export default async function HomePage() {
           <div className="grid gap-12 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-center">
             <div className="max-w-sm">
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                How it works
+                {howItWorksSection?.subtitle ?? "How it works"}
               </p>
               <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                Simple steps to bring NZ Esports to your school.
+                {howItWorksSection?.title ?? "Simple steps to bring NZ Esports to your school."}
               </h2>
-              <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                A straightforward booking flow for schools, from choosing the right topic to
-                delivering a session that lands well with students.
-              </p>
+              {howItWorksSection?.body ? (
+                <div
+                  className="rich-text-prose mt-4 text-base leading-8 text-[color:var(--text-soft)]"
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichText(howItWorksSection.body) }}
+                />
+              ) : (
+                <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
+                  A straightforward booking flow for schools, from choosing the right topic to
+                  delivering a session that lands well with students.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-8 md:grid-cols-4">
@@ -242,17 +279,25 @@ export default async function HomePage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                Book a presentation
+                {ctaSection?.subtitle ?? "Book a presentation"}
               </p>
               <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                Inspire your students with a session designed for real school contexts.
+                {ctaSection?.title ??
+                  "Inspire your students with a session designed for real school contexts."}
               </h2>
-              <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                Presentations are delivered by NZ Esports, the national sporting organisation
-                for esports in New Zealand. Spaces fill fast, especially for grouped school
-                visits and preferred time slots, so start the booking flow now and we&apos;ll
-                take it from there.
-              </p>
+              {ctaSection?.body ? (
+                <div
+                  className="rich-text-prose mt-4 text-base leading-8 text-[color:var(--text-soft)]"
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichText(ctaSection.body) }}
+                />
+              ) : (
+                <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
+                  Presentations are delivered by NZ Esports, the national sporting organisation for
+                  esports in New Zealand. Spaces fill fast, especially for grouped school visits and
+                  preferred time slots, so start the booking flow now and we&apos;ll take it from
+                  there.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -260,13 +305,20 @@ export default async function HomePage() {
                 Book a Presentation
                 <ArrowRight className="h-4 w-4" />
               </BookPresentationButton>
-              <ButtonLink
-                href="mailto:schools@esf.nz"
+              <AuthModalButton
+                mode="signup"
+                role="school"
+                className="min-h-[48px] rounded-[16px] px-5 py-2.5"
+              >
+                Create portal account
+              </AuthModalButton>
+              <AuthModalButton
+                mode="login"
                 variant="secondary"
                 className="min-h-[48px] rounded-[16px] px-5 py-2.5"
               >
-                Email us
-              </ButtonLink>
+                Log in
+              </AuthModalButton>
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { BookPresentationButton } from "@/components/site/book-presentation-butt
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getPresentationBySlug } from "@/lib/services/presentations";
+import { sanitizeRichText } from "@/lib/services/sanitize";
 
 export default async function PresentationDetailPage({
   params
@@ -27,9 +28,12 @@ export default async function PresentationDetailPage({
           <h1 className="mt-6 text-5xl font-semibold tracking-[-0.06em] text-[color:var(--navy)] md:text-6xl">
             {presentation.title}
           </h1>
-          <p className="mt-5 max-w-3xl text-lg leading-8 text-[color:var(--text-soft)]">
-            {presentation.fullDescription}
-          </p>
+          <div
+            className="rich-text-prose mt-5 max-w-3xl text-lg leading-8 text-[color:var(--text-soft)]"
+            dangerouslySetInnerHTML={{
+              __html: sanitizeRichText(presentation.fullDescription)
+            }}
+          />
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             <DetailStat

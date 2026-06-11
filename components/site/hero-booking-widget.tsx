@@ -8,7 +8,11 @@ import type { HeroBookingDraftSession } from "@/components/site/hero-booking-mod
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import type { PresentationType, Region } from "@/lib/domain/types";
-import { buildAvailabilitySlots, nextBookableDates } from "@/lib/services/availability";
+import {
+  type AvailabilityConfig,
+  buildAvailabilitySlots,
+  nextBookableDates
+} from "@/lib/services/availability";
 
 export function HeroBookingWidget({
   presentations,
@@ -17,6 +21,7 @@ export function HeroBookingWidget({
   initialRegionSlug,
   initialDate,
   initialTime,
+  availabilityConfig,
   mode = "homepage"
 }: {
   presentations: PresentationType[];
@@ -25,14 +30,15 @@ export function HeroBookingWidget({
   initialRegionSlug?: string;
   initialDate?: string;
   initialTime?: string;
+  availabilityConfig?: AvailabilityConfig;
   mode?: "homepage" | "page";
 }) {
   const bookingModal = useBookingModal();
-  const dates = nextBookableDates(21);
+  const dates = nextBookableDates(21, availabilityConfig);
   const firstDate = dates.includes(initialDate ?? "") ? (initialDate as string) : dates[0] ?? "";
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
-  const initialSlots = buildAvailabilitySlots(firstDate);
+  const initialSlots = buildAvailabilitySlots(firstDate, availabilityConfig);
   const preferredInitialTime = initialTime
     ? normalizeTimeToSlot(initialTime, initialSlots)
     : { startTime: "", label: "" };
@@ -91,7 +97,7 @@ export function HeroBookingWidget({
 
       <div className="mt-6 grid gap-3">
         {sessions.map((session, index) => {
-          const timeOptions = buildAvailabilitySlots(session.date);
+          const timeOptions = buildAvailabilitySlots(session.date, availabilityConfig);
 
           return (
             <div
@@ -169,7 +175,7 @@ export function HeroBookingWidget({
                             return item;
                           }
 
-                          const nextTimeOptions = buildAvailabilitySlots(event.target.value);
+                          const nextTimeOptions = buildAvailabilitySlots(event.target.value, availabilityConfig);
                           const normalized = normalizeTimeToSlot(item.startTime, nextTimeOptions);
 
                           return {
@@ -302,7 +308,7 @@ export function HeroBookingWidget({
 
               bookingModal.openBooking({
                 initialStep: "review",
-                sessions: normalizeSessions(sessions)
+                sessions: normalizeSessions(sessions, availabilityConfig)
               });
             }}
             className="min-h-[50px] rounded-[18px] px-5 py-2.5"
@@ -369,13 +375,13 @@ function createDraftSession({
   };
 }
 
-function normalizeSessions(current: HeroBookingDraftSession[]) {
+function normalizeSessions(current: HeroBookingDraftSession[], availabilityConfig?: AvailabilityConfig) {
   return current.map((session) => {
     if (!session.timeText && !session.startTime) {
       return session;
     }
 
-    const timeOptions = buildAvailabilitySlots(session.date);
+    const timeOptions = buildAvailabilitySlots(session.date, availabilityConfig);
     const normalized = normalizeTimeToSlot(session.timeText || session.startTime, timeOptions);
 
     return {

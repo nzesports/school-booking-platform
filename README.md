@@ -43,6 +43,18 @@ npm run dev
 
 If Supabase is not configured, the app runs in demo mode and renders seeded operational data. That makes the route structure and UI reviewable immediately.
 
+## Environment
+
+Copy `.env.example` to `.env.local` and fill the values you use:
+
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` enable live Supabase auth/data/storage.
+- `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` enable transactional email.
+- `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, `MICROSOFT_GRAPH_CLIENT_SECRET`, `MICROSOFT_GRAPH_CALENDAR_ID`, and `MICROSOFT_GRAPH_USER_ID` enable Outlook calendar sync.
+
+The Microsoft app registration needs `Calendars.ReadWrite` application permission with admin consent. `MICROSOFT_GRAPH_USER_ID` should be the UPN or object id of the shared mailbox/user that owns the configured calendar.
+
+Uploads are capped at 25MB. Public assets accept PNG, JPG/JPEG, and WebP; private resource files additionally accept PDF, PowerPoint, Word, and TXT.
+
 ## Supabase setup
 
 Apply the database contract from the `supabase` folder:
@@ -60,7 +72,7 @@ The schema includes:
 
 ## Route map
 
-- Public: `/`, `/presentations`, `/presentations/[slug]`, `/book`, `/book/[presentationSlug]`, `/ambassador-signup`, `/login`, `/magic-link`
+- Public: `/`, `/presentations`, `/presentations/[slug]`, `/book`, `/book/[presentationSlug]`, `/ambassador-signup`, `/login`
 - School: `/school`, `/school/bookings`, `/school/resources`, `/school/review/[bookingSessionId]`
 - Ambassador: `/ambassador`, `/ambassador/open-bookings`, `/ambassador/upcoming`, `/ambassador/reports/[bookingSessionId]/new`, `/ambassador/earnings`, `/ambassador/training`
 - Staff: `/staff`, `/staff/bookings`, `/staff/schools`, `/staff/ambassadors`, `/staff/reports`, `/staff/media`, `/staff/payments`

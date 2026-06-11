@@ -103,6 +103,88 @@ values
   ('Default school hours Thursday', 'global', 4, '08:00', '16:00', 60, true),
   ('Default school hours Friday', 'global', 5, '08:00', '16:00', 60, true);
 
+insert into public.training_modules (
+  title,
+  description,
+  sort_order,
+  is_required,
+  is_published,
+  is_active
+)
+select
+  'Platform Orientation',
+  'Learn how to use the ambassador portal, submit reports, and manage your schedule.',
+  1,
+  true,
+  true,
+  true
+where not exists (
+  select 1 from public.training_modules where title = 'Platform Orientation'
+);
+
+insert into public.training_modules (
+  title,
+  description,
+  sort_order,
+  is_required,
+  is_published,
+  is_active
+)
+select
+  'Delivery Best Practices',
+  'Tips and techniques for delivering engaging presentations to school students.',
+  2,
+  true,
+  true,
+  true
+where not exists (
+  select 1 from public.training_modules where title = 'Delivery Best Practices'
+);
+
+insert into public.training_lessons (
+  training_module_id,
+  title,
+  lesson_type,
+  youtube_url,
+  sort_order
+)
+select
+  tm.id,
+  'Portal walkthrough',
+  'video',
+  'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  1
+from public.training_modules tm
+where tm.title = 'Platform Orientation'
+  and not exists (
+    select 1
+    from public.training_lessons tl
+    where tl.training_module_id = tm.id
+      and tl.title = 'Portal walkthrough'
+  );
+
+insert into public.training_lessons (
+  training_module_id,
+  title,
+  lesson_type,
+  youtube_url,
+  sort_order
+)
+select
+  tm.id,
+  'Engaging a room',
+  'video',
+  'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  1
+from public.training_modules tm
+where tm.title = 'Delivery Best Practices'
+  and not exists (
+    select 1
+    from public.training_lessons tl
+    where tl.training_module_id = tm.id
+      and tl.title = 'Engaging a room'
+  );
+
 insert into public.settings (setting_key, setting_value)
 values
   (
@@ -167,22 +249,29 @@ values
   (
     'booking_request_received',
     'School booking request received',
-    'We have received your presentation request',
-    '<p>Thanks for your booking request. Our team will review availability and follow up shortly.</p>',
-    'Thanks for your booking request. Our team will review availability and follow up shortly.'
+    'We have received your presentation request, {{contactName}}',
+    '<p>Hi {{contactName}},</p><p>Thanks for your booking request for <strong>{{schoolName}}</strong>.</p><p>Your reference number is <strong>{{bookingId}}</strong>. Our team will review availability and follow up shortly.</p>',
+    'Hi {{contactName}}, thanks for your booking request for {{schoolName}}. Reference: {{bookingId}}.'
   ),
   (
     'school_booking_confirmed',
     'School booking confirmed',
     'Your NZ Esports presentation has been confirmed',
-    '<p>Your booking has been confirmed. We will send final session details and ambassador information next.</p>',
-    'Your booking has been confirmed. We will send final session details and ambassador information next.'
+    '<p>Hi {{contactName}},</p><p>Your <strong>{{presentationTitle}}</strong> session for <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong> has been confirmed.</p>',
+    'Hi {{contactName}}, your {{presentationTitle}} session for {{schoolName}} on {{sessionDate}} has been confirmed.'
+  ),
+  (
+    'school_booking_cancelled',
+    'School booking cancelled',
+    'Your NZ Esports presentation has been cancelled',
+    '<p>Hi {{contactName}},</p><p>Your <strong>{{presentationTitle}}</strong> session for <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong> has been cancelled.</p>',
+    'Hi {{contactName}}, your {{presentationTitle}} session for {{schoolName}} on {{sessionDate}} has been cancelled.'
   ),
   (
     'ambassador_assignment_confirmation',
     'Ambassador assignment confirmation',
-    'You have been assigned to a new school presentation',
-    '<p>You have been assigned to a new school presentation. Please review the session details in your ambassador dashboard.</p>',
-    'You have been assigned to a new school presentation. Please review the session details in your ambassador dashboard.'
+    'Session confirmed: {{presentationTitle}} at {{schoolName}}',
+    '<p>Hi {{ambassadorName}},</p><p>You have been assigned to deliver <strong>{{presentationTitle}}</strong> at <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong>.</p><p>Location: {{sessionAddress}}</p>',
+    'Hi {{ambassadorName}}, you have been assigned to deliver {{presentationTitle}} at {{schoolName}} on {{sessionDate}}. Location: {{sessionAddress}}.'
   )
 on conflict (template_key) do nothing;

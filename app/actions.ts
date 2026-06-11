@@ -1,12 +1,10 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
-
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { submitAmbassadorSignup, submitBookingRequest } from "@/lib/services/bookings";
+import { submitBookingRequest } from "@/lib/services/bookings";
 
 const bookingSchema = z.object({
   schoolName: z.string().min(2),
@@ -29,9 +27,14 @@ const bookingSchema = z.object({
       })
     )
     .min(1)
+    .max(5)
 });
 
 export async function submitBookingRequestAction(formData: FormData) {
+  if (String(formData.get("website2") || "").trim()) {
+    redirect("/booking/confirmation/received");
+  }
+
   const count = Number(formData.get("sessionsCount") || 0);
   const firstSessionRegion = String(formData.get("session-0-regionSlug") || "");
 
@@ -63,33 +66,4 @@ export async function submitBookingRequestAction(formData: FormData) {
   const booking = await submitBookingRequest(parsed);
   revalidatePath("/staff");
   redirect(`/booking/confirmation/${booking.id}`);
-}
-
-export async function submitAmbassadorSignupAction(formData: FormData) {
-  const result = await submitAmbassadorSignup({
-    fullName: String(formData.get("fullName") || ""),
-    email: String(formData.get("email") || ""),
-    phone: String(formData.get("phone") || ""),
-    regionSlug: String(formData.get("regionSlug") || ""),
-    experience: String(formData.get("experience") || ""),
-    openToTravel: formData.get("openToTravel") === "on",
-    travelRegions: String(formData.get("travelRegions") || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean)
-  });
-
-  redirect(`/ambassador-signup?submitted=${result.id}`);
-}
-
-export async function requestMagicLinkAction(formData: FormData) {
-  const email = String(formData.get("email") || "");
-  redirect(`/magic-link?sent=${encodeURIComponent(email)}`);
-}
-
-export async function submitPortalAction(formData: FormData) {
-  const scope = String(formData.get("scope") || "saved");
-  const id = String(formData.get("id") || randomUUID().slice(0, 8));
-
-  redirect(`/${scope}?updated=${id}` as `/${string}`);
 }

@@ -1,5 +1,7 @@
 export type Role = "super_admin" | "staff" | "ambassador" | "school";
 
+export type ProfileStatus = "active" | "inactive";
+
 export type BookingStatus =
   | "requested"
   | "tentative"
@@ -42,11 +44,13 @@ export interface PresentationType {
   title: string;
   shortSummary: string;
   fullDescription: string;
+  contentSnippet?: string;
   durationMinutes: number;
   yearLevels: string;
   deliveryFormats: string[];
   learningOutcomes: string[];
   requiredEquipment: string[];
+  imageUrl?: string;
   active: boolean;
   public: boolean;
 }
@@ -71,10 +75,21 @@ export interface ResourceItem {
   id: string;
   title: string;
   description: string;
-  type: "pdf" | "video" | "slide_deck" | "worksheet";
+  type:
+    | "pdf"
+    | "video"
+    | "slide_deck"
+    | "worksheet"
+    | "image"
+    | "youtube"
+    | "pptx"
+    | "script"
+    | "file";
   audience: "school" | "ambassador" | "staff";
   presentationSlug?: string;
   isCurrent: boolean;
+  downloadUrl?: string;
+  embedUrl?: string;
 }
 
 export interface TrainingLesson {
@@ -101,14 +116,30 @@ export interface School {
   status: "active" | "pending_review";
 }
 
+export interface SchoolFeedbackSummary {
+  id: string;
+  schoolId?: string;
+  schoolName: string;
+  presentationTypeId?: string;
+  presentationTitle: string;
+  quote: string;
+  attribution?: string;
+  rating?: number;
+  createdAt: string;
+  isApproved: boolean;
+  isPublic: boolean;
+}
+
 export interface AmbassadorProfile {
   id: string;
   name: string;
   email: string;
   regionSlug: string;
-  status: "applied" | "approved" | "inactive";
+  status: "applied" | "approved" | "inactive" | "declined";
   openToTravel: boolean;
   travelRegions: string[];
+  experience?: string;
+  referredBy?: string;
   estimatedEarningsCents: number;
   pendingPaymentsCents: number;
   paidPaymentsCents: number;
@@ -116,9 +147,11 @@ export interface AmbassadorProfile {
 
 export interface BookingSessionView {
   id: string;
+  presentationTypeId?: string;
   presentationSlug: string;
   presentationTitle: string;
   regionSlug: string;
+  schoolId?: string;
   schoolName: string;
   startsAt: string;
   endsAt: string;
@@ -139,6 +172,8 @@ export interface BookingRequestView {
   regionSlug: string;
   status: BookingStatus;
   source: "public" | "staff" | "ambassador";
+  schoolNotes?: string;
+  internalNotes?: string;
   createdAt: string;
   sessions: BookingSessionView[];
 }
@@ -162,16 +197,6 @@ export interface BookingRequestInput {
   schoolNotes?: string;
   marketingConsent: boolean;
   sessions: BookingSessionDraft[];
-}
-
-export interface AmbassadorSignupInput {
-  fullName: string;
-  email: string;
-  phone: string;
-  regionSlug: string;
-  experience: string;
-  openToTravel: boolean;
-  travelRegions: string[];
 }
 
 export interface AvailabilitySlot {
@@ -200,6 +225,15 @@ export interface DashboardMetric {
   tone?: "green" | "blue" | "amber" | "navy" | "violet";
 }
 
+export interface BookingActivityLogSummary {
+  bookingRequestId?: string;
+  bookingSessionId?: string;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+  actorType?: string;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -219,11 +253,20 @@ export interface PaymentRecord {
 
 export interface ReportSummary {
   id: string;
+  schoolId?: string;
   schoolName: string;
+  presentationTypeId?: string;
   presentationTitle: string;
   submittedAt: string;
   attendeeCount: number;
   status: ReportStatus;
+  ambassadorName?: string;
+  teacherResponseRating?: number;
+  studentEngagementRating?: number;
+  notableQuestions?: string;
+  presentationFeedback?: string;
+  yearLevels?: string;
+  sessionStartsAt?: string;
 }
 
 export interface AuditLogEntry {
@@ -239,4 +282,38 @@ export interface EmailTemplateSummary {
   key: string;
   subject: string;
   status: "active" | "draft";
+  bodyHtml?: string;
+  bodyText?: string;
+}
+
+export interface PortalNotification {
+  id: string;
+  title: string;
+  body: string;
+  notificationType: string;
+  relatedUrl?: string;
+  readAt?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+}
+
+export interface HomepageSectionRecord {
+  id: string;
+  sectionKey: string;
+  title?: string;
+  subtitle?: string;
+  body?: string;
+  imageUrl?: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  fullName: string;
+  role: Role;
+  status: ProfileStatus;
+  phone?: string;
+  createdAt?: string;
 }

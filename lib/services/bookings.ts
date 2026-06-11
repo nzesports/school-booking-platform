@@ -2,33 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  ambassadors,
-  bookingRequests,
-  presentations,
-  schools
-} from "@/lib/domain/demo-data";
-import type {
-  AmbassadorSignupInput,
-  BookingRequestInput,
-  BookingRequestView
-} from "@/lib/domain/types";
-import { slugify } from "@/lib/utils";
-
-export async function listBookingRequests() {
-  return bookingRequests;
-}
-
-export async function getBookingRequestById(id: string) {
-  return bookingRequests.find((booking) => booking.id === id) ?? null;
-}
-
-export async function listOpenAmbassadorSessions() {
-  return bookingRequests.flatMap((booking) =>
-    booking.sessions.filter((session) =>
-      ["ambassador_needed", "ambassador_applied"].includes(session.status)
-    )
-  );
-}
+  getAdminPortalData as getLiveAdminPortalData,
+  getAmbassadorPortalData as getLiveAmbassadorPortalData,
+  getSchoolPortalData as getLiveSchoolPortalData,
+  getStaffPortalData as getLiveStaffPortalData
+} from "@/lib/services/portal";
+import type { BookingRequestInput } from "@/lib/domain/types";
+import { sendBookingRequestReceivedEmail } from "@/lib/services/email-triggers";
+import { notifyStaff } from "@/lib/services/notifications";
+import { nzDateTimeToIso, slugify } from "@/lib/utils";
 
 export async function submitBookingRequest(input: BookingRequestInput) {
   const admin = createAdminClient();
@@ -44,10 +26,17 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   const schoolSlug = slugify(input.schoolName);
   const now = new Date().toISOString();
 
+  const { data: region } = await admin
+    .from("regions")
+    .select("id")
+    .eq("slug", regionSlug)
+    .maybeSingle();
+  const resolvedRegionId = (region?.id as string | undefined) ?? null;
+
   const { data: existingSchool } = await admin
     .from("schools")
     .select("id")
-    .eq("name", input.schoolName)
+    .ilike("name", input.schoolName)
     .maybeSingle();
 
   let schoolId = existingSchool?.id as string | undefined;
@@ -58,7 +47,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
       .insert({
         name: input.schoolName,
         city: "Pending",
-        region_id: null,
+        region_id: resolvedRegionId,
         status: "pending_review"
       })
       .select("id")
@@ -94,7 +83,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     .insert({
       school_id: schoolId,
       primary_contact_id: contact.id,
-      region_id: null,
+      region_id: resolvedRegionId,
       status: "tentative",
       source: "public",
       school_notes: input.schoolNotes ?? null,
@@ -110,22 +99,47 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   }
 
   for (const session of input.sessions) {
-    const presentation = presentations.find(
-      (item) => item.slug === session.presentationSlug
-    );
+    const { data: presentationType } = await admin
+      .from("presentation_types")
+      .select("id")
+      .eq("slug", session.presentationSlug)
+      .maybeSingle();
 
     await admin.from("booking_sessions").insert({
       booking_request_id: bookingRequest.id,
       school_id: schoolId,
-      region_id: null,
-      presentation_type_id: presentation?.id ?? null,
+      region_id: resolvedRegionId,
+      presentation_type_id: (presentationType?.id as string | undefined) ?? null,
       status: "ambassador_needed",
-      starts_at: `${session.date}T${session.startTime}:00+12:00`,
-      ends_at: `${session.date}T${session.endTime}:00+12:00`,
+      starts_at: nzDateTimeToIso(session.date, session.startTime),
+      ends_at: nzDateTimeToIso(session.date, session.endTime),
       year_levels: session.yearLevels,
       expected_student_count: session.expectedStudentCount
     });
   }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: bookingRequest.id,
+    action: "booking_request.submitted",
+    actor_type: "school",
+    details: {
+      source: "public_form",
+      school_name: input.schoolName
+    }
+  });
+
+  void sendBookingRequestReceivedEmail({
+    contactEmail: input.contactEmail,
+    contactName: input.contactName,
+    schoolName: input.schoolName,
+    bookingId: bookingRequest.id as string
+  }).catch(() => {});
+  void notifyStaff({
+    title: `New booking request from ${input.schoolName}`,
+    body: `${input.contactName} submitted ${input.sessions.length} requested session${input.sessions.length === 1 ? "" : "s"}.`,
+    type: "booking_request_submitted",
+    relatedUrl: "/staff/bookings"
+  }).catch(() => {});
 
   return {
     id: bookingRequest.id as string,
@@ -135,79 +149,18 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   };
 }
 
-export async function submitAmbassadorSignup(input: AmbassadorSignupInput) {
-  const admin = createAdminClient();
-
-  if (!admin) {
-    return {
-      id: `ambassador-${randomUUID().slice(0, 8)}`,
-      mode: "demo" as const
-    };
-  }
-
-  const { data: authUser, error: authError } = await admin.auth.admin.createUser({
-    email: input.email,
-    email_confirm: true,
-    user_metadata: {
-      full_name: input.fullName,
-      role: "ambassador"
-    }
-  });
-
-  if (authError || !authUser.user) {
-    throw authError ?? new Error("Unable to create ambassador user.");
-  }
-
-  await admin.from("profiles").insert({
-    id: authUser.user.id,
-    email: input.email,
-    full_name: input.fullName,
-    phone: input.phone,
-    role: "ambassador",
-    status: "active"
-  });
-
-  await admin.from("ambassador_profiles").insert({
-    user_id: authUser.user.id,
-    bio: input.experience,
-    open_to_travel: input.openToTravel,
-    status: "applied"
-  });
-
-  return {
-    id: authUser.user.id,
-    mode: "supabase" as const
-  };
-}
-
 export async function getSchoolPortalData() {
-  return bookingRequests.filter((booking) => booking.source === "public");
+  return getLiveSchoolPortalData();
 }
 
 export async function getAmbassadorPortalData() {
-  return {
-    ambassador: ambassadors[0],
-    openSessions: await listOpenAmbassadorSessions(),
-    assignedSessions: bookingRequests.flatMap((booking) =>
-      booking.sessions.filter((session) => session.assignedAmbassadorName)
-    )
-  };
+  return getLiveAmbassadorPortalData();
 }
 
 export async function getStaffPortalData() {
-  return {
-    bookings: bookingRequests,
-    schools,
-    ambassadors
-  };
+  return getLiveStaffPortalData();
 }
 
-export async function getAdminPortalData(): Promise<{
-  bookings: BookingRequestView[];
-  presentationsCount: number;
-}> {
-  return {
-    bookings: bookingRequests,
-    presentationsCount: presentations.length
-  };
+export async function getAdminPortalData() {
+  return getLiveAdminPortalData();
 }

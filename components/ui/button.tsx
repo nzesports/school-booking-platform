@@ -14,7 +14,7 @@ const variants = {
     "border-[#f3b4b4] bg-[#fff6f6] text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)] hover:bg-[#fff0f0]"
 } as const;
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: keyof typeof variants;
 };
 

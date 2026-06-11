@@ -9,7 +9,8 @@ const env = {
   microsoftTenantId: process.env.MICROSOFT_GRAPH_TENANT_ID,
   microsoftClientId: process.env.MICROSOFT_GRAPH_CLIENT_ID,
   microsoftClientSecret: process.env.MICROSOFT_GRAPH_CLIENT_SECRET,
-  microsoftCalendarId: process.env.MICROSOFT_GRAPH_CALENDAR_ID
+  microsoftCalendarId: process.env.MICROSOFT_GRAPH_CALENDAR_ID,
+  microsoftUserId: process.env.MICROSOFT_GRAPH_USER_ID
 };
 
 export const config = {
@@ -23,6 +24,7 @@ export const config = {
     env.microsoftTenantId &&
       env.microsoftClientId &&
       env.microsoftClientSecret &&
-      env.microsoftCalendarId
+      env.microsoftCalendarId &&
+      env.microsoftUserId
   )
 };

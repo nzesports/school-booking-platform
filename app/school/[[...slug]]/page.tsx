@@ -1,16 +1,22 @@
 import { BookOpen, CalendarClock, MessageSquare, School2 } from "lucide-react";
 
-import { submitPortalAction } from "@/app/actions";
+import { logoutAction } from "@/app/auth/actions";
+import {
+  requestSchoolBookingChangeAction,
+  submitSchoolReviewAction
+} from "@/app/portal/actions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { MetricGrid } from "@/components/dashboard/metric-grid";
+import { ResourceLibrary } from "@/components/dashboard/resource-library";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { resources } from "@/lib/domain/demo-data";
 import type { DashboardMetric } from "@/lib/domain/types";
-import { getSchoolPortalData } from "@/lib/services/bookings";
+import { requirePortalAccess } from "@/lib/services/auth";
+import { isDeliveredSession } from "@/lib/services/dashboard-insights";
+import { getSchoolPortalData } from "@/lib/services/portal";
 import { formatTime, formatWeekdayDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/status-badge";
 
@@ -18,25 +24,50 @@ const navItems = [
   { href: "/school", label: "Overview", icon: School2 },
   { href: "/school/bookings", label: "Bookings", icon: BookOpen },
   { href: "/school/resources", label: "Resources", icon: CalendarClock },
-  { href: "/school/review/session-1001", label: "Reviews", icon: MessageSquare }
+  { href: "/school/bookings", label: "Reviews", icon: MessageSquare }
 ];
 
 export default async function SchoolPortalPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ slug?: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
-  const bookings = await getSchoolPortalData();
-  const schoolBookings = bookings.filter((booking) =>
-    ["Harbour Secondary College", "Aoraki College"].includes(booking.schoolName)
+  const actor = await requirePortalAccess("school");
+  const portal = await getSchoolPortalData(actor.id);
+  const schoolBookings = portal.bookings;
+  const schoolName = portal.school?.name ?? schoolBookings[0]?.schoolName ?? "School account";
+  const now = new Date();
+  const sessions = schoolBookings.flatMap((booking) => booking.sessions);
+  const activeStatuses = new Set([
+    "tentative",
+    "ambassador_needed",
+    "ambassador_applied",
+    "ambassador_assigned",
+    "confirmed",
+    "reschedule_requested"
+  ]);
+  const activeBookings = schoolBookings.filter((booking) => activeStatuses.has(booking.status));
+  const upcomingSessions = sessions.filter(
+    (session) => new Date(session.startsAt).getTime() > now.getTime() && session.status !== "cancelled"
   );
+  const completedSessions = sessions.filter((session) => isDeliveredSession(session, now));
+  const firstBooking = schoolBookings[0] ?? null;
+  const firstReviewableSession = sessions.find((session) => isDeliveredSession(session, now));
+  const selectedBooking =
+    route.startsWith("bookings/") && slug?.length === 2
+      ? schoolBookings.find((booking) => booking.id === slug[1])
+      : null;
+  const notice = getSchoolNotice(resolvedSearchParams);
 
   const metrics: DashboardMetric[] = [
     {
       label: "Active requests",
-      value: String(schoolBookings.length),
+      value: String(activeBookings.length),
       trend: "Tentative + confirmed",
       detail: "Across your school account",
       icon: "calendar",
@@ -44,25 +75,25 @@ export default async function SchoolPortalPage({
     },
     {
       label: "Upcoming sessions",
-      value: "3",
-      trend: "Across 2 school visits",
+      value: String(upcomingSessions.length),
+      trend: "Across your confirmed and tentative sessions",
       detail: "Confirmed and tentative",
       icon: "clock",
       tone: "blue"
     },
     {
       label: "Resources available",
-      value: "1",
+      value: String(portal.resources.length),
       trend: "School facing",
       detail: "Prep and follow-up materials",
       icon: "file",
       tone: "navy"
     },
     {
-      label: "Recent review score",
-      value: "4.8/5",
-      trend: "Latest delivered session",
-      detail: "Based on recent school feedback",
+      label: "Completed sessions",
+      value: String(completedSessions.length),
+      trend: `${portal.myReviews.length} reviews submitted`,
+      detail: "Delivered sessions and school feedback",
       icon: "star",
       tone: "amber"
     }
@@ -70,7 +101,7 @@ export default async function SchoolPortalPage({
 
   const headline =
     route === ""
-      ? "Welcome back, Jules Morgan"
+      ? `Welcome back, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
         ? "Track tentative and confirmed bookings"
         : route.startsWith("resources")
@@ -89,11 +120,18 @@ export default async function SchoolPortalPage({
         headline={headline}
         subheadline="See your current requests, access session prep materials, and stay aligned with the NZ Esports delivery team."
         dateLabel="Upcoming term"
+        logoutAction={logoutAction}
         profile={{
-          name: "Jules Morgan",
-          subtitle: "Harbour Secondary College"
+          name: actor.fullName,
+          subtitle: schoolName
         }}
       >
+        {notice ? (
+          <Card className="rounded-[24px] border-[#b9e2c7] bg-[#f4fbf6] px-5 py-4 text-sm font-semibold text-[#1d6f35]">
+            {notice}
+          </Card>
+        ) : null}
+
         {route === "" ? (
           <>
             <MetricGrid metrics={metrics} />
@@ -112,6 +150,7 @@ export default async function SchoolPortalPage({
                   <ButtonLink href="/school/bookings" variant="ghost">
                     View all
                   </ButtonLink>
+                  <ButtonLink href="/book">Book another presentation</ButtonLink>
                 </div>
 
                 <div className="mt-6 grid gap-4">
@@ -161,8 +200,7 @@ export default async function SchoolPortalPage({
                     School resources
                   </p>
                   <div className="mt-5 grid gap-4">
-                    {resources
-                      .filter((resource) => resource.audience === "school")
+                    {portal.resources
                       .map((resource) => (
                         <div
                           key={resource.id}
@@ -172,6 +210,11 @@ export default async function SchoolPortalPage({
                           <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
                             {resource.description}
                           </p>
+                          {resource.downloadUrl ? (
+                            <ButtonLink href={resource.downloadUrl} variant="secondary" className="mt-4">
+                              Download
+                            </ButtonLink>
+                          ) : null}
                         </div>
                       ))}
                   </div>
@@ -189,10 +232,27 @@ export default async function SchoolPortalPage({
                     timetable and space requirements.
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <ButtonLink href="/school/review/session-1001">Leave feedback</ButtonLink>
-                    <ButtonLink href="/school/bookings/booking-1001/reschedule" variant="secondary">
-                      Request reschedule
-                    </ButtonLink>
+                    {firstReviewableSession ? (
+                      <ButtonLink href={`/school/review/${firstReviewableSession.id}`}>
+                        Leave feedback
+                      </ButtonLink>
+                    ) : null}
+                    {firstBooking ? (
+                      <>
+                        <ButtonLink
+                          href={`/school/bookings/${firstBooking.id}/reschedule`}
+                          variant="secondary"
+                        >
+                          Request reschedule
+                        </ButtonLink>
+                        <ButtonLink
+                          href={`/school/bookings/${firstBooking.id}/cancel`}
+                          variant="ghost"
+                        >
+                          Request cancellation
+                        </ButtonLink>
+                      </>
+                    ) : null}
                   </div>
                 </Card>
               </div>
@@ -200,20 +260,103 @@ export default async function SchoolPortalPage({
           </>
         ) : null}
 
-        {route === "bookings" || route.startsWith("bookings/") ? (
+        {route === "bookings" ? (
           <DataTable
             title="Booking sessions"
-            columns={["Presentation", "Schedule", "Status", "Ambassador", "Report"]}
+            columns={["Presentation", "Schedule", "Status", "Ambassador", "Actions"]}
             rows={schoolBookings.flatMap((booking) =>
               booking.sessions.map((session) => [
                 session.presentationTitle,
                 `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
                 <StatusBadge key={`${session.id}-status`} value={session.status} />,
                 session.assignedAmbassadorName ?? "Pending assignment",
-                <StatusBadge key={`${session.id}-report`} value={session.reportStatus} />
+                <div key={`${session.id}-actions`} className="flex flex-wrap gap-2">
+                  <ButtonLink href={`/school/bookings/${booking.id}`} variant="secondary">
+                    View details
+                  </ButtonLink>
+                  <ButtonLink href={`/school/bookings/${booking.id}/reschedule`} variant="ghost">
+                    Reschedule
+                  </ButtonLink>
+                  <ButtonLink href={`/school/bookings/${booking.id}/cancel`} variant="ghost">
+                    Cancel
+                  </ButtonLink>
+                  {isDeliveredSession(session, now) ? (
+                    <ButtonLink href={`/school/review/${session.id}`} variant="secondary">
+                      Leave review
+                    </ButtonLink>
+                  ) : null}
+                </div>
               ])
             )}
           />
+        ) : null}
+
+        {selectedBooking ? (
+          <Card className="rounded-[34px]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                  Booking detail
+                </p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+                  {selectedBooking.schoolName}
+                </h2>
+                <p className="mt-2 text-sm text-[color:var(--text-soft)]">
+                  {selectedBooking.primaryContactName} · {selectedBooking.primaryContactEmail}
+                </p>
+              </div>
+              <StatusBadge value={selectedBooking.status} />
+            </div>
+
+            {selectedBooking.schoolNotes ? (
+              <div className="mt-5 rounded-[22px] border border-[color:var(--border-soft)] bg-white/90 px-4 py-4 text-sm leading-7 text-[color:var(--text-soft)]">
+                {selectedBooking.schoolNotes}
+              </div>
+            ) : null}
+
+            <div className="mt-6 grid gap-4">
+              {selectedBooking.sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-[color:var(--text-soft)]">
+                        {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}
+                      </p>
+                      <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                        {session.presentationTitle}
+                      </p>
+                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                        {session.yearLevels} · {session.expectedStudentCount} expected students
+                      </p>
+                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                        Ambassador: {session.assignedAmbassadorName ?? "Pending assignment"}
+                      </p>
+                    </div>
+                    <StatusBadge value={session.status} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <ButtonLink
+                      href={`/school/bookings/${selectedBooking.id}/reschedule`}
+                      variant="secondary"
+                    >
+                      Reschedule
+                    </ButtonLink>
+                    <ButtonLink href={`/school/bookings/${selectedBooking.id}/cancel`} variant="ghost">
+                      Cancel
+                    </ButtonLink>
+                    {isDeliveredSession(session, now) ? (
+                      <ButtonLink href={`/school/review/${session.id}`} variant="secondary">
+                        Leave review
+                      </ButtonLink>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         ) : null}
 
         {route.startsWith("bookings/") && route.endsWith("/reschedule") ? (
@@ -221,9 +364,10 @@ export default async function SchoolPortalPage({
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Request a reschedule
             </h2>
-            <form action={submitPortalAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="scope" value="school" />
-              <input type="hidden" name="id" value={slug?.[1] ?? ""} />
+            <form action={requestSchoolBookingChangeAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingRequestId" value={slug?.[1] ?? ""} />
+              <input type="hidden" name="intent" value="reschedule" />
+              <input type="hidden" name="returnTo" value="/school/bookings" />
               <Input name="preferredDate" type="date" required />
               <Textarea
                 name="notes"
@@ -240,9 +384,10 @@ export default async function SchoolPortalPage({
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Request cancellation
             </h2>
-            <form action={submitPortalAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="scope" value="school" />
-              <input type="hidden" name="id" value={slug?.[1] ?? ""} />
+            <form action={requestSchoolBookingChangeAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingRequestId" value={slug?.[1] ?? ""} />
+              <input type="hidden" name="intent" value="cancel" />
+              <input type="hidden" name="returnTo" value="/school/bookings" />
               <Textarea
                 name="reason"
                 placeholder="Share the reason for the cancellation request."
@@ -256,20 +401,7 @@ export default async function SchoolPortalPage({
         ) : null}
 
         {route === "resources" ? (
-          <div className="grid gap-4">
-            {resources
-              .filter((resource) => resource.audience === "school")
-              .map((resource) => (
-                <Card key={resource.id} className="rounded-[32px]">
-                  <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                    {resource.title}
-                  </h2>
-                  <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                    {resource.description}
-                  </p>
-                </Card>
-              ))}
-          </div>
+          <ResourceLibrary resources={portal.resources} />
         ) : null}
 
         {route.startsWith("review/") ? (
@@ -277,15 +409,22 @@ export default async function SchoolPortalPage({
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Post-session school feedback
             </h2>
-            <form action={submitPortalAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="scope" value="school" />
-              <input type="hidden" name="id" value={slug?.[1] ?? ""} />
-              <Input name="rating" type="number" min={1} max={5} placeholder="5" required />
+            <form action={submitSchoolReviewAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
+              <input type="hidden" name="returnTo" value="/school/bookings" />
+              <div className="grid gap-4 md:grid-cols-[0.45fr_1fr]">
+                <Input name="rating" type="number" min={1} max={5} placeholder="5" required />
+                <Input name="attribution" placeholder="e.g. Careers Lead, Harbour College" required />
+              </div>
               <Textarea
-                name="feedback"
+                name="quote"
                 placeholder="What worked well, and what should we improve next time?"
                 required
               />
+              <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                <input type="checkbox" name="isPublic" />
+                Staff can consider this for public testimonials after review.
+              </label>
               <Button type="submit">Submit feedback</Button>
             </form>
           </Card>
@@ -293,4 +432,36 @@ export default async function SchoolPortalPage({
       </DashboardShell>
     </main>
   );
+}
+
+function getSchoolNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const requested = readSearchParam(searchParams, "requested");
+  const submitted = readSearchParam(searchParams, "submitted");
+  const error = readSearchParam(searchParams, "error");
+
+  if (requested === "reschedule") {
+    return "Reschedule request sent. Staff will review availability and follow up.";
+  }
+
+  if (requested === "cancel") {
+    return "Cancellation request sent. Staff will confirm the next step with you.";
+  }
+
+  if (submitted === "review") {
+    return "Thanks, your school review has been submitted for staff review.";
+  }
+
+  if (error) {
+    return `We could not complete that request: ${error.replaceAll("-", " ")}.`;
+  }
+
+  return null;
+}
+
+function readSearchParam(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
 }
