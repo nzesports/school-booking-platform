@@ -197,6 +197,20 @@ export function isCancelledSession(session: BookingSessionView) {
   return cancelledStatuses.has(session.status);
 }
 
+export function bookingNeedsAction(booking: BookingRequestView) {
+  return (
+    actionStatuses.has(booking.status) ||
+    booking.sessions.some((session) => actionStatuses.has(session.status))
+  );
+}
+
+export function isCompletedBooking(booking: BookingRequestView) {
+  return (
+    ["report_submitted", "paid", "closed"].includes(booking.status) ||
+    (booking.sessions.length > 0 && booking.sessions.every((session) => isDeliveredSession(session)))
+  );
+}
+
 export function isFutureSession(session: BookingSessionView, now = new Date()) {
   return new Date(session.startsAt).getTime() >= now.getTime() && !isCancelledSession(session);
 }
@@ -375,11 +389,7 @@ export function buildRangeMetrics(
     ["confirmed", "ambassador_assigned"].includes(booking.status)
   );
   const cancelledBookings = bookings.filter((booking) => cancelledStatuses.has(booking.status));
-  const completedBookings = bookings.filter(
-    (booking) =>
-      ["report_submitted", "paid", "closed"].includes(booking.status) ||
-      (booking.sessions.length > 0 && booking.sessions.every((session) => isDeliveredSession(session)))
-  );
+  const completedBookings = bookings.filter(isCompletedBooking);
 
   return [
     {

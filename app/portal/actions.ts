@@ -9,20 +9,31 @@ import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
 import {
   sendAmbassadorAssignedEmail,
   sendBookingCancelledEmail,
-  sendBookingConfirmedEmail
+  sendBookingConfirmedEmail,
+  sendInvoiceToFinanceEmail
 } from "@/lib/services/email-triggers";
-import { notifyStaff } from "@/lib/services/notifications";
+import {
+  buildInvoicePdf,
+  generateInvoiceNumber,
+  loadInvoiceDetails
+} from "@/lib/services/invoices";
+import { notifyStaff, notifyUser } from "@/lib/services/notifications";
 import { sanitizeRichText } from "@/lib/services/sanitize";
 import { uploadPrivateResourceFile, uploadPublicAsset } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
+import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
 
-const inviteSchema = z.object({
-  email: z.string().email(),
-  fullName: z.string().min(2),
-  role: z.enum(["staff", "super_admin"])
-});
+const inviteSchema = z
+  .object({
+    email: z.string().email(),
+    fullName: z.string().min(2),
+    role: z.enum(["staff", "super_admin", "ambassador"]),
+    regionSlug: z.string().trim().optional()
+  })
+  .refine((value) => value.role !== "ambassador" || Boolean(value.regionSlug), {
+    message: "Ambassador invites need a primary region."
+  });
 
 const userRoleSchema = z.object({
   userId: z.uuid(),
@@ -237,6 +248,35 @@ const notificationSchema = z.object({
   redirectTo: z.string().min(1)
 });
 
+const nzBankAccountPattern = /^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/;
+
+const ambassadorPaymentDetailsSchema = z.object({
+  bankAccountNumber: z.string().trim().regex(nzBankAccountPattern),
+  gstNumber: z.string().trim().optional(),
+  returnTo: z.string().min(1).default("/ambassador/profile")
+});
+
+const invoiceSubmitSchema = z.object({
+  paymentId: z.uuid(),
+  bankAccountNumber: z.string().trim().regex(nzBankAccountPattern),
+  gstNumber: z.string().trim().optional(),
+  invoiceNotes: z.string().max(2000).optional(),
+  saveToProfile: z.boolean().optional(),
+  returnTo: z.string().min(1).default("/ambassador/earnings")
+});
+
+const sendInvoiceToFinanceSchema = z.object({
+  paymentId: z.uuid(),
+  toEmail: z.string().trim().email(),
+  ccEmail: z.string().optional(),
+  returnTo: z.string().min(1).default("/staff/payments")
+});
+
+const markPaymentPaidSchema = z.object({
+  paymentId: z.uuid(),
+  returnTo: z.string().min(1).default("/staff/payments")
+});
+
 function getAdminClientOrThrow() {
   const admin = createAdminClient();
 
@@ -327,7 +367,8 @@ export async function invitePortalUserAction(formData: FormData) {
   const parsed = inviteSchema.safeParse({
     email: String(formData.get("email") || ""),
     fullName: String(formData.get("fullName") || ""),
-    role: String(formData.get("role") || "")
+    role: String(formData.get("role") || ""),
+    regionSlug: String(formData.get("regionSlug") || "") || undefined
   });
 
   if (!parsed.success) {
@@ -335,11 +376,22 @@ export async function invitePortalUserAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
+  // For ambassador invites the handle_new_auth_user trigger reads this metadata
+  // and creates the ambassador_profiles row (status "applied") plus travel data.
+  const inviteMetadata =
+    parsed.data.role === "ambassador"
+      ? {
+          role: "ambassador",
+          full_name: parsed.data.fullName,
+          region_slug: parsed.data.regionSlug,
+          open_to_travel: false
+        }
+      : {
+          role: parsed.data.role,
+          full_name: parsed.data.fullName
+        };
   const { data: inviteData, error } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
-    data: {
-      role: parsed.data.role,
-      full_name: parsed.data.fullName
-    },
+    data: inviteMetadata,
     redirectTo: buildAuthConfirmUrl("/reset-password")
   });
 
@@ -362,8 +414,60 @@ export async function invitePortalUserAction(formData: FormData) {
     redirect("/admin/users?compose=1&error=invite-role-failed");
   }
 
+  if (parsed.data.role === "ambassador") {
+    let invitedUserId: string | null = inviteData.user?.id ?? null;
+
+    if (!invitedUserId) {
+      const { data: invitedProfile } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("email", parsed.data.email)
+        .maybeSingle();
+      invitedUserId = (invitedProfile?.id as string | undefined) ?? null;
+    }
+
+    const { data: ambassadorProfile } = invitedUserId
+      ? await admin
+          .from("ambassador_profiles")
+          .select("id, status")
+          .eq("user_id", invitedUserId)
+          .maybeSingle()
+      : { data: null };
+
+    if (!ambassadorProfile) {
+      redirect("/admin/users?compose=1&error=invite-ambassador-failed");
+    }
+
+    // Platform-created ambassadors skip the application review queue.
+    const { error: approveError } = await admin
+      .from("ambassador_profiles")
+      .update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: actor.id
+      })
+      .eq("id", ambassadorProfile.id);
+
+    if (approveError) {
+      redirect("/admin/users?compose=1&error=invite-ambassador-failed");
+    }
+
+    await admin
+      .from("notifications")
+      .update({
+        read_at: new Date().toISOString(),
+        resolved_at: new Date().toISOString()
+      })
+      .eq("notification_type", "ambassador_application_submitted")
+      .eq("related_url", `/staff/ambassadors/${ambassadorProfile.id}`)
+      .is("resolved_at", null);
+
+    await logAuditEvent(actor.id, "ambassador.approved", "ambassador_profile", ambassadorProfile.id as string);
+  }
+
   await logAuditEvent(actor.id, "user.invited", "profile");
   revalidatePath("/admin");
+  revalidatePath("/staff");
   redirect("/admin/users?invited=1");
 }
 
@@ -421,6 +525,20 @@ export async function deletePortalUserAction(formData: FormData) {
   redirect(`${parsed.data.returnTo}?deleted=1`);
 }
 
+async function resolveAmbassadorApplicationNotifications(ambassadorProfileId: string) {
+  const admin = getAdminClientOrThrow();
+
+  await admin
+    .from("notifications")
+    .update({
+      read_at: new Date().toISOString(),
+      resolved_at: new Date().toISOString()
+    })
+    .eq("notification_type", "ambassador_application_submitted")
+    .eq("related_url", `/staff/ambassadors/${ambassadorProfileId}`)
+    .is("resolved_at", null);
+}
+
 export async function updateUserRoleAction(formData: FormData) {
   const actor = await requirePortalAccess("super_admin");
   const parsed = userRoleSchema.safeParse({
@@ -437,6 +555,54 @@ export async function updateUserRoleAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
+  const { data: target } = await admin
+    .from("profiles")
+    .select("id, role")
+    .eq("id", parsed.data.userId)
+    .maybeSingle();
+
+  if (!target) {
+    redirect("/admin/users?error=user-not-found");
+  }
+
+  // Grant the ambassador profile before the role flips: an ambassador role
+  // without an approved profile row cannot access the ambassador portal.
+  if (parsed.data.role === "ambassador" && target.role !== "ambassador") {
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", parsed.data.userId)
+      .maybeSingle();
+
+    if (!ambassadorProfile) {
+      const { error: createError } = await admin.from("ambassador_profiles").insert({
+        user_id: parsed.data.userId,
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: actor.id
+      });
+
+      if (createError) {
+        redirect("/admin/users?error=ambassador-sync-failed");
+      }
+    } else if (ambassadorProfile.status !== "approved") {
+      const { error: approveError } = await admin
+        .from("ambassador_profiles")
+        .update({
+          status: "approved",
+          approved_at: new Date().toISOString(),
+          approved_by: actor.id
+        })
+        .eq("id", ambassadorProfile.id);
+
+      if (approveError) {
+        redirect("/admin/users?error=ambassador-sync-failed");
+      }
+
+      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
+    }
+  }
+
   const { error } = await admin
     .from("profiles")
     .update({ role: parsed.data.role })
@@ -446,8 +612,30 @@ export async function updateUserRoleAction(formData: FormData) {
     redirect("/admin/users?error=role-update-failed");
   }
 
+  if (target.role === "ambassador" && parsed.data.role !== "ambassador") {
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", parsed.data.userId)
+      .maybeSingle();
+
+    if (ambassadorProfile && ["approved", "applied"].includes(ambassadorProfile.status as string)) {
+      const { error: deactivateError } = await admin
+        .from("ambassador_profiles")
+        .update({ status: "inactive" })
+        .eq("id", ambassadorProfile.id);
+
+      if (deactivateError) {
+        redirect("/admin/users?error=ambassador-sync-failed");
+      }
+
+      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
+    }
+  }
+
   await logAuditEvent(actor.id, "user.role_updated", "profile", parsed.data.userId);
   revalidatePath("/admin");
+  revalidatePath("/staff");
   redirect("/admin/users?updated=role");
 }
 
@@ -1831,4 +2019,331 @@ export async function saveEmailTemplateAction(formData: FormData) {
   await logAuditEvent(actor.id, "email_template.updated", "email_template", parsed.data.id);
   revalidatePath("/admin");
   redirect("/admin/email-templates?saved=template");
+}
+
+export async function saveAmbassadorPaymentDetailsAction(formData: FormData) {
+  const actor = await requirePortalAccess("ambassador");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/ambassador/profile"),
+    "/ambassador/profile"
+  );
+  const parsed = ambassadorPaymentDetailsSchema.safeParse({
+    bankAccountNumber: String(formData.get("bankAccountNumber") || ""),
+    gstNumber: String(formData.get("gstNumber") || "") || undefined,
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-payment-details"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassadorProfile } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("user_id", actor.id)
+    .maybeSingle();
+
+  if (!ambassadorProfile) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const { error } = await admin
+    .from("ambassador_profiles")
+    .update({
+      bank_account_number: parsed.data.bankAccountNumber,
+      gst_number: parsed.data.gstNumber || null
+    })
+    .eq("id", ambassadorProfile.id);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-details-save-failed"));
+  }
+
+  await logAuditEvent(
+    actor.id,
+    "ambassador.payment_details_updated",
+    "ambassador_profile",
+    ambassadorProfile.id
+  );
+  revalidatePath("/ambassador");
+  redirect(appendSearchParam(parsed.data.returnTo, "saved", "payment-details"));
+}
+
+export async function submitPaymentInvoiceAction(formData: FormData) {
+  const actor = await requirePortalAccess("ambassador");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/ambassador/earnings"),
+    "/ambassador/earnings"
+  );
+  const parsed = invoiceSubmitSchema.safeParse({
+    paymentId: String(formData.get("paymentId") || ""),
+    bankAccountNumber: String(formData.get("bankAccountNumber") || ""),
+    gstNumber: String(formData.get("gstNumber") || "") || undefined,
+    invoiceNotes: String(formData.get("invoiceNotes") || "") || undefined,
+    saveToProfile: formData.get("saveToProfile") === "on",
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-invoice"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassadorProfile } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("user_id", actor.id)
+    .maybeSingle();
+
+  if (!ambassadorProfile) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const { data: payment } = await admin
+    .from("payments")
+    .select("id, booking_session_id, ambassador_profile_id, status, invoice_number")
+    .eq("id", parsed.data.paymentId)
+    .maybeSingle();
+
+  if (!payment || payment.ambassador_profile_id !== ambassadorProfile.id) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-found"));
+  }
+
+  if (payment.status !== "pending" || payment.invoice_number) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-invoiceable"));
+  }
+
+  const submittedAt = new Date();
+  const invoiceNumber = generateInvoiceNumber(payment.id as string, submittedAt);
+  const { error } = await admin
+    .from("payments")
+    .update({
+      status: "invoiced",
+      invoice_number: invoiceNumber,
+      bank_account_number: parsed.data.bankAccountNumber,
+      gst_number: parsed.data.gstNumber || null,
+      invoice_notes: parsed.data.invoiceNotes || null,
+      invoice_submitted_at: submittedAt.toISOString(),
+      updated_by: actor.id
+    })
+    .eq("id", payment.id);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-save-failed"));
+  }
+
+  if (parsed.data.saveToProfile) {
+    await admin
+      .from("ambassador_profiles")
+      .update({
+        bank_account_number: parsed.data.bankAccountNumber,
+        gst_number: parsed.data.gstNumber || null
+      })
+      .eq("id", ambassadorProfile.id);
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_session_id: payment.booking_session_id,
+    action: "payment.invoice_submitted",
+    actor_id: actor.id,
+    actor_type: "ambassador",
+    details: { invoice_number: invoiceNumber }
+  });
+
+  void notifyStaff({
+    title: `Invoice received from ${actor.fullName}`,
+    body: `Invoice ${invoiceNumber} is ready to review and send to finance.`,
+    type: "payment_invoice_submitted",
+    relatedUrl: "/staff/payments"
+  }).catch(() => {});
+
+  await logAuditEvent(actor.id, "payment.invoice_submitted", "payment", payment.id as string);
+  revalidatePath("/ambassador");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "submitted", "invoice"));
+}
+
+export async function sendInvoiceToFinanceAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/payments"),
+    "/staff/payments"
+  );
+  const parsed = sendInvoiceToFinanceSchema.safeParse({
+    paymentId: String(formData.get("paymentId") || ""),
+    toEmail: String(formData.get("toEmail") || ""),
+    ccEmail: String(formData.get("ccEmail") || "") || undefined,
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-finance-email"));
+  }
+
+  const ccEmails = splitCommaList(parsed.data.ccEmail ?? "");
+
+  if (ccEmails.some((email) => !z.string().email().safeParse(email).success)) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-finance-email"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: payment } = await admin
+    .from("payments")
+    .select("id, booking_session_id, status, invoice_number")
+    .eq("id", parsed.data.paymentId)
+    .maybeSingle();
+
+  if (!payment || payment.status !== "invoiced" || !payment.invoice_number) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-not-ready"));
+  }
+
+  const details = await loadInvoiceDetails(payment.id as string);
+
+  if (!details) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-not-ready"));
+  }
+
+  const pdfBytes = await buildInvoicePdf(details);
+  const emailResult = await sendInvoiceToFinanceEmail({
+    toEmail: parsed.data.toEmail,
+    ccEmails,
+    invoiceNumber: details.invoiceNumber,
+    ambassadorName: details.ambassadorName,
+    sessionDescription: details.sessionDescription,
+    amountLabel: formatCurrency(details.amountCents, details.currency),
+    bookingSessionId: details.bookingSessionId,
+    attachment: {
+      name: `${details.invoiceNumber}.pdf`,
+      contentBase64: Buffer.from(pdfBytes).toString("base64")
+    }
+  });
+
+  // Only flip the status once the email is out the door; a hard failure keeps
+  // the invoice retryable. "skipped_unconfigured" still progresses so the flow
+  // works in environments without Brevo keys.
+  if (emailResult.status === "failed") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-email-failed"));
+  }
+
+  const { error } = await admin
+    .from("payments")
+    .update({
+      status: "submitted_for_payment",
+      sent_to_finance_at: new Date().toISOString(),
+      sent_to_email: parsed.data.toEmail,
+      sent_cc_email: ccEmails.length > 0 ? ccEmails.join(", ") : null,
+      updated_by: actor.id
+    })
+    .eq("id", payment.id);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-update-failed"));
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_session_id: payment.booking_session_id,
+    action: "payment.sent_to_finance",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { invoice_number: details.invoiceNumber, sent_to: parsed.data.toEmail }
+  });
+
+  if (details.ambassadorUserId) {
+    void notifyUser(details.ambassadorUserId, {
+      title: "Invoice submitted for payment",
+      body: `The team has submitted your invoice ${details.invoiceNumber} to finance for payment.`,
+      type: "payment_submitted_for_payment",
+      relatedUrl: "/ambassador/earnings"
+    }).catch(() => {});
+  }
+
+  await logAuditEvent(actor.id, "payment.sent_to_finance", "payment", payment.id as string);
+  revalidatePath("/ambassador");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "sent", "invoice"));
+}
+
+export async function markPaymentPaidAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/payments"),
+    "/staff/payments"
+  );
+  const parsed = markPaymentPaidSchema.safeParse({
+    paymentId: String(formData.get("paymentId") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-payment"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: payment } = await admin
+    .from("payments")
+    .select("id, booking_session_id, ambassador_profile_id, status, invoice_number")
+    .eq("id", parsed.data.paymentId)
+    .maybeSingle();
+
+  if (!payment) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-found"));
+  }
+
+  if (!["pending", "eligible", "invoiced", "submitted_for_payment"].includes(payment.status as string)) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-payable"));
+  }
+
+  const { error } = await admin
+    .from("payments")
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      updated_by: actor.id
+    })
+    .eq("id", payment.id);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-update-failed"));
+  }
+
+  await admin
+    .from("booking_sessions")
+    .update({ payment_status: "paid" })
+    .eq("id", payment.booking_session_id);
+
+  await admin.from("booking_activity_logs").insert({
+    booking_session_id: payment.booking_session_id,
+    action: "payment.marked_paid",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { invoice_number: payment.invoice_number }
+  });
+
+  if (payment.ambassador_profile_id) {
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("user_id")
+      .eq("id", payment.ambassador_profile_id)
+      .maybeSingle();
+
+    if (ambassadorProfile?.user_id) {
+      void notifyUser(ambassadorProfile.user_id as string, {
+        title: "Payment sent",
+        body: payment.invoice_number
+          ? `Your invoice ${payment.invoice_number} has been marked as paid.`
+          : "Your session payment has been marked as paid.",
+        type: "payment_paid",
+        relatedUrl: "/ambassador/earnings"
+      }).catch(() => {});
+    }
+  }
+
+  await logAuditEvent(actor.id, "payment.marked_paid", "payment", payment.id as string);
+  revalidatePath("/ambassador");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "paid", "1"));
 }

@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import {
   Bell,
   CalendarDays,
+  CircleDollarSign,
+  ClipboardCheck,
   FileText,
   FolderKanban,
   LayoutTemplate,
@@ -12,7 +14,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
-  Users
+  Users,
+  UsersRound
 } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
@@ -20,6 +23,7 @@ import {
   deletePortalUserAction,
   invitePortalUserAction,
   markNotificationReadAction,
+  reviewAmbassadorAction,
   saveEmailTemplateAction,
   saveHomepageSectionAction,
   savePresentationAction,
@@ -33,6 +37,10 @@ import {
   FeedbackWorkspace,
   SchoolDeliveryDatabase
 } from "@/components/dashboard/operations-views";
+import {
+  PaymentsWorkspace,
+  getPaymentsNotice
+} from "@/components/dashboard/payments-workspace";
 import { ResourceLibrary } from "@/components/dashboard/resource-library";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
@@ -49,13 +57,17 @@ import {
   readBookingLifecycleView,
   readDashboardRange
 } from "@/lib/services/dashboard-insights";
+import { getPaymentSettings } from "@/lib/services/invoices";
 import { getAdminPortalData } from "@/lib/services/portal";
-import { cn, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
+import { cn, formatCurrency, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: SlidersHorizontal },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/schools", label: "Schools", icon: School2 },
+  { href: "/admin/ambassadors", label: "Ambassadors", icon: UsersRound },
+  { href: "/admin/reports", label: "Reports", icon: ClipboardCheck },
+  { href: "/admin/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/roles", label: "Roles", icon: ShieldCheck },
   { href: "/admin/presentations", label: "Presentations", icon: Layers3 },
@@ -93,7 +105,7 @@ export default async function AdminPortalPage({
   const composeOpen = readSearchParam(resolvedSearchParams, "compose") === "1";
   const deleteUserId = readSearchParam(resolvedSearchParams, "delete");
   const directoryUsers = portal.users.filter(
-    (user) => user.role === "staff" || user.role === "super_admin"
+    (user) => user.role === "staff" || user.role === "super_admin" || user.role === "ambassador"
   );
   const selectedDeleteUser = deleteUserId
     ? directoryUsers.find((user) => user.id === deleteUserId)
@@ -150,16 +162,16 @@ export default async function AdminPortalPage({
       }
     : selectedResource;
   const contentNotice = getContentNotice(resolvedSearchParams);
-  const openApplications = portal.ambassadors.filter((ambassador) => ambassador.status === "applied");
   const presentationPerformance = buildPresentationPerformance(
     portal.presentations,
     portal.bookings,
     portal.reports,
     portal.schoolReviews
   );
-  const topPresentationPerformance = [...presentationPerformance].sort(
-    (left, right) => right.deliveredCount - left.deliveredCount
-  )[0];
+  const selectedAmbassador = route.startsWith("ambassadors/")
+    ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
+    : null;
+  const paymentSettings = route === "payments" ? await getPaymentSettings() : null;
   const feedbackReturnTo = presentationFilterId
     ? `/admin/feedback?presentation=${presentationFilterId}`
     : "/admin/feedback";
@@ -171,6 +183,14 @@ export default async function AdminPortalPage({
         ? "Review booking lifecycle and delivery status"
         : route === "schools"
           ? "Track school delivery history and coverage gaps"
+          : route === "ambassadors"
+            ? "Review ambassador applications and payment status"
+            : route.startsWith("ambassadors/")
+              ? "Review ambassador application"
+              : route === "reports"
+                ? "Review submitted session reports"
+                : route === "payments"
+                  ? "Track ambassador invoices and payments"
           : route === "users"
             ? "Manage live access"
             : route === "roles"
@@ -225,169 +245,30 @@ export default async function AdminPortalPage({
         }}
       >
         {route === "" ? (
-          <>
-            <OperationsAnalytics
-              metrics={filteredDashboard.metrics}
-              sourceMetrics={filteredDashboard.sourceMetrics}
-              upcomingSessions={filteredDashboard.upcomingSessions}
-              reports={filteredDashboard.reports}
-              ambassadors={portal.ambassadors}
-              sessions={filteredDashboard.sessions}
-              calendarHref="/admin/activity"
-              calendarActionLabel="View activity"
-              feedbackHref="/admin/feedback"
-              feedbackActionLabel="Open feedback"
-              audienceLabel="platform operations"
-              periodLabel={dashboardRangeLabel(dashboardRange)}
-            />
-
-            <div className="grid gap-6 2xl:grid-cols-[1.12fr_0.88fr]">
-              <Card className="rounded-[34px]">
-                <SectionHeading
-                  kicker="Content health"
-                  title="Presentation catalogue"
-                  actionHref="/admin/presentations"
-                  actionLabel="Manage"
-                />
-                <div className="mt-5 grid gap-4">
-                  {topPresentationPerformance ? (
-                    <div className="rounded-[22px] border border-[color:var(--border-soft)] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)] px-4 py-4">
-                      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                        Performance snapshot
-                      </p>
-                      <p className="mt-2 font-semibold text-[color:var(--navy)]">
-                        {topPresentationPerformance.presentation.title}
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {topPresentationPerformance.deliveredCount} delivered ·{" "}
-                        {topPresentationPerformance.reviewCount} school reviews
-                      </p>
-                    </div>
-                  ) : null}
-                  {portal.presentations.slice(0, 4).map((presentation) => (
-                    <div
-                      key={presentation.id}
-                      className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-[color:var(--navy)]">{presentation.title}</p>
-                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {presentation.yearLevels} · {presentation.durationMinutes} mins
-                          </p>
-                        </div>
-                        <StatusBadge value={presentation.active ? "confirmed" : "cancelled"} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <div className="grid gap-6">
-                <Card className="rounded-[34px]">
-                  <SectionHeading
-                    kicker="Approval queue"
-                    title="Operational actions"
-                    actionHref="/admin/activity"
-                    actionLabel="Open activity"
-                  />
-                  <div className="mt-5 grid gap-4">
-                    <SummaryStat
-                      label="Unread activity"
-                      value={String(portal.notifications.filter((notification) => !notification.readAt).length)}
-                    />
-                    <SummaryStat
-                      label="Pending ambassador approvals"
-                      value={String(openApplications.length)}
-                    />
-                    <SummaryStat
-                      label="Active super admins"
-                      value={String(portal.users.filter((user) => user.role === "super_admin" && user.status === "active").length)}
-                    />
-                  </div>
-                  {openApplications[0] ? (
-                    <ButtonLink
-                      href="/admin/activity"
-                      variant="secondary"
-                      className="mt-5 justify-center"
-                    >
-                      Review latest application
-                    </ButtonLink>
-                  ) : null}
-                </Card>
-
-                <Card className="rounded-[34px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
-                  <SectionHeading
-                    kicker="Platform footprint"
-                    title="Live coverage"
-                    actionHref="/admin/regions"
-                    actionLabel="View regions"
-                  />
-                  <div className="mt-5 grid gap-4 md:grid-cols-2">
-                    <SummaryStat label="Schools in system" value={String(portal.schools.length)} />
-                    <SummaryStat
-                      label="Resources live"
-                      value={String(portal.resources.filter((resource) => resource.isActive).length)}
-                    />
-                    <SummaryStat
-                      label="Email templates"
-                      value={String(portal.emailTemplates.length)}
-                    />
-                    <SummaryStat
-                      label="Active regions"
-                      value={String(portal.regions.filter((region) => region.isActive).length)}
-                    />
-                  </div>
-                </Card>
-              </div>
-            </div>
-
-            <div className="grid gap-6 2xl:grid-cols-[1.05fr_0.95fr]">
-              <Card className="rounded-[34px]">
-                <SectionHeading
-                  kicker="Recent audit activity"
-                  title="Critical admin changes"
-                  actionHref="/admin/audit-logs"
-                  actionLabel="View all"
-                />
-                <div className="mt-5 grid gap-4">
-                  {portal.auditLogs.slice(0, 5).map((log) => (
-                    <div
-                      key={log.id}
-                      className="rounded-[22px] bg-[linear-gradient(135deg,#f7fbff,#f9fcff)] px-4 py-4 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]"
-                    >
-                      <p className="font-semibold text-[color:var(--navy)]">{log.action}</p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {log.entityType} · {log.actor}
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {formatDateTime(log.createdAt)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card className="rounded-[34px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
-                <SectionHeading
-                  kicker="FAQ and support"
-                  title="Homepage support content"
-                  actionHref="/admin/pages-content"
-                  actionLabel="Edit content"
-                />
-                <div className="mt-5 grid gap-4">
-                  {portal.faqs.slice(0, 4).map((faq) => (
-                    <div key={faq.id}>
-                      <p className="font-semibold text-[color:var(--navy)]">{faq.question}</p>
-                      <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                        {faq.answer}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-          </>
+          <OperationsAnalytics
+            basePath="/admin"
+            range={dashboardRange}
+            periodLabel={dashboardRangeLabel(dashboardRange)}
+            bookings={portal.bookings}
+            reports={portal.reports}
+            schoolReviews={portal.schoolReviews}
+            ambassadors={portal.ambassadors}
+            payments={portal.payments}
+            schools={portal.schools}
+            presentations={portal.presentations}
+            regions={portal.regions}
+            resourcesLiveCount={portal.resources.filter((resource) => resource.isActive).length}
+            unreadActivityCount={
+              portal.notifications.filter((notification) => !notification.readAt).length
+            }
+            emailTemplatesCount={portal.emailTemplates.length}
+            activeSuperAdminsCount={
+              portal.users.filter((user) => user.role === "super_admin" && user.status === "active")
+                .length
+            }
+            presentationsHref="/admin/presentations"
+            regionsHref="/admin/regions"
+          />
         ) : null}
 
         {route === "bookings" ? (
@@ -408,6 +289,140 @@ export default async function AdminPortalPage({
             bookings={portal.bookings}
             regions={portal.regions}
             basePath="/admin"
+          />
+        ) : null}
+
+        {route === "ambassadors" ? (
+          <DataTable
+            title="Ambassador pipeline"
+            columns={["Name", "Region", "Travel", "Pending payout", "Status", "Action"]}
+            rows={portal.ambassadors.map((ambassador) => [
+              ambassador.name,
+              ambassador.regionSlug,
+              ambassador.openToTravel
+                ? ambassador.travelRegions.length > 0
+                  ? ambassador.travelRegions.join(", ")
+                  : "Open to travel"
+                : "Local only",
+              ambassador.pendingPaymentsCents > 0
+                ? formatCurrency(ambassador.pendingPaymentsCents)
+                : "—",
+              <StatusBadge
+                key={`${ambassador.id}-status`}
+                value={
+                  ambassador.status === "approved"
+                    ? "confirmed"
+                    : ambassador.status === "declined"
+                      ? "declined"
+                      : "tentative"
+                }
+              />,
+              <ButtonLink
+                key={`${ambassador.id}-action`}
+                href={`/admin/ambassadors/${ambassador.id}`}
+                variant="ghost"
+                className="min-h-[38px] rounded-[14px] px-3 py-1.5"
+              >
+                Review
+              </ButtonLink>
+            ])}
+          />
+        ) : null}
+
+        {selectedAmbassador ? (
+          <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <Card className="rounded-[34px]">
+              <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
+              <div className="mt-6 grid gap-5 md:grid-cols-2">
+                <InfoBlock label="Status" value={titleCase(selectedAmbassador.status)} />
+                <InfoBlock label="Primary region" value={selectedAmbassador.regionSlug} />
+                <InfoBlock label="Email" value={selectedAmbassador.email} />
+                <InfoBlock
+                  label="Referred by"
+                  value={selectedAmbassador.referredBy ?? "Not provided"}
+                />
+                <InfoBlock
+                  label="Travel regions"
+                  value={
+                    selectedAmbassador.travelRegions.length > 0
+                      ? selectedAmbassador.travelRegions.join(", ")
+                      : selectedAmbassador.openToTravel
+                        ? "Open to travel"
+                        : "Local only"
+                  }
+                />
+                <InfoBlock
+                  label="Payments"
+                  value={`${formatCurrency(selectedAmbassador.paidPaymentsCents)} paid · ${formatCurrency(selectedAmbassador.pendingPaymentsCents)} pending`}
+                />
+              </div>
+              <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
+                  Experience
+                </p>
+                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                  {selectedAmbassador.experience ??
+                    "The application details are captured in the ambassador profile and can be expanded further as interviews are completed."}
+                </p>
+              </div>
+            </Card>
+
+            <Card className="rounded-[34px]">
+              <SectionHeading kicker="Admin decision" title="Approve or decline access" />
+              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                Approving this application unlocks ambassador portal access. Declining keeps the
+                account out of the ambassador portal until the application is revisited.
+              </p>
+              <div className="mt-6 grid gap-4">
+                <form action={reviewAmbassadorAction}>
+                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                  <input type="hidden" name="status" value="approved" />
+                  <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                  <button
+                    type="submit"
+                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                  >
+                    Approve ambassador
+                  </button>
+                </form>
+                <form action={reviewAmbassadorAction}>
+                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                  <input type="hidden" name="status" value="declined" />
+                  <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                  <button
+                    type="submit"
+                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                  >
+                    Decline application
+                  </button>
+                </form>
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {route === "reports" ? (
+          <DataTable
+            title="Session reports"
+            columns={["School", "Presentation", "Submitted", "Attendees", "Ambassador", "Status"]}
+            rows={portal.reports.map((report) => [
+              report.schoolName,
+              report.presentationTitle,
+              formatDateTime(report.submittedAt),
+              String(report.attendeeCount),
+              report.ambassadorName ?? "Unassigned",
+              <StatusBadge key={`${report.id}-status`} value={report.status} />
+            ])}
+          />
+        ) : null}
+
+        {route === "payments" ? (
+          <PaymentsWorkspace
+            basePath="/admin"
+            payments={portal.payments}
+            sessions={portal.bookings.flatMap((booking) => booking.sessions)}
+            financeEmail={paymentSettings?.financeEmail ?? "info@esf.nz"}
+            notice={getPaymentsNotice(resolvedSearchParams)}
           />
         ) : null}
 
@@ -459,14 +474,21 @@ export default async function AdminPortalPage({
                       Invite access
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                      Add staff or another super admin
+                      Add staff, super admins, or ambassadors
                     </h3>
+                    <p className="mt-2 text-sm text-[color:var(--text-soft)]">
+                      The invite email lets them set a password. Ambassadors added here are
+                      approved automatically and skip the application queue.
+                    </p>
                   </div>
                   <ButtonLink href="/admin/users" variant="ghost" className="min-h-[40px] px-3 py-2">
                     Dismiss
                   </ButtonLink>
                 </div>
-                <form action={invitePortalUserAction} className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr_220px_auto]">
+                <form
+                  action={invitePortalUserAction}
+                  className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_200px_220px_auto]"
+                >
                   <Field label="Full name">
                     <input
                       name="fullName"
@@ -492,6 +514,23 @@ export default async function AdminPortalPage({
                     >
                       <option value="staff">Staff</option>
                       <option value="super_admin">Super admin</option>
+                      <option value="ambassador">Ambassador</option>
+                    </select>
+                  </Field>
+                  <Field label="Region (ambassadors)">
+                    <select
+                      name="regionSlug"
+                      defaultValue=""
+                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    >
+                      <option value="">Select region</option>
+                      {portal.regions
+                        .filter((region) => region.isActive)
+                        .map((region) => (
+                          <option key={region.id} value={region.slug}>
+                            {region.name}
+                          </option>
+                        ))}
                     </select>
                   </Field>
                   <div className="grid items-end">
@@ -530,7 +569,26 @@ export default async function AdminPortalPage({
                             Current user
                           </span>
                         ) : null}
+                        <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1 text-xs font-semibold text-[color:var(--navy)]">
+                          {titleCase(user.role)}
+                        </span>
+                        {user.role === "ambassador" ? (
+                          <span className="rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#c07a12]">
+                            {user.ambassadorStatus
+                              ? `Ambassador ${user.ambassadorStatus}`
+                              : "Missing ambassador profile"}
+                          </span>
+                        ) : null}
                         <StatusBadge value={user.status === "active" ? "confirmed" : "cancelled"} />
+                        {user.role === "ambassador" && user.ambassadorProfileId ? (
+                          <ButtonLink
+                            href={`/admin/ambassadors/${user.ambassadorProfileId}`}
+                            variant="ghost"
+                            className="min-h-[36px] rounded-[14px] px-3 py-1.5"
+                          >
+                            Review ambassador
+                          </ButtonLink>
+                        ) : null}
                       </div>
                     </div>
                     <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto]">
@@ -547,6 +605,7 @@ export default async function AdminPortalPage({
                           >
                             <option value="staff">Staff</option>
                             <option value="super_admin">Super admin</option>
+                            <option value="ambassador">Ambassador</option>
                           </select>
                           <button
                             type="submit"
@@ -1582,11 +1641,34 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
   const updated = readSearchParam(searchParams, "updated");
 
   if (error === "invalid-invite") {
-    return { tone: "error" as const, message: "Enter a valid name, email, and internal role before sending the invite." };
+    return {
+      tone: "error" as const,
+      message:
+        "Enter a valid name, email, and role before sending the invite. Ambassador invites also need a primary region."
+    };
   }
 
   if (error === "invite-failed") {
-    return { tone: "error" as const, message: "The invite could not be sent. Double-check the email and try again." };
+    return {
+      tone: "error" as const,
+      message:
+        "The invite could not be sent. Double-check the email — if this person already has an account, change their role from the directory below instead."
+    };
+  }
+
+  if (error === "invite-ambassador-failed") {
+    return {
+      tone: "error" as const,
+      message:
+        "The invite email was sent, but the ambassador profile could not be auto-approved. Approve it manually from the Ambassadors page."
+    };
+  }
+
+  if (error === "ambassador-sync-failed") {
+    return {
+      tone: "error" as const,
+      message: "The ambassador profile could not be updated for that role change. Please try again."
+    };
   }
 
   if (error === "invalid-delete" || error === "invalid-delete-confirmation") {
@@ -1666,13 +1748,13 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
   return null;
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
-      <p className="text-sm text-[color:var(--text-soft)]">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-        {value}
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
+        {label}
       </p>
+      <p className="mt-2 text-sm leading-7 text-[color:var(--navy)]">{value}</p>
     </div>
   );
 }

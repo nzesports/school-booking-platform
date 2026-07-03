@@ -32,3 +32,27 @@ export async function notifyStaff(input: {
     }))
   );
 }
+
+export async function notifyUser(
+  userId: string,
+  input: {
+    title: string;
+    body: string;
+    type: string;
+    relatedUrl?: string;
+  }
+) {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return;
+  }
+
+  await admin.from("notifications").insert({
+    user_id: userId,
+    title: input.title,
+    body: input.body,
+    notification_type: input.type,
+    related_url: input.relatedUrl ?? null
+  });
+}

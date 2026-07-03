@@ -230,3 +230,47 @@ export async function sendAmbassadorAssignedEmail(opts: {
   });
   return result;
 }
+
+export async function sendInvoiceToFinanceEmail(opts: {
+  toEmail: string;
+  ccEmails: string[];
+  invoiceNumber: string;
+  ambassadorName: string;
+  sessionDescription: string;
+  amountLabel: string;
+  bookingSessionId: string;
+  attachment: { name: string; contentBase64: string };
+}) {
+  const invoiceNumber = escapeHtml(opts.invoiceNumber);
+  const ambassadorName = escapeHtml(opts.ambassadorName);
+  const sessionDescription = escapeHtml(opts.sessionDescription);
+  const amountLabel = escapeHtml(opts.amountLabel);
+  const template = await renderTemplate("invoice_to_finance", {
+    invoiceNumber: opts.invoiceNumber,
+    ambassadorName: opts.ambassadorName,
+    sessionDescription: opts.sessionDescription,
+    amountLabel: opts.amountLabel
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "invoice_to_finance",
+    recipientEmail: opts.toEmail,
+    cc: opts.ccEmails,
+    attachments: [opts.attachment],
+    subject: template?.subject ?? `Ambassador invoice ${opts.invoiceNumber} - ${opts.ambassadorName}`,
+    html:
+      template?.html ??
+      `
+      <p>Kia ora,</p>
+      <p>Invoice <strong>${invoiceNumber}</strong> from <strong>${ambassadorName}</strong>
+      for <strong>${sessionDescription}</strong> is attached.</p>
+      <p>Amount payable: <strong>${amountLabel}</strong></p>
+      <p>Please process this payment and reply to confirm once complete.</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "finance"
+  });
+  return result;
+}

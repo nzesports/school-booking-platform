@@ -23,6 +23,8 @@ export type PaymentStatus =
   | "not_eligible"
   | "eligible"
   | "pending"
+  | "invoiced"
+  | "submitted_for_payment"
   | "paid";
 
 export type ReportStatus =
@@ -143,6 +145,8 @@ export interface AmbassadorProfile {
   estimatedEarningsCents: number;
   pendingPaymentsCents: number;
   paidPaymentsCents: number;
+  bankAccountNumber?: string;
+  gstNumber?: string;
 }
 
 export interface BookingSessionView {
@@ -249,6 +253,16 @@ export interface PaymentRecord {
   amountCents: number;
   status: PaymentStatus;
   eligibilityReason: string;
+  createdAt: string;
+  paidAt?: string;
+  invoiceNumber?: string;
+  invoiceSubmittedAt?: string;
+  sentToFinanceAt?: string;
+  sentToEmail?: string;
+  sentCcEmail?: string;
+  bankAccountNumber?: string;
+  gstNumber?: string;
+  invoiceNotes?: string;
 }
 
 export interface ReportSummary {
@@ -316,4 +330,6 @@ export interface UserSummary {
   status: ProfileStatus;
   phone?: string;
   createdAt?: string;
+  ambassadorProfileId?: string;
+  ambassadorStatus?: AmbassadorProfile["status"];
 }

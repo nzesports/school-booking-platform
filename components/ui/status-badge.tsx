@@ -15,6 +15,8 @@ const toneMap: Record<string, string> = {
   reschedule_requested: "bg-[#fff3e2] text-[#a85a00]",
   payment_pending: "bg-[#f1edff] text-[#5d41b8]",
   pending: "bg-[#f1edff] text-[#5d41b8]",
+  invoiced: "bg-[#eaf4ff] text-[#145ea8]",
+  submitted_for_payment: "bg-[#f1edff] text-[#5d41b8]",
   paid: "bg-[#eaf8ee] text-[#117a2e]",
   eligible: "bg-[#eef7fc] text-[#2a5f84]",
   not_eligible: "bg-[#f5f7fb] text-[#5a6475]",

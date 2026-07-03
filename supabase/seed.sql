@@ -193,7 +193,7 @@ values
   ),
   (
     'payments',
-    '{"defaultAmountCents":25000,"currency":"NZD","eligibleAttendeeThreshold":100}'::jsonb
+    '{"defaultAmountCents":25000,"currency":"NZD","eligibleAttendeeThreshold":100,"financeEmail":"info@esf.nz"}'::jsonb
   ),
   (
     'branding',
@@ -273,5 +273,12 @@ values
     'Session confirmed: {{presentationTitle}} at {{schoolName}}',
     '<p>Hi {{ambassadorName}},</p><p>You have been assigned to deliver <strong>{{presentationTitle}}</strong> at <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong>.</p><p>Location: {{sessionAddress}}</p>',
     'Hi {{ambassadorName}}, you have been assigned to deliver {{presentationTitle}} at {{schoolName}} on {{sessionDate}}. Location: {{sessionAddress}}.'
+  ),
+  (
+    'invoice_to_finance',
+    'Ambassador invoice to finance',
+    'Ambassador invoice {{invoiceNumber}} - {{ambassadorName}}',
+    '<p>Kia ora,</p><p>Invoice <strong>{{invoiceNumber}}</strong> from <strong>{{ambassadorName}}</strong> for <strong>{{sessionDescription}}</strong> is attached.</p><p>Amount payable: <strong>{{amountLabel}}</strong></p><p>Please process this payment and reply to confirm once complete.</p>',
+    'Invoice {{invoiceNumber}} from {{ambassadorName}} for {{sessionDescription}} is attached. Amount payable: {{amountLabel}}.'
   )
 on conflict (template_key) do nothing;

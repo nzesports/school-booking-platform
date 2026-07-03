@@ -100,6 +100,7 @@ export type AdminPortalData = {
   activityLogs: BookingActivityLogSummary[];
   reports: ReportSummary[];
   schoolReviews: SchoolFeedbackSummary[];
+  payments: PaymentRecord[];
   upcomingSessions: BookingSessionView[];
   users: UserSummary[];
   roles: RoleSummary[];
@@ -183,7 +184,7 @@ async function loadPlatformData() {
       "id, slug, title, short_summary, full_description, content_snippet, year_levels, duration_minutes, delivery_formats, learning_outcomes, required_equipment, is_active, is_public, image_url"
     ),
     admin.from("ambassador_profiles").select(
-      "id, user_id, region_id, status, open_to_travel, experience, referred_by"
+      "id, user_id, region_id, status, open_to_travel, experience, referred_by, bank_account_number, gst_number"
     ),
     admin.from("ambassador_travel_regions").select("ambassador_profile_id, region_id"),
     admin
@@ -198,7 +199,9 @@ async function loadPlatformData() {
       .order("created_at", { ascending: false }),
     admin
       .from("payments")
-      .select("id, booking_session_id, ambassador_profile_id, amount_cents, status, eligibility_reason"),
+      .select(
+        "id, booking_session_id, ambassador_profile_id, amount_cents, status, eligibility_reason, created_at, paid_at, invoice_number, invoice_submitted_at, sent_to_finance_at, sent_to_email, sent_cc_email, bank_account_number, gst_number, invoice_notes"
+      ),
     admin
       .from("presentation_resources")
       .select(
@@ -414,6 +417,9 @@ function mapSchools(data: NonNullable<RawPlatformData>) {
   }));
 }
 
+// Payments still owed to an ambassador: awaiting invoice, invoiced, or with finance.
+const outstandingPaymentStatuses = ["pending", "invoiced", "submitted_for_payment"];
+
 function mapAmbassadors(data: NonNullable<RawPlatformData>) {
   const { profilesById, regionsById } = buildLookups(data);
   const travelRegionsByAmbassador = new Map<string, string[]>();
@@ -449,11 +455,13 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       referredBy: (profile.referred_by as string | null) ?? undefined,
       estimatedEarningsCents: payments.reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
       pendingPaymentsCents: payments
-        .filter((payment) => payment.status === "pending")
+        .filter((payment) => outstandingPaymentStatuses.includes(payment.status as string))
         .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
       paidPaymentsCents: payments
         .filter((payment) => payment.status === "paid")
-        .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0)
+        .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
+      bankAccountNumber: (profile.bank_account_number as string | null) ?? undefined,
+      gstNumber: (profile.gst_number as string | null) ?? undefined
     } satisfies AmbassadorProfile;
   });
 }
@@ -539,7 +547,17 @@ function mapPayments(data: NonNullable<RawPlatformData>) {
       bookingSessionId: payment.booking_session_id as string,
       amountCents: Number(payment.amount_cents ?? 0),
       status: payment.status as PaymentRecord["status"],
-      eligibilityReason: (payment.eligibility_reason as string | null) ?? "Pending review"
+      eligibilityReason: (payment.eligibility_reason as string | null) ?? "Pending review",
+      createdAt: (payment.created_at as string | null) ?? new Date(0).toISOString(),
+      paidAt: (payment.paid_at as string | null) ?? undefined,
+      invoiceNumber: (payment.invoice_number as string | null) ?? undefined,
+      invoiceSubmittedAt: (payment.invoice_submitted_at as string | null) ?? undefined,
+      sentToFinanceAt: (payment.sent_to_finance_at as string | null) ?? undefined,
+      sentToEmail: (payment.sent_to_email as string | null) ?? undefined,
+      sentCcEmail: (payment.sent_cc_email as string | null) ?? undefined,
+      bankAccountNumber: (payment.bank_account_number as string | null) ?? undefined,
+      gstNumber: (payment.gst_number as string | null) ?? undefined,
+      invoiceNotes: (payment.invoice_notes as string | null) ?? undefined
     } satisfies PaymentRecord;
   });
 }
@@ -614,15 +632,25 @@ function mapEmailTemplates(data: NonNullable<RawPlatformData>) {
 }
 
 function mapUsers(data: NonNullable<RawPlatformData>) {
-  return data.profiles.map((profile) => ({
-    id: profile.id as string,
-    email: profile.email as string,
-    fullName: (profile.full_name as string | null) ?? "Unknown user",
-    role: profile.role as Role,
-    status: profile.status as UserSummary["status"],
-    phone: (profile.phone as string | null) ?? undefined,
-    createdAt: (profile.created_at as string | null) ?? undefined
-  })) satisfies UserSummary[];
+  const ambassadorProfilesByUserId = new Map(
+    data.ambassadorProfiles.map((profile) => [profile.user_id as string, profile])
+  );
+
+  return data.profiles.map((profile) => {
+    const ambassadorProfile = ambassadorProfilesByUserId.get(profile.id as string);
+
+    return {
+      id: profile.id as string,
+      email: profile.email as string,
+      fullName: (profile.full_name as string | null) ?? "Unknown user",
+      role: profile.role as Role,
+      status: profile.status as UserSummary["status"],
+      phone: (profile.phone as string | null) ?? undefined,
+      createdAt: (profile.created_at as string | null) ?? undefined,
+      ambassadorProfileId: (ambassadorProfile?.id as string | undefined) ?? undefined,
+      ambassadorStatus: (ambassadorProfile?.status as UserSummary["ambassadorStatus"]) ?? undefined
+    } satisfies UserSummary;
+  });
 }
 
 function mapRoles(data: NonNullable<RawPlatformData>) {
@@ -801,10 +829,10 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
         title: "Pending payments",
         value: formatCurrency(
           payments
-            .filter((payment) => payment.status === "pending")
+            .filter((payment) => outstandingPaymentStatuses.includes(payment.status))
             .reduce((total, payment) => total + payment.amountCents, 0)
         ),
-        detail: "Waiting on finance"
+        detail: "Waiting on invoice or finance"
       }
     ]
   };
@@ -832,6 +860,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
       activityLogs: [],
       reports: demoReports,
       schoolReviews: demoSchoolReviews,
+      payments: demoPayments,
       upcomingSessions: demoBookingRequests.flatMap((booking) => booking.sessions),
       users: [],
       roles: [],
@@ -875,6 +904,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
     activityLogs,
     reports,
     schoolReviews,
+    payments: mapPayments(data),
     upcomingSessions,
     users: mapUsers(data),
     roles: mapRoles(data),

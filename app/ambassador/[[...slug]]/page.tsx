@@ -4,14 +4,17 @@ import {
   Coins,
   FileSpreadsheet,
   GraduationCap,
-  UserRound
+  UserRound,
+  Wallet
 } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
 import {
   applyToSessionAction,
   markTrainingCompleteAction,
-  submitAmbassadorReportAction
+  saveAmbassadorPaymentDetailsAction,
+  submitAmbassadorReportAction,
+  submitPaymentInvoiceAction
 } from "@/app/portal/actions";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
@@ -38,7 +41,8 @@ const navItems = [
   { href: "/ambassador/upcoming", label: "Upcoming", icon: CalendarCheck2 },
   { href: "/ambassador/completed", label: "Completed", icon: FileSpreadsheet },
   { href: "/ambassador/earnings", label: "Earnings", icon: Coins },
-  { href: "/ambassador/training", label: "Training", icon: GraduationCap }
+  { href: "/ambassador/training", label: "Training", icon: GraduationCap },
+  { href: "/ambassador/profile", label: "Profile", icon: Wallet }
 ];
 
 export default async function AmbassadorPortalPage({
@@ -62,6 +66,14 @@ export default async function AmbassadorPortalPage({
     (session) => new Date(session.endsAt).getTime() <= now.getTime() && session.status !== "cancelled"
   );
   const ambassadorPayments = portal.payments;
+  const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
+  const paymentSessionLabel = (bookingSessionId: string) => {
+    const session = sessionsById.get(bookingSessionId);
+    return session ? `${session.presentationTitle} · ${session.schoolName}` : bookingSessionId;
+  };
+  const selectedInvoicePayment = route.startsWith("earnings/invoice/")
+    ? ambassadorPayments.find((payment) => payment.id === slug?.[2]) ?? null
+    : null;
   const selectedReportSessionId = route.startsWith("report/")
     ? slug?.[1]
     : route.startsWith("reports/")
@@ -118,13 +130,17 @@ export default async function AmbassadorPortalPage({
         ? "Review privacy-safe open opportunities"
         : route.startsWith("reports")
           ? "Submit post-session reports"
-          : route === "earnings"
-            ? "Track earnings and payment status"
-            : route === "training" || route.startsWith("training/")
-              ? "Complete training and access resources"
-              : route === "upcoming"
-                ? "Your upcoming presentation schedule"
-                : "Ambassador workspace";
+          : route.startsWith("earnings/invoice/")
+            ? "Submit your invoice for payment"
+            : route === "earnings"
+              ? "Track earnings and payment status"
+              : route === "profile"
+                ? "Manage your profile and payment details"
+                : route === "training" || route.startsWith("training/")
+                  ? "Complete training and access resources"
+                  : route === "upcoming"
+                    ? "Your upcoming presentation schedule"
+                    : "Ambassador workspace";
 
   const subheadline =
     route === ""
@@ -148,8 +164,14 @@ export default async function AmbassadorPortalPage({
         }}
       >
         {notice ? (
-          <Card className="rounded-[24px] border-[#b9e2c7] bg-[#f4fbf6] px-5 py-4 text-sm font-semibold text-[#1d6f35]">
-            {notice}
+          <Card
+            className={
+              notice.tone === "error"
+                ? "rounded-[24px] border-[#f2c6c6] bg-[#fff6f6] px-5 py-4 text-sm font-semibold text-[#9d2424]"
+                : "rounded-[24px] border-[#b9e2c7] bg-[#f4fbf6] px-5 py-4 text-sm font-semibold text-[#1d6f35]"
+            }
+          >
+            {notice.message}
           </Card>
         ) : null}
 
@@ -477,14 +499,104 @@ export default async function AmbassadorPortalPage({
         {route === "earnings" ? (
           <DataTable
             title="Earnings and payment status"
-            columns={["Session", "Amount", "Status", "Eligibility"]}
+            columns={["Session", "Amount", "Status", "Invoice"]}
             rows={ambassadorPayments.map((record) => [
-              record.bookingSessionId,
+              paymentSessionLabel(record.bookingSessionId),
               formatCurrency(record.amountCents),
               <StatusBadge key={`${record.id}-status`} value={record.status} />,
-              record.eligibilityReason
+              record.status === "pending" ? (
+                <ButtonLink
+                  key={`${record.id}-invoice`}
+                  href={`/ambassador/earnings/invoice/${record.id}`}
+                  variant="secondary"
+                  className="min-h-[40px] rounded-[14px] px-3 py-1.5"
+                >
+                  Submit invoice
+                </ButtonLink>
+              ) : record.invoiceNumber ? (
+                <ButtonLink
+                  key={`${record.id}-invoice`}
+                  href={`/portal/invoice/${record.id}`}
+                  variant="ghost"
+                  className="min-h-[40px] rounded-[14px] px-3 py-1.5"
+                >
+                  {record.invoiceNumber}
+                </ButtonLink>
+              ) : (
+                record.eligibilityReason
+              )
             ])}
           />
+        ) : null}
+
+        {route.startsWith("earnings/invoice/") ? (
+          selectedInvoicePayment && selectedInvoicePayment.status === "pending" ? (
+            <Card className="rounded-[34px]">
+              <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                Submit invoice for this session
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                We generate the invoice PDF for you from these details. The staff team receives it,
+                sends it to finance, and you&apos;ll be notified once it has been submitted for
+                payment.
+              </p>
+              <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-5 py-4">
+                <p className="text-sm font-semibold text-[color:var(--navy)]">
+                  {paymentSessionLabel(selectedInvoicePayment.bookingSessionId)}
+                </p>
+                <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                  Amount payable: {formatCurrency(selectedInvoicePayment.amountCents)} ·{" "}
+                  {selectedInvoicePayment.eligibilityReason}
+                </p>
+              </div>
+              <form action={submitPaymentInvoiceAction} className="mt-6 grid gap-4">
+                <input type="hidden" name="paymentId" value={selectedInvoicePayment.id} />
+                <input type="hidden" name="returnTo" value="/ambassador/earnings" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+                    Bank account number *
+                    <Input
+                      name="bankAccountNumber"
+                      required
+                      defaultValue={portal.ambassador.bankAccountNumber ?? ""}
+                      placeholder="12-3456-7890123-00"
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+                    GST number (optional)
+                    <Input
+                      name="gstNumber"
+                      defaultValue={portal.ambassador.gstNumber ?? ""}
+                      placeholder="123-456-789"
+                    />
+                  </label>
+                </div>
+                <Textarea
+                  name="invoiceNotes"
+                  placeholder="Notes for the team or finance (optional)"
+                />
+                <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                  <input type="checkbox" name="saveToProfile" defaultChecked />
+                  Save these payment details to my profile for next time.
+                </label>
+                <Button type="submit">Submit invoice</Button>
+              </form>
+            </Card>
+          ) : (
+            <Card className="rounded-[34px]">
+              <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                This payment can&apos;t be invoiced
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                {selectedInvoicePayment
+                  ? "An invoice has already been submitted for this session payment, or it isn't ready for invoicing yet."
+                  : "We couldn't find that payment on your account."}
+              </p>
+              <ButtonLink href="/ambassador/earnings" variant="secondary" className="mt-5">
+                Back to earnings
+              </ButtonLink>
+            </Card>
+          )
         ) : null}
 
         {route === "resources" || route === "training" || route.startsWith("training/") ? (
@@ -518,12 +630,35 @@ export default async function AmbassadorPortalPage({
         {route === "profile" ? (
           <Card className="rounded-[34px]">
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              Profile settings
+              Payment details
             </h2>
             <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-              Banking, travel availability, and role-specific profile fields belong here in the
-              full product model.
+              These details prefill your invoices so you don&apos;t have to type them in each time.
+              They appear on the invoice PDF sent to finance.
             </p>
+            <form action={saveAmbassadorPaymentDetailsAction} className="mt-6 grid max-w-2xl gap-4">
+              <input type="hidden" name="returnTo" value="/ambassador/profile" />
+              <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+                Bank account number *
+                <Input
+                  name="bankAccountNumber"
+                  required
+                  defaultValue={portal.ambassador.bankAccountNumber ?? ""}
+                  placeholder="12-3456-7890123-00"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+                GST number (optional)
+                <Input
+                  name="gstNumber"
+                  defaultValue={portal.ambassador.gstNumber ?? ""}
+                  placeholder="123-456-789"
+                />
+              </label>
+              <Button type="submit" className="justify-self-start">
+                Save payment details
+              </Button>
+            </form>
           </Card>
         ) : null}
 
@@ -545,21 +680,66 @@ export default async function AmbassadorPortalPage({
   );
 }
 
-function getAmbassadorNotice(searchParams: Record<string, string | string[] | undefined>) {
+function getAmbassadorNotice(
+  searchParams: Record<string, string | string[] | undefined>
+): { tone: "success" | "error"; message: string } | null {
   const submitted = readSearchParam(searchParams, "submitted");
   const applied = readSearchParam(searchParams, "applied");
   const completed = readSearchParam(searchParams, "completed");
+  const saved = readSearchParam(searchParams, "saved");
+  const error = readSearchParam(searchParams, "error");
 
   if (submitted === "report") {
-    return "Report submitted. Staff can now review the session and payment eligibility.";
+    return {
+      tone: "success",
+      message: "Report submitted. Staff can now review the session and payment eligibility."
+    };
+  }
+
+  if (submitted === "invoice") {
+    return {
+      tone: "success",
+      message:
+        "Invoice submitted. The team will send it to finance and you'll be notified once it has been submitted for payment."
+    };
+  }
+
+  if (saved === "payment-details") {
+    return { tone: "success", message: "Payment details saved to your profile." };
   }
 
   if (applied === "1") {
-    return "Application submitted. Staff will review and assign the best-fit ambassador.";
+    return {
+      tone: "success",
+      message: "Application submitted. Staff will review and assign the best-fit ambassador."
+    };
   }
 
   if (completed === "training") {
-    return "Training progress saved.";
+    return { tone: "success", message: "Training progress saved." };
+  }
+
+  if (error === "invalid-payment-details" || error === "invalid-invoice") {
+    return {
+      tone: "error",
+      message:
+        "Check your payment details — the bank account number should look like 12-3456-7890123-00."
+    };
+  }
+
+  if (error === "payment-not-invoiceable") {
+    return {
+      tone: "error",
+      message: "That payment already has an invoice or isn't ready for invoicing yet."
+    };
+  }
+
+  if (error === "payment-not-found" || error === "ambassador-not-found") {
+    return { tone: "error", message: "We couldn't find that payment on your account." };
+  }
+
+  if (error === "invoice-save-failed" || error === "payment-details-save-failed") {
+    return { tone: "error", message: "Something went wrong while saving. Please try again." };
   }
 
   return null;

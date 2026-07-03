@@ -7,14 +7,20 @@ type EmailEventInput = {
   recipientEmail: string;
   subject: string;
   html: string;
+  cc?: string[];
+  attachments?: Array<{ name: string; contentBase64: string }>;
 };
 
 export async function sendTransactionalEmail(event: EmailEventInput) {
+  // Keep attachment payloads out of the returned event so callers/logs
+  // don't hold large base64 blobs.
+  const { attachments, cc, ...loggableEvent } = event;
+
   if (!config.isBrevoConfigured) {
     return {
       id: `email-${randomUUID()}`,
       status: "skipped_unconfigured" as const,
-      ...event
+      ...loggableEvent
     };
   }
 
@@ -31,7 +37,17 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
       },
       to: [{ email: event.recipientEmail }],
       subject: event.subject,
-      htmlContent: event.html
+      htmlContent: event.html,
+      // Brevo rejects empty arrays for these keys, so only include them when populated.
+      ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
+      ...(attachments && attachments.length > 0
+        ? {
+            attachment: attachments.map((attachment) => ({
+              name: attachment.name,
+              content: attachment.contentBase64
+            }))
+          }
+        : {})
     })
   });
 
@@ -40,7 +56,7 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
       id: `email-${randomUUID()}`,
       status: "failed" as const,
       error: await response.text(),
-      ...event
+      ...loggableEvent
     };
   }
 
@@ -49,6 +65,6 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
   return {
     id: payload.messageId ?? `email-${randomUUID()}`,
     status: "sent" as const,
-    ...event
+    ...loggableEvent
   };
 }

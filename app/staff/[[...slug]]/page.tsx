@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {
   Bell,
   CalendarDays,
+  CircleDollarSign,
   ClipboardCheck,
   FolderKanban,
   MessageSquareText,
@@ -23,6 +24,10 @@ import {
   FeedbackWorkspace,
   SchoolDeliveryDatabase
 } from "@/components/dashboard/operations-views";
+import {
+  PaymentsWorkspace,
+  getPaymentsNotice
+} from "@/components/dashboard/payments-workspace";
 import { ResourceLibrary } from "@/components/dashboard/resource-library";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
@@ -37,11 +42,12 @@ import {
   readBookingLifecycleView,
   readDashboardRange
 } from "@/lib/services/dashboard-insights";
+import { getPaymentSettings } from "@/lib/services/invoices";
 import { getStaffPortalData } from "@/lib/services/portal";
 import {
   cn,
+  formatCurrency,
   formatDateTime,
-  formatShortDate,
   formatTime,
   formatWeekdayDate,
   titleCase
@@ -54,6 +60,7 @@ const navItems = [
   { href: "/staff/schools", label: "Schools", icon: School2 },
   { href: "/staff/ambassadors", label: "Ambassadors", icon: UsersRound },
   { href: "/staff/reports", label: "Reports", icon: ClipboardCheck },
+  { href: "/staff/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/staff/feedback", label: "Feedback", icon: MessageSquareText },
   { href: "/staff/resources", label: "Resources", icon: FolderKanban },
   { href: "/staff/settings", label: "Settings", icon: Settings }
@@ -81,10 +88,6 @@ export default async function StaffPortalPage({
     dashboardRange,
     portal.activityLogs
   );
-  const bookingsNeedingAction = portal.bookings.filter((booking) =>
-    ["tentative", "ambassador_needed", "reschedule_requested"].includes(booking.status)
-  );
-  const openApplications = portal.ambassadors.filter((ambassador) => ambassador.status === "applied");
   const isCreatingResource = route === "resources/new";
   const selectedResource =
     route.startsWith("resources/") && !isCreatingResource
@@ -116,6 +119,7 @@ export default async function StaffPortalPage({
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
   const resourceNotice = getStaffContentNotice(resolvedSearchParams);
+  const paymentSettings = route === "payments" ? await getPaymentSettings() : null;
 
   const headline =
     route === ""
@@ -132,6 +136,8 @@ export default async function StaffPortalPage({
                 ? "Review ambassador application"
                 : route === "reports"
                   ? "Stay on top of submitted reports"
+                  : route === "payments"
+                    ? "Track ambassador invoices and payments"
                   : route === "feedback"
                     ? "Monitor school feedback and report quality"
                     : route === "resources"
@@ -170,175 +176,25 @@ export default async function StaffPortalPage({
         }}
       >
         {route === "" ? (
-          <>
-            <OperationsAnalytics
-              metrics={filteredDashboard.metrics}
-              sourceMetrics={filteredDashboard.sourceMetrics}
-              upcomingSessions={filteredDashboard.upcomingSessions}
-              reports={filteredDashboard.reports}
-              ambassadors={portal.ambassadors}
-              sessions={filteredDashboard.sessions}
-              calendarHref="/staff/calendar"
-              calendarActionLabel="View full calendar"
-              feedbackHref="/staff/feedback"
-              feedbackActionLabel="Open reports"
-              audienceLabel="staff delivery"
-              periodLabel={dashboardRangeLabel(dashboardRange)}
-            />
-
-            <div className="grid gap-6 2xl:grid-cols-[1.12fr_0.88fr]">
-              <Card className="rounded-[34px]">
-                <SectionHeading
-                  kicker="Bookings needing action"
-                  title="Current operational queue"
-                  actionHref="/staff/bookings"
-                  actionLabel="View all"
-                />
-                <table className="mt-6 min-w-full border-separate border-spacing-y-3">
-                  <thead>
-                    <tr>
-                      {["School", "Presentation", "Date & time", "Region", "Status", "Action"].map(
-                        (heading) => (
-                          <th
-                            key={heading}
-                            className="px-2 pb-2 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--text-soft)]"
-                          >
-                            {heading}
-                          </th>
-                        )
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bookingsNeedingAction.slice(0, 6).map((booking) => (
-                      <tr
-                        key={booking.id}
-                        className="rounded-[22px] bg-white/92 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]"
-                      >
-                        <td className="rounded-l-[22px] px-2 py-4 font-semibold text-[color:var(--navy)]">
-                          {booking.schoolName}
-                        </td>
-                        <td className="px-2 py-4 text-sm text-[color:var(--text-dark)]">
-                          {booking.sessions[0]?.presentationTitle ?? "Presentation"}
-                        </td>
-                        <td className="px-2 py-4 text-sm text-[color:var(--text-dark)]">
-                          {booking.sessions[0]
-                            ? `${formatShortDate(booking.sessions[0].startsAt)}, ${formatTime(booking.sessions[0].startsAt)}`
-                            : formatShortDate(booking.createdAt)}
-                        </td>
-                        <td className="px-2 py-4 text-sm text-[color:var(--text-dark)]">
-                          {booking.regionSlug}
-                        </td>
-                        <td className="px-2 py-4">
-                          <StatusBadge value={booking.status} />
-                        </td>
-                        <td className="rounded-r-[22px] px-2 py-4">
-                          <ButtonLink
-                            href={`/staff/bookings#${booking.id}`}
-                            variant="ghost"
-                            className="min-h-[38px] rounded-[14px] px-3 py-1.5"
-                          >
-                            Review
-                          </ButtonLink>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-
-              <div className="grid gap-6">
-                <Card className="rounded-[34px]">
-                  <SectionHeading
-                    kicker="Ambassador applications"
-                    title="Approval queue"
-                    actionHref="/staff/ambassadors"
-                    actionLabel="View all"
-                  />
-                  <div className="mt-5 grid gap-3">
-                    {portal.tasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className="rounded-[20px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)] px-4 py-4 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="font-semibold text-[color:var(--navy)]">{task.title}</p>
-                          <p className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                            {task.value}
-                          </p>
-                        </div>
-                        <p className="mt-1 text-sm text-[color:var(--text-soft)]">{task.detail}</p>
-                      </div>
-                    ))}
-                    {openApplications.length > 0 ? (
-                      <ButtonLink
-                        href={`/staff/ambassadors/${openApplications[0].id}`}
-                        variant="secondary"
-                        className="mt-2 justify-center"
-                      >
-                        Review latest application
-                      </ButtonLink>
-                    ) : null}
-                  </div>
-                </Card>
-
-                <Card className="rounded-[34px] bg-[linear-gradient(135deg,#f7fbff,#f9fcff)]">
-                  <SectionHeading
-                    kicker="Reports awaiting review"
-                    title="Operational checks"
-                    actionHref="/staff/reports"
-                    actionLabel="Open reports"
-                  />
-                  <div className="mt-5 grid gap-4 md:grid-cols-3">
-                    <SummaryStat
-                      label="Submitted reports"
-                      value={String(portal.reports.filter((report) => report.status === "submitted").length)}
-                    />
-                    <SummaryStat
-                      label="Reviewed reports"
-                      value={String(portal.reports.filter((report) => report.status === "reviewed").length)}
-                    />
-                    <SummaryStat
-                      label="Unread activity"
-                      value={String(portal.notifications.filter((notification) => !notification.readAt).length)}
-                    />
-                  </div>
-                </Card>
-              </div>
-            </div>
-
-            <Card className="rounded-[34px] bg-[linear-gradient(135deg,rgba(175,213,237,0.5),rgba(234,248,238,0.8))]">
-              <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr] xl:items-center">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                    Making an impact across Aotearoa
-                  </p>
-                  <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                    Your staff team is keeping schools, ambassadors, and resources aligned.
-                  </h2>
-                  <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                    Live data now powers the booking queue, application reviews, activity feed, and
-                    resource hub.
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-4">
-                  <SummaryStat label="Schools live" value={String(portal.schools.length)} />
-                  <SummaryStat
-                    label="Approved ambassadors"
-                    value={String(portal.ambassadors.filter((ambassador) => ambassador.status === "approved").length)}
-                  />
-                  <SummaryStat
-                    label="Resources live"
-                    value={String(portal.resources.filter((resource) => resource.isActive).length)}
-                  />
-                  <SummaryStat
-                    label="Submitted reports"
-                    value={String(portal.reports.filter((report) => report.status === "submitted").length)}
-                  />
-                </div>
-              </div>
-            </Card>
-          </>
+          <OperationsAnalytics
+            basePath="/staff"
+            range={dashboardRange}
+            periodLabel={dashboardRangeLabel(dashboardRange)}
+            bookings={portal.bookings}
+            reports={portal.reports}
+            schoolReviews={portal.schoolReviews}
+            ambassadors={portal.ambassadors}
+            payments={portal.payments}
+            schools={portal.schools}
+            presentations={portal.presentations}
+            regions={portal.regions}
+            resourcesLiveCount={portal.resources.filter((resource) => resource.isActive).length}
+            unreadActivityCount={
+              portal.notifications.filter((notification) => !notification.readAt).length
+            }
+            presentationsHref="/presentations"
+            calendarHref="/staff/calendar"
+          />
         ) : null}
 
         {route === "bookings" ? (
@@ -380,7 +236,7 @@ export default async function StaffPortalPage({
         {route === "ambassadors" ? (
           <DataTable
             title="Ambassador pipeline"
-            columns={["Name", "Region", "Travel", "Status", "Action"]}
+            columns={["Name", "Region", "Travel", "Pending payout", "Status", "Action"]}
             rows={portal.ambassadors.map((ambassador) => [
               ambassador.name,
               ambassador.regionSlug,
@@ -389,6 +245,9 @@ export default async function StaffPortalPage({
                   ? ambassador.travelRegions.join(", ")
                   : "Open to travel"
                 : "Local only",
+              ambassador.pendingPaymentsCents > 0
+                ? formatCurrency(ambassador.pendingPaymentsCents)
+                : "—",
               <StatusBadge
                 key={`${ambassador.id}-status`}
                 value={
@@ -432,6 +291,10 @@ export default async function StaffPortalPage({
                         ? "Open to travel"
                         : "Local only"
                   }
+                />
+                <InfoBlock
+                  label="Payments"
+                  value={`${formatCurrency(selectedAmbassador.paidPaymentsCents)} paid · ${formatCurrency(selectedAmbassador.pendingPaymentsCents)} pending`}
                 />
               </div>
               <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
@@ -490,6 +353,16 @@ export default async function StaffPortalPage({
               String(report.attendeeCount),
               <StatusBadge key={`${report.id}-status`} value={report.status} />
             ])}
+          />
+        ) : null}
+
+        {route === "payments" ? (
+          <PaymentsWorkspace
+            basePath="/staff"
+            payments={portal.payments}
+            sessions={portal.bookings.flatMap((booking) => booking.sessions)}
+            financeEmail={paymentSettings?.financeEmail ?? "info@esf.nz"}
+            notice={getPaymentsNotice(resolvedSearchParams)}
           />
         ) : null}
 
@@ -888,17 +761,6 @@ function SectionHeading({
           {actionLabel}
         </ButtonLink>
       ) : null}
-    </div>
-  );
-}
-
-function SummaryStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
-      <p className="text-sm text-[color:var(--text-soft)]">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-        {value}
-      </p>
     </div>
   );
 }

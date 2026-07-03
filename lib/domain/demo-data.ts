@@ -421,7 +421,8 @@ export const paymentRecords: PaymentRecord[] = [
     bookingSessionId: "session-1001",
     amountCents: 25000,
     status: "pending",
-    eligibilityReason: "168 attendees, report submitted"
+    eligibilityReason: "168 attendees, report submitted",
+    createdAt: "2026-06-19T02:30:00.000Z"
   },
   {
     id: "payment-2",
@@ -429,7 +430,38 @@ export const paymentRecords: PaymentRecord[] = [
     bookingSessionId: "session-0907",
     amountCents: 25000,
     status: "paid",
-    eligibilityReason: "Manual override by staff"
+    eligibilityReason: "Manual override by staff",
+    createdAt: "2026-05-02T21:00:00.000Z",
+    paidAt: "2026-05-09T03:00:00.000Z",
+    invoiceNumber: "INV-2026-9A11B2C3",
+    invoiceSubmittedAt: "2026-05-03T20:00:00.000Z",
+    sentToFinanceAt: "2026-05-05T22:00:00.000Z",
+    sentToEmail: "info@esf.nz"
+  },
+  {
+    id: "payment-3",
+    ambassadorName: "Alex Tane",
+    bookingSessionId: "session-0912",
+    amountCents: 25000,
+    status: "invoiced",
+    eligibilityReason: "142 attendees, report submitted",
+    createdAt: "2026-06-10T01:00:00.000Z",
+    invoiceNumber: "INV-2026-4D55E6F7",
+    invoiceSubmittedAt: "2026-06-12T21:30:00.000Z",
+    bankAccountNumber: "12-3456-7890123-00"
+  },
+  {
+    id: "payment-4",
+    ambassadorName: "Mia Rangi",
+    bookingSessionId: "session-0920",
+    amountCents: 25000,
+    status: "submitted_for_payment",
+    eligibilityReason: "205 attendees, report submitted",
+    createdAt: "2026-06-01T01:00:00.000Z",
+    invoiceNumber: "INV-2026-8G99H0I1",
+    invoiceSubmittedAt: "2026-06-03T20:00:00.000Z",
+    sentToFinanceAt: "2026-06-05T02:00:00.000Z",
+    sentToEmail: "info@esf.nz"
   }
 ];
 
