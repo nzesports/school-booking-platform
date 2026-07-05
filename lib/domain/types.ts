@@ -38,6 +38,7 @@ export interface Region {
   name: string;
   slug: string;
   isActive: boolean;
+  sortOrder?: number;
 }
 
 export interface PresentationType {
@@ -52,6 +53,7 @@ export interface PresentationType {
   deliveryFormats: string[];
   learningOutcomes: string[];
   requiredEquipment: string[];
+  youtubeUrl?: string;
   imageUrl?: string;
   active: boolean;
   public: boolean;
@@ -132,21 +134,40 @@ export interface SchoolFeedbackSummary {
   isPublic: boolean;
 }
 
+export interface AmbassadorProfileDetails {
+  mailingAddress?: string;
+  payoutEmail?: string;
+  payoutMethod?: string;
+  invoiceName?: string;
+  irdNumber?: string;
+  billingNote?: string;
+  bookingTypes?: string[];
+  preferredTimes?: string;
+  weeklyAvailability?: Record<string, string>;
+  unavailableDates?: string[];
+  availabilityNote?: string;
+}
+
 export interface AmbassadorProfile {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   regionSlug: string;
+  regionName?: string;
   status: "applied" | "approved" | "inactive" | "declined";
   openToTravel: boolean;
   travelRegions: string[];
+  bio?: string;
   experience?: string;
   referredBy?: string;
   estimatedEarningsCents: number;
   pendingPaymentsCents: number;
   paidPaymentsCents: number;
+  bankAccountName?: string;
   bankAccountNumber?: string;
   gstNumber?: string;
+  details?: AmbassadorProfileDetails;
 }
 
 export interface BookingSessionView {
@@ -155,8 +176,14 @@ export interface BookingSessionView {
   presentationSlug: string;
   presentationTitle: string;
   regionSlug: string;
+  regionName?: string;
   schoolId?: string;
   schoolName: string;
+  schoolAddress?: string;
+  locationAddress?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
   startsAt: string;
   endsAt: string;
   yearLevels: string;
@@ -166,6 +193,10 @@ export interface BookingSessionView {
   assignedAmbassadorName?: string;
   reportStatus: ReportStatus;
   paymentStatus: PaymentStatus;
+  myApplicationStatus?: string;
+  applicants?: Array<{ id: string; name: string }>;
+  bookingRequestId?: string;
+  bookingStatus?: BookingStatus;
 }
 
 export interface BookingRequestView {
@@ -275,12 +306,30 @@ export interface ReportSummary {
   attendeeCount: number;
   status: ReportStatus;
   ambassadorName?: string;
+  presenterName?: string;
+  schoolRollSize?: number;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  deliveredAt?: string;
+  firstPresentationToSchool?: boolean;
+  studentsCompetedInEsports?: boolean;
+  parentsPresent?: boolean;
+  ageGroups?: string;
+  mediaConsentConfirmed?: boolean;
+  attendeeQuotes?: string;
+  attendanceRating?: number;
   teacherResponseRating?: number;
   studentEngagementRating?: number;
+  presentationEnergyRating?: number;
   notableQuestions?: string;
   presentationFeedback?: string;
+  additionalNotes?: string;
   yearLevels?: string;
   sessionStartsAt?: string;
+  media?: Array<{ url: string; type: string; title?: string }>;
+  bookingRequestId?: string;
+  bookingRequestedAt?: string;
+  reviewedAt?: string;
 }
 
 export interface AuditLogEntry {

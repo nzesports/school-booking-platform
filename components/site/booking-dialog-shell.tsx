@@ -14,7 +14,8 @@ export function BookingDialogShell({
   maxWidthClassName = "max-w-[1180px]",
   bodyClassName,
   overlayClassName,
-  contentClassName
+  contentClassName,
+  compact = false
 }: {
   title: string;
   kicker: string;
@@ -26,6 +27,7 @@ export function BookingDialogShell({
   bodyClassName?: string;
   overlayClassName?: string;
   contentClassName?: string;
+  compact?: boolean;
 }) {
   const titleId = useId();
 
@@ -52,7 +54,14 @@ export function BookingDialogShell({
           contentClassName
         )}
       >
-        <div className={cn("px-5 py-5 md:px-8 md:py-6 lg:px-10 lg:py-7", bodyClassName)}>
+        <div
+          className={cn(
+            compact
+              ? "px-5 py-5 md:px-6 md:py-6"
+              : "px-5 py-5 md:px-8 md:py-6 lg:px-10 lg:py-7",
+            bodyClassName
+          )}
+        >
           <div className="relative">
             <Button
               type="button"
@@ -69,7 +78,12 @@ export function BookingDialogShell({
               </p>
               <h2
                 id={titleId}
-                className="mt-2 max-w-[19ch] text-[2.2rem] font-semibold leading-[0.98] tracking-[-0.06em] text-[color:var(--navy)] md:max-w-[23ch] md:text-[3rem] xl:max-w-none"
+                className={cn(
+                  "mt-2 font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--navy)]",
+                  compact
+                    ? "text-[1.45rem] md:text-[1.8rem]"
+                    : "max-w-[19ch] text-[2.2rem] leading-[0.98] tracking-[-0.06em] md:max-w-[23ch] md:text-[3rem] xl:max-w-none"
+                )}
               >
                 {title}
               </h2>

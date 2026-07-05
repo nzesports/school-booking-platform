@@ -71,6 +71,21 @@ select {
   font: inherit;
 }
 
+a[href],
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+select:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="button"]:not(:disabled),
+input[type="file"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+label:has(> input[type="checkbox"]:not(:disabled)),
+label:has(> input[type="radio"]:not(:disabled)),
+summary {
+  cursor: pointer;
+}
+
 .grid-table {
   display: grid;
   gap: 0.75rem;

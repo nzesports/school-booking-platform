@@ -3,9 +3,21 @@ import {
   regions as demoRegions,
   testimonials as demoTestimonials
 } from "@/lib/domain/demo-data";
+import { regionDisplayName } from "@/lib/domain/regions";
 import type { HomepageSectionRecord, PresentationType, Region, Testimonial } from "@/lib/domain/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+export function splitContentLines(value: unknown): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+}
 
 function mapPresentationRecord(record: Record<string, unknown>): PresentationType {
   return {
@@ -18,8 +30,9 @@ function mapPresentationRecord(record: Record<string, unknown>): PresentationTyp
     durationMinutes: Number(record.duration_minutes ?? 45),
     yearLevels: (record.year_levels as string | null) ?? "Years 7 to 13",
     deliveryFormats: (record.delivery_formats as string[] | null) ?? [],
-    learningOutcomes: [],
-    requiredEquipment: [],
+    learningOutcomes: splitContentLines(record.learning_outcomes),
+    requiredEquipment: splitContentLines(record.required_equipment),
+    youtubeUrl: (record.youtube_url as string | null) ?? undefined,
     imageUrl: (record.image_url as string | null) ?? undefined,
     active: Boolean(record.is_active),
     public: Boolean(record.is_public)
@@ -33,11 +46,11 @@ export async function listPublicPresentations() {
     return demoPresentations.filter((presentation) => presentation.active && presentation.public);
   }
 
+  // Select * so newly added optional columns (e.g. youtube_url before its
+  // migration runs) never break the whole query.
   const { data, error } = await supabase
     .from("presentation_types")
-    .select(
-      "id, slug, title, short_summary, full_description, content_snippet, year_levels, duration_minutes, delivery_formats, is_active, is_public, image_url"
-    )
+    .select("*")
     .eq("is_active", true)
     .eq("is_public", true)
     .order("sort_order", { ascending: true });
@@ -70,7 +83,10 @@ export async function listRegions() {
     (region) =>
       ({
         id: region.id as string,
-        name: region.name as string,
+        name: regionDisplayName({
+          slug: region.slug as string,
+          name: region.name as string
+        }),
         slug: region.slug as string,
         isActive: Boolean(region.is_active)
       }) satisfies Region
@@ -86,9 +102,7 @@ export async function getPresentationBySlug(slug: string) {
 
   const { data, error } = await supabase
     .from("presentation_types")
-    .select(
-      "id, slug, title, short_summary, full_description, content_snippet, year_levels, duration_minutes, delivery_formats, is_active, is_public, image_url"
-    )
+    .select("*")
     .eq("slug", slug)
     .maybeSingle();
 

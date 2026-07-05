@@ -126,6 +126,12 @@ export function toYouTubeEmbedUrl(value?: string | null) {
       if (videoId) {
         return `https://www.youtube.com/embed/${videoId}`;
       }
+
+      const pathMatch = url.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]+)/);
+
+      if (pathMatch) {
+        return `https://www.youtube.com/embed/${pathMatch[1]}`;
+      }
     }
   } catch {
     return null;

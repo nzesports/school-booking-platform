@@ -1,5 +1,15 @@
 import type { ReactNode } from "react";
-import { ArrowRight, MessageSquareText, School2 } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarCheck2,
+  CirclePlus,
+  FileText,
+  MessageSquareText,
+  NotebookPen,
+  School2,
+  UserRound,
+  UsersRound
+} from "lucide-react";
 
 import {
   assignAmbassadorAction,
@@ -9,7 +19,8 @@ import {
   saveManualSchoolAction,
   updateBookingStatusAction
 } from "@/app/portal/actions";
-import { ButtonLink } from "@/components/ui/button";
+import { BookingsExplorer } from "@/components/dashboard/bookings-explorer";
+import { SchoolsExplorer } from "@/components/dashboard/schools-explorer";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type {
@@ -27,7 +38,7 @@ import {
   type BookingLifecycleView,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
-import { cn, formatDateTime, formatShortDate, formatTime, titleCase } from "@/lib/utils";
+import { cn, formatDateTime, formatShortDate } from "@/lib/utils";
 
 export function BookingLifecyclePanel({
   basePath,
@@ -36,7 +47,8 @@ export function BookingLifecyclePanel({
   presentations,
   ambassadors,
   activeView,
-  range
+  range,
+  initialQuery
 }: {
   basePath: string;
   bookings: BookingRequestView[];
@@ -45,73 +57,90 @@ export function BookingLifecyclePanel({
   ambassadors: AmbassadorProfile[];
   activeView: BookingLifecycleView;
   range: DashboardRange;
+  initialQuery?: string;
 }) {
   const filteredBookings = filterBookingsByLifecycle(bookings, activeView);
   const sessions = bookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
+  const assignedCount = sessions.filter((session) => session.assignedAmbassadorName).length;
+  const reportsCount = sessions.filter(
+    (session) => session.reportStatus === "submitted" || session.reportStatus === "reviewed"
+  ).length;
 
   return (
     <div className="grid gap-5">
-      <Card className="rounded-[28px]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-              Booking lifecycle
-            </p>
-            <h2 className="mt-2 text-3xl font-semibold text-[color:var(--navy)]">
-              Current, future, past, and cancelled bookings
-            </h2>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <a
-              href="#manual-booking-entry"
-              className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#a2cae3] bg-[#afd5ed] px-3 py-2 text-sm font-semibold text-[color:var(--navy)]"
-            >
-              Log booking
-            </a>
-            {bookingLifecycleOptions.map((option) => (
-              <ButtonLink
-                key={option.value}
-                href={`${basePath}/bookings?status=${option.value}&range=${range}`}
-                variant={option.value === activeView ? "primary" : "secondary"}
-                className="min-h-[40px] rounded-[14px] px-3 py-2 text-sm"
-              >
-                {option.label}
-              </ButtonLink>
-            ))}
-          </div>
-        </div>
+      <div className="flex justify-end">
+        <a
+          href="#manual-booking-entry"
+          className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] border border-[#c4dbfb] bg-white px-4 text-sm font-semibold text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)] transition hover:bg-[#f4f8ff]"
+        >
+          <CirclePlus className="h-4 w-4" />
+          Log booking
+        </a>
+      </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
-          <SummaryTile label="Booking requests" value={String(bookings.length)} />
-          <SummaryTile label="Sessions" value={String(sessions.length)} />
-          <SummaryTile
-            label="Assigned sessions"
-            value={String(sessions.filter((session) => session.assignedAmbassadorName).length)}
-          />
-          <SummaryTile
-            label="Reports submitted"
-            value={String(sessions.filter((session) => session.reportStatus === "submitted" || session.reportStatus === "reviewed").length)}
-          />
-        </div>
-      </Card>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#18a83b]"
+          icon={<CalendarCheck2 className="h-5 w-5" />}
+          iconClassName="bg-[#eaf8ee] text-[#117a2e]"
+          label="Booking requests"
+          value={String(bookings.length)}
+          hint="Total requests received"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#18a83b]"
+          icon={<UsersRound className="h-5 w-5" />}
+          iconClassName="bg-[#eaf8ee] text-[#117a2e]"
+          label="Sessions"
+          value={String(sessions.length)}
+          hint="Total sessions requested"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#2563eb]"
+          icon={<UserRound className="h-5 w-5" />}
+          iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
+          label="Assigned sessions"
+          value={String(assignedCount)}
+          hint="Sessions with ambassadors"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#7c3aed]"
+          icon={<FileText className="h-5 w-5" />}
+          iconClassName="bg-[#f1edfd] text-[#7c3aed]"
+          label="Reports submitted"
+          value={String(reportsCount)}
+          hint="Reports submitted this period"
+        />
+      </div>
 
-      <Card id="manual-booking-entry" className="scroll-mt-8 rounded-[28px]">
-        <details>
-          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-4 marker:hidden">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                Manual entry
-              </p>
-              <h3 className="mt-2 text-2xl font-semibold text-[color:var(--navy)]">
-                Log a booking or delivered session
-              </h3>
-            </div>
-            <span className="rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 py-2 text-sm font-semibold text-[color:var(--navy)]">
-              Open form
+      <details
+        id="manual-booking-entry"
+        className="group scroll-mt-8 overflow-hidden rounded-[22px] border border-[rgba(24,168,59,0.18)] bg-[linear-gradient(120deg,#eefaf2,#eef5fd)] shadow-[0_18px_42px_rgba(11,24,77,0.07)]"
+      >
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-4 px-5 py-4 transition hover:bg-white/40 marker:hidden md:px-6">
+          <span className="flex items-center gap-4">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-white text-[#117a2e] shadow-[0_12px_26px_rgba(24,168,59,0.18)]">
+              <NotebookPen className="h-5 w-5" />
             </span>
-          </summary>
-          <form action={saveManualBookingAction} className="mt-6 grid gap-4">
+            <span>
+              <span className="block text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                Manual entry
+              </span>
+              <span className="block text-sm text-[color:var(--text-soft)]">
+                Log a phone booking or an already-delivered session without going through the
+                public form.
+              </span>
+            </span>
+          </span>
+          <span className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] border border-[#2563eb] bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition group-open:border-[color:var(--border-soft)] group-open:bg-white group-open:text-[color:var(--navy)] group-open:shadow-none">
+            <CirclePlus className="h-4 w-4 transition group-open:rotate-45" />
+            <span className="group-open:hidden">Open form</span>
+            <span className="hidden group-open:inline">Close form</span>
+          </span>
+        </summary>
+        <div className="border-t border-[rgba(4,15,75,0.07)] bg-white/75 px-5 pb-6 pt-5 md:px-6">
+          <form action={saveManualBookingAction} className="grid gap-4">
             <input type="hidden" name="returnTo" value={`${basePath}/bookings?status=${activeView}&range=${range}`} />
             <div className="grid gap-4 lg:grid-cols-2">
               <Field label="School">
@@ -199,133 +228,69 @@ export function BookingLifecyclePanel({
             </Field>
             <button
               type="submit"
-              className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
+              className="inline-flex min-h-[46px] items-center justify-center justify-self-start rounded-[14px] border border-[#2563eb] bg-[#2563eb] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:bg-[#1d4fd7]"
             >
               Save booking
             </button>
           </form>
-        </details>
-      </Card>
+        </div>
+      </details>
 
-      {filteredBookings.length > 0 ? (
-        filteredBookings.map((booking) => (
-          <Card key={booking.id} className="rounded-[28px]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  {titleCase(booking.source)} request
-                </p>
-                <h3 className="mt-2 text-2xl font-semibold text-[color:var(--navy)]">
-                  {booking.schoolName}
-                </h3>
-                <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                  {booking.primaryContactName} · {booking.primaryContactEmail} · {booking.regionSlug}
-                </p>
-              </div>
-              <StatusBadge value={booking.status} />
-            </div>
+      <BookingsExplorer
+        bookings={filteredBookings}
+        allBookings={bookings}
+        basePath={basePath}
+        activeView={activeView}
+        range={range}
+        lifecycleTabs={bookingLifecycleOptions.map((option) => ({
+          value: option.value,
+          label: option.label
+        }))}
+        ambassadors={approvedAmbassadors.map((ambassador) => ({
+          id: ambassador.id,
+          name: ambassador.name
+        }))}
+        presentationTitles={presentations.map((presentation) => presentation.title)}
+        updateStatusAction={updateBookingStatusAction}
+        assignAmbassadorAction={assignAmbassadorAction}
+        initialQuery={initialQuery}
+      />
+    </div>
+  );
+}
 
-            <form
-              action={updateBookingStatusAction}
-              className="mt-5 grid gap-3 rounded-[20px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] p-4 lg:grid-cols-[0.75fr_1fr_auto]"
-            >
-              <input type="hidden" name="bookingRequestId" value={booking.id} />
-              <input type="hidden" name="returnTo" value={`${basePath}/bookings?status=${activeView}&range=${range}`} />
-              <select name="status" defaultValue={booking.status} className={fieldClassName}>
-                <option value="tentative">Tentative</option>
-                <option value="ambassador_needed">Ambassador needed</option>
-                <option value="ambassador_assigned">Ambassador assigned</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="reschedule_requested">Reschedule requested</option>
-                <option value="cancel_requested">Cancel requested</option>
-                <option value="completed_pending_report">Delivered, report needed</option>
-                <option value="report_submitted">Report submitted</option>
-                <option value="paid">Paid</option>
-                <option value="closed">Closed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="declined">Declined</option>
-              </select>
-              <input
-                name="reason"
-                className={fieldClassName}
-                placeholder="Optional reason or internal note"
-              />
-              <button
-                type="submit"
-                className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
-              >
-                Update status
-              </button>
-            </form>
-
-            <div className="mt-5 overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white/92">
-              <table className="min-w-full border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    {["Date", "Presentation", "Year groups", "Ambassador", "Students", "Status"].map((heading) => (
-                      <th
-                        key={heading}
-                        className="border-b border-[color:rgba(4,15,75,0.08)] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
-                      >
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {booking.sessions.map((session) => (
-                    <tr key={session.id} className="align-top">
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
-                        {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm font-semibold text-[color:var(--navy)]">
-                        {session.presentationTitle}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                        {session.yearLevels}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                        <form action={assignAmbassadorAction} className="grid min-w-52 gap-2">
-                          <input type="hidden" name="bookingSessionId" value={session.id} />
-                          <input type="hidden" name="returnTo" value={`${basePath}/bookings?status=${activeView}&range=${range}`} />
-                          <select
-                            name="ambassadorProfileId"
-                            defaultValue=""
-                            className="min-h-[40px] rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)]"
-                          >
-                            <option value="">
-                              {session.assignedAmbassadorName ?? "Assign ambassador"}
-                            </option>
-                            {approvedAmbassadors.map((ambassador) => (
-                              <option key={ambassador.id} value={ambassador.id}>
-                                {ambassador.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="submit"
-                            className="inline-flex min-h-[36px] items-center justify-center rounded-[12px] border border-[color:rgba(4,15,75,0.12)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--navy)]"
-                          >
-                            Assign
-                          </button>
-                        </form>
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                        {session.actualStudentCount ?? session.expectedStudentCount}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
-                        <StatusBadge value={session.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        ))
-      ) : (
-        <EmptyPanel copy="No bookings match this lifecycle view yet." />
+function LifecycleStatTile({
+  accentClassName,
+  icon,
+  iconClassName,
+  label,
+  value,
+  hint
+}: {
+  accentClassName: string;
+  icon: ReactNode;
+  iconClassName: string;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 p-5",
+        accentClassName
       )}
+    >
+      <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-full", iconClassName)}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm text-[color:var(--text-soft)]">{label}</span>
+        <span className="block text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+          {value}
+        </span>
+        <span className="block text-xs text-[color:var(--text-soft)]">{hint}</span>
+      </span>
     </div>
   );
 }
@@ -342,98 +307,61 @@ export function SchoolDeliveryDatabase({
   basePath: string;
 }) {
   const summaries = buildSchoolDeliverySummaries(schools, bookings);
-  const reachedSchools = summaries.filter((summary) => summary.deliveredCount > 0);
-  const schoolsWithGaps = summaries.filter(
-    (summary) => summary.deliveredCount > 0 && summary.yearGroupGaps.length > 0
-  );
   const pendingReviewSchools = schools.filter((school) => school.status === "pending_review");
   const mergeTargetSchools = schools.filter((school) => school.status === "active");
+  // Latest booking contact per school, used as the "teacher" line in the table.
+  const contactBySchoolId = new Map<string, string>();
+
+  for (const booking of [...bookings].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  )) {
+    const schoolId = booking.sessions[0]?.schoolId;
+
+    if (schoolId && booking.primaryContactName) {
+      contactBySchoolId.set(schoolId, booking.primaryContactName);
+    }
+  }
 
   return (
     <div className="grid gap-5">
       <Card className="rounded-[28px]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-            School database
-          </p>
-          <h2 className="mt-2 text-3xl font-semibold text-[color:var(--navy)]">
-            Delivery history and year-group coverage
-          </h2>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+              School database
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+              School records and delivery history
+            </h2>
+          </div>
+          <a
+            href="#manual-school-entry"
+            className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] border border-[#c4dbfb] bg-[#e8f1fd] px-4 py-2 text-sm font-semibold text-[#1e4fae] transition hover:bg-[#dcebfc]"
+          >
+            <School2 className="h-4 w-4" />
+            Add school
+          </a>
         </div>
-        <a
-          href="#manual-school-entry"
-          className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border border-[#a2cae3] bg-[#afd5ed] px-4 py-2 text-sm font-semibold text-[color:var(--navy)]"
-        >
-          <School2 className="h-4 w-4" />
-          Add school
-        </a>
-      </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <SummaryTile label="Schools presented to" value={String(reachedSchools.length)} />
-        <SummaryTile label="Schools with gaps" value={String(schoolsWithGaps.length)} />
-        <SummaryTile
-          label="Upcoming school sessions"
-          value={String(summaries.reduce((total, summary) => total + summary.upcomingCount, 0))}
-        />
-      </div>
-
-      <div className="mt-6 overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white/92">
-        <table className="min-w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              {["School", "Delivered", "Presentations", "Year groups reached", "Gaps", "Next"].map((heading) => (
-                <th
-                  key={heading}
-                  className="border-b border-[color:rgba(4,15,75,0.08)] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
-                >
-                  {heading}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {summaries.map((summary) => (
-              <tr key={summary.school.id} className="align-top">
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
-                  <p className="font-semibold text-[color:var(--navy)]">{summary.school.name}</p>
-                  <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                    {summary.school.city} · {summary.school.regionSlug}
-                  </p>
-                </td>
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                  {summary.deliveredCount} sessions
-                  <span className="block text-xs">Last: {summary.lastDeliveredLabel}</span>
-                </td>
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                  {summary.presentationsDelivered.length > 0
-                    ? summary.presentationsDelivered.join(", ")
-                    : "Not yet delivered"}
-                </td>
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                  {summary.yearGroupsReachedLabel}
-                </td>
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm">
-                  <span
-                    className={cn(
-                      "inline-flex rounded-full px-3 py-1 text-xs font-semibold",
-                      summary.yearGroupGaps.length > 0
-                        ? "bg-[#fff7e8] text-[#9a5a00]"
-                        : "bg-[color:var(--green-soft)] text-[color:var(--green)]"
-                    )}
-                  >
-                    {summary.yearGroupGapsLabel}
-                  </span>
-                </td>
-                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
-                  {summary.nextSessionLabel}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        <div className="mt-6">
+          <SchoolsExplorer
+            summaries={summaries.map((summary) => ({
+              school: summary.school,
+              contactName: contactBySchoolId.get(summary.school.id) ?? null,
+              deliveredCount: summary.deliveredCount,
+              upcomingCount: summary.upcomingCount,
+              presentationsDelivered: summary.presentationsDelivered,
+              yearGroupsReached: summary.yearGroupsReached,
+              lastDeliveredLabel: summary.lastDeliveredLabel,
+              nextSessionLabel: summary.nextSessionLabel,
+              lastDeliveredAt: summary.lastDeliveredAt,
+              nextSessionAt: summary.nextSessionAt
+            }))}
+            regions={regions.map((region) => ({ slug: region.slug, name: region.name }))}
+            bookings={bookings}
+            basePath={basePath}
+          />
+        </div>
       </Card>
 
       {pendingReviewSchools.length > 0 && mergeTargetSchools.length > 0 ? (

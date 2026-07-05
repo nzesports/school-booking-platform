@@ -22,7 +22,12 @@ const PUBLIC_ALLOWED = new Map([
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
   ["jpeg", "image/jpeg"],
-  ["webp", "image/webp"]
+  ["webp", "image/webp"],
+  // Report media: presentation photos/videos plus signed media release forms.
+  ["mp4", "video/mp4"],
+  ["mov", "video/quicktime"],
+  ["webm", "video/webm"],
+  ["pdf", "application/pdf"]
 ]);
 
 function fileExtension(name: string) {

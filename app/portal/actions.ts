@@ -108,12 +108,27 @@ const manualBookingSchema = z.object({
 
 const ambassadorReportSubmitSchema = z.object({
   bookingSessionId: z.uuid(),
+  presenterName: z.string().min(2),
+  schoolName: z.string().min(2),
+  schoolRollSize: z.coerce.number().int().nonnegative().optional(),
+  primaryContactName: z.string().min(2),
+  primaryContactEmail: z.string().email(),
+  regionLocation: z.string().optional(),
+  deliveredDate: z.string().min(1),
+  deliveredTime: z.string().min(1),
+  firstPresentation: z.enum(["yes", "no"]),
+  studentsCompeted: z.enum(["yes", "no"]),
   attendeeCount: z.coerce.number().int().nonnegative(),
-  yearLevels: z.string().min(1),
-  teacherResponseRating: z.coerce.number().int().min(1).max(5),
+  ageGroups: z.string().min(1),
+  parentsPresent: z.enum(["yes", "no"]),
+  attendeeQuotes: z.string().optional(),
+  attendanceRating: z.coerce.number().int().min(1).max(5),
   studentEngagementRating: z.coerce.number().int().min(1).max(5),
+  teacherResponseRating: z.coerce.number().int().min(1).max(5),
+  presentationEnergyRating: z.coerce.number().int().min(1).max(5),
   presentationFeedback: z.string().optional(),
   notableQuestions: z.string().optional(),
+  additionalNotes: z.string().optional(),
   mediaConsentObtained: z.boolean().optional(),
   returnTo: z.string().min(1).default("/ambassador/completed")
 });
@@ -221,10 +236,24 @@ const presentationSchema = z.object({
   yearLevels: z.string().optional(),
   durationMinutes: z.coerce.number().int().positive(),
   deliveryFormats: z.string().optional(),
+  learningOutcomes: z.string().optional(),
+  requiredEquipment: z.string().optional(),
+  youtubeUrl: z
+    .union([z.literal(""), z.string().url().refine(isYouTubeUrl, "Enter a YouTube link")])
+    .optional(),
   isPublic: z.boolean().optional(),
   isActive: z.boolean().optional(),
   returnTo: z.string().min(1)
 });
+
+function isYouTubeUrl(value: string) {
+  try {
+    const hostname = new URL(value).hostname;
+    return hostname.includes("youtube.com") || hostname.includes("youtu.be");
+  } catch {
+    return false;
+  }
+}
 
 const homepageSectionSchema = z.object({
   id: z.uuid(),
@@ -539,6 +568,90 @@ async function resolveAmbassadorApplicationNotifications(ambassadorProfileId: st
     .is("resolved_at", null);
 }
 
+async function applyUserRoleChange(
+  actorId: string,
+  userId: string,
+  role: "staff" | "super_admin" | "ambassador" | "school"
+): Promise<string | null> {
+  const admin = getAdminClientOrThrow();
+  const { data: target } = await admin
+    .from("profiles")
+    .select("id, role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!target) {
+    return "user-not-found";
+  }
+
+  // Grant the ambassador profile before the role flips: an ambassador role
+  // without an approved profile row cannot access the ambassador portal.
+  if (role === "ambassador" && target.role !== "ambassador") {
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!ambassadorProfile) {
+      const { error: createError } = await admin.from("ambassador_profiles").insert({
+        user_id: userId,
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: actorId
+      });
+
+      if (createError) {
+        return "ambassador-sync-failed";
+      }
+    } else if (ambassadorProfile.status !== "approved") {
+      const { error: approveError } = await admin
+        .from("ambassador_profiles")
+        .update({
+          status: "approved",
+          approved_at: new Date().toISOString(),
+          approved_by: actorId
+        })
+        .eq("id", ambassadorProfile.id);
+
+      if (approveError) {
+        return "ambassador-sync-failed";
+      }
+
+      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
+    }
+  }
+
+  const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
+
+  if (error) {
+    return "role-update-failed";
+  }
+
+  if (target.role === "ambassador" && role !== "ambassador") {
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (ambassadorProfile && ["approved", "applied"].includes(ambassadorProfile.status as string)) {
+      const { error: deactivateError } = await admin
+        .from("ambassador_profiles")
+        .update({ status: "inactive" })
+        .eq("id", ambassadorProfile.id);
+
+      if (deactivateError) {
+        return "ambassador-sync-failed";
+      }
+
+      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
+    }
+  }
+
+  return null;
+}
+
 export async function updateUserRoleAction(formData: FormData) {
   const actor = await requirePortalAccess("super_admin");
   const parsed = userRoleSchema.safeParse({
@@ -554,89 +667,63 @@ export async function updateUserRoleAction(formData: FormData) {
     redirect("/admin/users?error=last-super-admin");
   }
 
-  const admin = getAdminClientOrThrow();
-  const { data: target } = await admin
-    .from("profiles")
-    .select("id, role")
-    .eq("id", parsed.data.userId)
-    .maybeSingle();
+  const errorKey = await applyUserRoleChange(actor.id, parsed.data.userId, parsed.data.role);
 
-  if (!target) {
-    redirect("/admin/users?error=user-not-found");
-  }
-
-  // Grant the ambassador profile before the role flips: an ambassador role
-  // without an approved profile row cannot access the ambassador portal.
-  if (parsed.data.role === "ambassador" && target.role !== "ambassador") {
-    const { data: ambassadorProfile } = await admin
-      .from("ambassador_profiles")
-      .select("id, status")
-      .eq("user_id", parsed.data.userId)
-      .maybeSingle();
-
-    if (!ambassadorProfile) {
-      const { error: createError } = await admin.from("ambassador_profiles").insert({
-        user_id: parsed.data.userId,
-        status: "approved",
-        approved_at: new Date().toISOString(),
-        approved_by: actor.id
-      });
-
-      if (createError) {
-        redirect("/admin/users?error=ambassador-sync-failed");
-      }
-    } else if (ambassadorProfile.status !== "approved") {
-      const { error: approveError } = await admin
-        .from("ambassador_profiles")
-        .update({
-          status: "approved",
-          approved_at: new Date().toISOString(),
-          approved_by: actor.id
-        })
-        .eq("id", ambassadorProfile.id);
-
-      if (approveError) {
-        redirect("/admin/users?error=ambassador-sync-failed");
-      }
-
-      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
-    }
-  }
-
-  const { error } = await admin
-    .from("profiles")
-    .update({ role: parsed.data.role })
-    .eq("id", parsed.data.userId);
-
-  if (error) {
-    redirect("/admin/users?error=role-update-failed");
-  }
-
-  if (target.role === "ambassador" && parsed.data.role !== "ambassador") {
-    const { data: ambassadorProfile } = await admin
-      .from("ambassador_profiles")
-      .select("id, status")
-      .eq("user_id", parsed.data.userId)
-      .maybeSingle();
-
-    if (ambassadorProfile && ["approved", "applied"].includes(ambassadorProfile.status as string)) {
-      const { error: deactivateError } = await admin
-        .from("ambassador_profiles")
-        .update({ status: "inactive" })
-        .eq("id", ambassadorProfile.id);
-
-      if (deactivateError) {
-        redirect("/admin/users?error=ambassador-sync-failed");
-      }
-
-      await resolveAmbassadorApplicationNotifications(ambassadorProfile.id as string);
-    }
+  if (errorKey) {
+    redirect(`/admin/users?error=${errorKey}`);
   }
 
   await logAuditEvent(actor.id, "user.role_updated", "profile", parsed.data.userId);
   revalidatePath("/admin");
   revalidatePath("/staff");
   redirect("/admin/users?updated=role");
+}
+
+export async function updateUserAccessAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const parsedRole = userRoleSchema.safeParse({
+    userId: String(formData.get("userId") || ""),
+    role: String(formData.get("role") || "")
+  });
+  const parsedStatus = userStatusSchema.safeParse({
+    userId: String(formData.get("userId") || ""),
+    status: String(formData.get("status") || "")
+  });
+
+  if (!parsedRole.success || !parsedStatus.success) {
+    redirect("/admin/users?error=invalid-role");
+  }
+
+  if (
+    (parsedRole.data.role !== "super_admin" || parsedStatus.data.status !== "active") &&
+    (await isLastActiveSuperAdmin(parsedRole.data.userId))
+  ) {
+    redirect("/admin/users?error=last-super-admin");
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { error: statusError } = await admin
+    .from("profiles")
+    .update({ status: parsedStatus.data.status })
+    .eq("id", parsedStatus.data.userId);
+
+  if (statusError) {
+    redirect("/admin/users?error=status-update-failed");
+  }
+
+  const errorKey = await applyUserRoleChange(actor.id, parsedRole.data.userId, parsedRole.data.role);
+
+  if (errorKey) {
+    redirect(`/admin/users?error=${errorKey}`);
+  }
+
+  await logAuditEvent(actor.id, "user.access_updated", "profile", parsedRole.data.userId);
+  revalidatePath("/admin");
+  revalidatePath("/staff");
+
+  const tabSuffix =
+    String(formData.get("tab") || "") === "ambassadors" ? "&tab=ambassadors" : "";
+  redirect(`/admin/users?updated=access${tabSuffix}`);
 }
 
 export async function updateUserStatusAction(formData: FormData) {
@@ -1017,12 +1104,27 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   );
   const parsed = ambassadorReportSubmitSchema.safeParse({
     bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    presenterName: String(formData.get("presenterName") || ""),
+    schoolName: String(formData.get("schoolName") || ""),
+    schoolRollSize: String(formData.get("schoolRollSize") || "") || undefined,
+    primaryContactName: String(formData.get("primaryContactName") || ""),
+    primaryContactEmail: String(formData.get("primaryContactEmail") || ""),
+    regionLocation: String(formData.get("regionLocation") || "") || undefined,
+    deliveredDate: String(formData.get("deliveredDate") || ""),
+    deliveredTime: String(formData.get("deliveredTime") || ""),
+    firstPresentation: String(formData.get("firstPresentation") || ""),
+    studentsCompeted: String(formData.get("studentsCompeted") || ""),
     attendeeCount: formData.get("attendeeCount"),
-    yearLevels: String(formData.get("yearLevels") || ""),
-    teacherResponseRating: formData.get("teacherResponseRating"),
+    ageGroups: String(formData.get("ageGroups") || ""),
+    parentsPresent: String(formData.get("parentsPresent") || ""),
+    attendeeQuotes: String(formData.get("attendeeQuotes") || "") || undefined,
+    attendanceRating: formData.get("attendanceRating"),
     studentEngagementRating: formData.get("studentEngagementRating"),
+    teacherResponseRating: formData.get("teacherResponseRating"),
+    presentationEnergyRating: formData.get("presentationEnergyRating"),
     presentationFeedback: String(formData.get("presentationFeedback") || "") || undefined,
     notableQuestions: String(formData.get("notableQuestions") || "") || undefined,
+    additionalNotes: String(formData.get("additionalNotes") || "") || undefined,
     mediaConsentObtained: formData.get("mediaConsentObtained") === "on",
     returnTo: fallbackReturnTo
   });
@@ -1030,6 +1132,8 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   if (!parsed.success) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-report"));
   }
+
+  const deliveredAt = new Date(`${parsed.data.deliveredDate}T${parsed.data.deliveredTime}:00`);
 
   const admin = getAdminClientOrThrow();
   const { data: ambassadorProfile } = await admin
@@ -1071,13 +1175,35 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     .insert({
       booking_session_id: parsed.data.bookingSessionId,
       ambassador_profile_id: ambassadorProfile.id,
-      delivered_at: session.starts_at ?? new Date().toISOString(),
+      presenter_name: parsed.data.presenterName,
+      school_roll_size: parsed.data.schoolRollSize ?? null,
+      primary_contact_name: parsed.data.primaryContactName,
+      primary_contact_email: parsed.data.primaryContactEmail,
+      delivered_at: Number.isNaN(deliveredAt.getTime())
+        ? (session.starts_at ?? new Date().toISOString())
+        : deliveredAt.toISOString(),
+      first_presentation_to_school: parsed.data.firstPresentation === "yes",
+      students_competed_in_esports: parsed.data.studentsCompeted === "yes",
       attendee_count: parsed.data.attendeeCount,
-      year_levels: parsed.data.yearLevels,
-      teacher_response_rating: parsed.data.teacherResponseRating,
+      year_levels: parsed.data.ageGroups,
+      age_groups: parsed.data.ageGroups,
+      parents_present: parsed.data.parentsPresent === "yes",
+      attendee_quotes: parsed.data.attendeeQuotes || null,
+      attendance_rating: parsed.data.attendanceRating,
       student_response_rating: parsed.data.studentEngagementRating,
+      teacher_response_rating: parsed.data.teacherResponseRating,
+      presentation_energy_rating: parsed.data.presentationEnergyRating,
       presentation_feedback: parsed.data.presentationFeedback || null,
       student_questions_themes: parsed.data.notableQuestions || null,
+      additional_notes: [
+        parsed.data.additionalNotes?.trim(),
+        parsed.data.regionLocation?.trim()
+          ? `Region / location: ${parsed.data.regionLocation.trim()}`
+          : "",
+        parsed.data.schoolName.trim() ? `School (as entered): ${parsed.data.schoolName.trim()}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n") || null,
       media_consent_confirmed: parsed.data.mediaConsentObtained ?? false,
       submitted_at: new Date().toISOString()
     })
@@ -1086,6 +1212,36 @@ export async function submitAmbassadorReportAction(formData: FormData) {
 
   if (reportError || !report) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
+  }
+
+  // Presentation photos/videos and signed media release forms go into the
+  // media library, linked to this report for staff review.
+  const mediaFiles = formData
+    .getAll("mediaFiles")
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0)
+    .slice(0, 6);
+
+  for (const file of mediaFiles) {
+    try {
+      const upload = await uploadPublicAsset(file, "report-media");
+      await admin.from("media_library").insert({
+        title: file.name,
+        media_type: file.type.startsWith("video/")
+          ? "video"
+          : file.type === "application/pdf"
+            ? "document"
+            : "image",
+        storage_path: upload.storagePath,
+        public_url: upload.publicUrl,
+        uploaded_by: actor.id,
+        school_id: session.school_id ?? null,
+        booking_session_id: parsed.data.bookingSessionId,
+        report_id: report.id,
+        consent_status: parsed.data.mediaConsentObtained ? "consent_confirmed" : "needs_consent_check"
+      });
+    } catch {
+      // A failed media upload shouldn't lose the whole report submission.
+    }
   }
 
   const eligibleThreshold = 100;
@@ -1875,6 +2031,9 @@ export async function savePresentationAction(formData: FormData) {
     yearLevels: String(formData.get("yearLevels") || ""),
     durationMinutes: formData.get("durationMinutes"),
     deliveryFormats: String(formData.get("deliveryFormats") || ""),
+    learningOutcomes: String(formData.get("learningOutcomes") || ""),
+    requiredEquipment: String(formData.get("requiredEquipment") || ""),
+    youtubeUrl: String(formData.get("youtubeUrl") || "").trim(),
     isPublic: formData.get("isPublic") === "on",
     isActive: formData.get("isActive") === "on",
     returnTo: fallbackReturnTo
@@ -1909,16 +2068,28 @@ export async function savePresentationAction(formData: FormData) {
       year_levels: parsed.data.yearLevels || null,
       duration_minutes: parsed.data.durationMinutes,
       delivery_formats: splitCommaList(parsed.data.deliveryFormats ?? ""),
+      learning_outcomes: parsed.data.learningOutcomes?.trim() || null,
+      required_equipment: parsed.data.requiredEquipment?.trim() || null,
+      youtube_url: parsed.data.youtubeUrl || null,
       is_public: intent === "draft" ? false : (parsed.data.isPublic ?? false),
       is_active: intent === "draft" ? false : (parsed.data.isActive ?? false),
       image_url: imageUrl
     };
 
-  const query = parsed.data.id
-    ? admin.from("presentation_types").update(payload).eq("id", parsed.data.id).select("id").single()
-    : admin.from("presentation_types").insert(payload).select("id").single();
+  const runSave = (body: Record<string, unknown>) =>
+    parsed.data.id
+      ? admin.from("presentation_types").update(body).eq("id", parsed.data.id).select("id").single()
+      : admin.from("presentation_types").insert(body).select("id").single();
 
-  const { data, error } = await query;
+  let { data, error } = await runSave(payload);
+
+  if (error && error.message.includes("youtube_url")) {
+    // The 0009_presentation_video migration hasn't been applied yet — save
+    // everything except the video link rather than failing the whole edit.
+    const withoutVideo: Record<string, unknown> = { ...payload };
+    delete withoutVideo.youtube_url;
+    ({ data, error } = await runSave(withoutVideo));
+  }
 
   if (error) {
     redirect(`${parsed.data.returnTo}?error=save-failed`);
@@ -2068,6 +2239,255 @@ export async function saveAmbassadorPaymentDetailsAction(formData: FormData) {
   );
   revalidatePath("/ambassador");
   redirect(appendSearchParam(parsed.data.returnTo, "saved", "payment-details"));
+}
+
+export async function markReportReviewedAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/reports"),
+    "/staff/reports"
+  );
+  const reportId = String(formData.get("reportId") || "");
+
+  if (!reportId) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-report"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { error } = await admin
+    .from("ambassador_reports")
+    .update({
+      reviewed_for_payment_at: new Date().toISOString(),
+      reviewed_for_payment_by: actor.id
+    })
+    .eq("id", reportId);
+
+  if (error) {
+    redirect(appendSearchParam(returnTo, "error", "report-review-failed"));
+  }
+
+  await logAuditEvent(actor.id, "report.reviewed_for_payment", "ambassador_report", reportId);
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(returnTo, "saved", "report-reviewed"));
+}
+
+export async function saveRegionAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const id = String(formData.get("id") || "");
+  const name = String(formData.get("name") || "").trim();
+  const sortOrder = Number(formData.get("sortOrder") || 0);
+  const isActive = formData.get("isActive") === "on";
+
+  if (name.length < 2 || !Number.isFinite(sortOrder)) {
+    redirect("/admin/regions?error=invalid-region");
+  }
+
+  const admin = getAdminClientOrThrow();
+
+  if (id) {
+    const { error } = await admin
+      .from("regions")
+      .update({ name, sort_order: Math.round(sortOrder), is_active: isActive })
+      .eq("id", id);
+
+    if (error) {
+      redirect("/admin/regions?error=region-save-failed");
+    }
+
+    await logAuditEvent(actor.id, "region.updated", "region", id);
+  } else {
+    // New regions keep a stable slug derived from the name.
+    const slug = slugify(name);
+    const { data: existing } = await admin
+      .from("regions")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (existing) {
+      redirect("/admin/regions?error=region-exists");
+    }
+
+    const { data: created, error } = await admin
+      .from("regions")
+      .insert({ name, slug, sort_order: Math.round(sortOrder), is_active: true })
+      .select("id")
+      .single();
+
+    if (error || !created) {
+      redirect("/admin/regions?error=region-save-failed");
+    }
+
+    await logAuditEvent(actor.id, "region.created", "region", created.id);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/staff");
+  revalidatePath("/");
+  redirect("/admin/regions?saved=region");
+}
+
+export async function deleteRegionAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const id = String(formData.get("id") || "");
+
+  if (!id) {
+    redirect("/admin/regions?error=invalid-region");
+  }
+
+  const admin = getAdminClientOrThrow();
+
+  // Regions referenced by schools, bookings, or ambassadors can't be deleted
+  // safely — they should be deactivated instead.
+  const referenceChecks = await Promise.all(
+    ["schools", "booking_requests", "booking_sessions", "ambassador_profiles", "ambassador_travel_regions"].map(
+      (table) =>
+        admin.from(table).select("id", { count: "exact", head: true }).eq("region_id", id)
+    )
+  );
+
+  if (referenceChecks.some((result) => (result.count ?? 0) > 0)) {
+    redirect("/admin/regions?error=region-in-use");
+  }
+
+  const { error } = await admin.from("regions").delete().eq("id", id);
+
+  if (error) {
+    redirect("/admin/regions?error=region-delete-failed");
+  }
+
+  await logAuditEvent(actor.id, "region.deleted", "region", id);
+  revalidatePath("/admin");
+  revalidatePath("/staff");
+  revalidatePath("/");
+  redirect("/admin/regions?saved=region-deleted");
+}
+
+export async function saveAmbassadorProfileAction(formData: FormData) {
+  const actor = await requirePortalAccess("ambassador");
+  const returnTo = "/ambassador/profile";
+  const admin = getAdminClientOrThrow();
+
+  const { data: ambassadorProfile } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("user_id", actor.id)
+    .maybeSingle();
+
+  if (!ambassadorProfile) {
+    redirect(appendSearchParam(returnTo, "error", "ambassador-not-found"));
+  }
+
+  const fullName = String(formData.get("fullName") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const regionSlug = String(formData.get("regionSlug") || "").trim();
+  const travelRegions = splitCommaList(String(formData.get("travelRegions") || ""));
+
+  if (fullName.length < 2) {
+    redirect(appendSearchParam(returnTo, "error", "profile-save-failed"));
+  }
+
+  const weeklyAvailability: Record<string, string> = {};
+  for (const day of ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]) {
+    const value = String(formData.get(`availability-${day}`) || "").trim();
+
+    if (value) {
+      weeklyAvailability[day] = value;
+    }
+  }
+
+  const profileDetails = {
+    mailingAddress: String(formData.get("mailingAddress") || "").trim(),
+    payoutEmail: String(formData.get("payoutEmail") || "").trim(),
+    payoutMethod: String(formData.get("payoutMethod") || "bank_transfer").trim(),
+    invoiceName: String(formData.get("invoiceName") || "").trim(),
+    irdNumber: String(formData.get("irdNumber") || "").trim(),
+    billingNote: String(formData.get("billingNote") || "").trim(),
+    bookingTypes: splitCommaList(String(formData.get("bookingTypes") || "")),
+    preferredTimes: String(formData.get("preferredTimes") || "").trim(),
+    weeklyAvailability,
+    unavailableDates: splitCommaList(String(formData.get("unavailableDates") || "")),
+    availabilityNote: String(formData.get("availabilityNote") || "").trim()
+  };
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({ full_name: fullName, phone: phone || null })
+    .eq("id", actor.id);
+
+  if (profileError) {
+    redirect(appendSearchParam(returnTo, "error", "profile-save-failed"));
+  }
+
+  let regionId: string | null = null;
+
+  if (regionSlug) {
+    const { data: region } = await admin
+      .from("regions")
+      .select("id")
+      .eq("slug", regionSlug)
+      .maybeSingle();
+    regionId = (region?.id as string | undefined) ?? null;
+  }
+
+  const ambassadorPayload: Record<string, unknown> = {
+    bio: String(formData.get("bio") || "").trim() || null,
+    bank_account_name: String(formData.get("bankAccountName") || "").trim() || null,
+    bank_account_number: String(formData.get("bankAccountNumber") || "").trim() || null,
+    gst_number: String(formData.get("gstNumber") || "").trim() || null,
+    open_to_travel: formData.get("openToTravel") === "on",
+    profile_details: profileDetails
+  };
+
+  if (regionId) {
+    ambassadorPayload.region_id = regionId;
+  }
+
+  let { error: ambassadorError } = await admin
+    .from("ambassador_profiles")
+    .update(ambassadorPayload)
+    .eq("id", ambassadorProfile.id);
+
+  if (ambassadorError && ambassadorError.message.includes("profile_details")) {
+    // The 0011 migration hasn't been applied yet — save everything else.
+    const withoutDetails = { ...ambassadorPayload };
+    delete withoutDetails.profile_details;
+    ({ error: ambassadorError } = await admin
+      .from("ambassador_profiles")
+      .update(withoutDetails)
+      .eq("id", ambassadorProfile.id));
+  }
+
+  if (ambassadorError) {
+    redirect(appendSearchParam(returnTo, "error", "profile-save-failed"));
+  }
+
+  // Replace preferred/travel regions with the submitted set.
+  await admin
+    .from("ambassador_travel_regions")
+    .delete()
+    .eq("ambassador_profile_id", ambassadorProfile.id);
+
+  if (travelRegions.length > 0) {
+    const { data: regionRows } = await admin
+      .from("regions")
+      .select("id, slug")
+      .in("slug", travelRegions);
+
+    if (regionRows?.length) {
+      await admin.from("ambassador_travel_regions").insert(
+        regionRows.map((region) => ({
+          ambassador_profile_id: ambassadorProfile.id,
+          region_id: region.id
+        }))
+      );
+    }
+  }
+
+  await logAuditEvent(actor.id, "ambassador.profile_updated", "ambassador_profile", ambassadorProfile.id);
+  revalidatePath("/ambassador");
+  redirect(appendSearchParam(returnTo, "saved", "profile"));
 }
 
 export async function submitPaymentInvoiceAction(formData: FormData) {

@@ -4,6 +4,8 @@ import type { PortalNotification, ProfileStatus, Role } from "@/lib/domain/types
 import { config } from "@/lib/env";
 
 const getCreateClient = async () => (await import("@/lib/supabase/server")).createClient();
+const getCreateAdminClient = async () =>
+  (await import("@/lib/supabase/admin")).createAdminClient();
 
 export type AuthenticatedPortalUser = {
   id: string;
@@ -165,13 +167,17 @@ export async function getAuthenticatedPortalUser() {
     .is("read_at", null)
     .is("resolved_at", null);
 
+  // The approval check must not depend on the user's own RLS visibility, so
+  // read it with the service-role client when available.
   const ambassadorStatusPromise =
     profile.role === "ambassador"
-      ? supabase
-          .from("ambassador_profiles")
-          .select("status")
-          .eq("user_id", user.id)
-          .maybeSingle()
+      ? getCreateAdminClient().then((adminClient) =>
+          (adminClient ?? supabase)
+            .from("ambassador_profiles")
+            .select("status")
+            .eq("user_id", user.id)
+            .maybeSingle()
+        )
       : Promise.resolve({ data: null, error: null });
 
   const [{ count }, ambassadorResult] = await Promise.all([

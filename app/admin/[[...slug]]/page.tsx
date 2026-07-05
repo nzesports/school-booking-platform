@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   Bell,
@@ -6,8 +7,10 @@ import {
   ClipboardCheck,
   FileText,
   FolderKanban,
+  Info,
   LayoutTemplate,
   Layers3,
+  Lock,
   MapPinned,
   Plus,
   School2,
@@ -21,17 +24,24 @@ import {
 import { logoutAction } from "@/app/auth/actions";
 import {
   deletePortalUserAction,
+  deleteRegionAction,
   invitePortalUserAction,
   markNotificationReadAction,
+  markReportReviewedAction,
   reviewAmbassadorAction,
   saveEmailTemplateAction,
   saveHomepageSectionAction,
   savePresentationAction,
+  saveRegionAction,
   saveResourceAction,
-  updateUserRoleAction,
-  updateUserStatusAction
+  updateUserAccessAction
 } from "@/app/portal/actions";
+import { CopyTextButton } from "@/components/dashboard/copy-text-button";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
+import { RegionsManager } from "@/components/dashboard/regions-manager";
+import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
+import { ReportsOverview } from "@/components/dashboard/reports-overview";
+import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
 import {
   BookingLifecyclePanel,
   FeedbackWorkspace,
@@ -41,7 +51,6 @@ import {
   PaymentsWorkspace,
   getPaymentsNotice
 } from "@/components/dashboard/payments-workspace";
-import { ResourceLibrary } from "@/components/dashboard/resource-library";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
@@ -61,6 +70,26 @@ import { getPaymentSettings } from "@/lib/services/invoices";
 import { getAdminPortalData } from "@/lib/services/portal";
 import { cn, formatCurrency, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
 
+const directoryGridClass =
+  "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,110px)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1.5fr)_minmax(0,180px)]";
+
+const avatarPalette = [
+  "bg-[#ece9ff] text-[#5b4fc0]",
+  "bg-[#e3f2fd] text-[#1565c0]",
+  "bg-[#e6f5ee] text-[#178247]",
+  "bg-[#fff3d8] text-[#9a6900]"
+];
+
+function maskEmail(email: string) {
+  const [local, domain] = email.split("@");
+
+  if (!domain) {
+    return email;
+  }
+
+  return `${local.slice(0, 2)}${"•".repeat(Math.max(local.length - 2, 3))}@${domain}`;
+}
+
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: SlidersHorizontal },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
@@ -69,7 +98,6 @@ const navItems = [
   { href: "/admin/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/admin/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/roles", label: "Roles", icon: ShieldCheck },
   { href: "/admin/presentations", label: "Presentations", icon: Layers3 },
   { href: "/admin/regions", label: "Regions", icon: MapPinned },
   { href: "/admin/feedback", label: "Feedback", icon: Bell },
@@ -104,13 +132,24 @@ export default async function AdminPortalPage({
   );
   const composeOpen = readSearchParam(resolvedSearchParams, "compose") === "1";
   const deleteUserId = readSearchParam(resolvedSearchParams, "delete");
-  const directoryUsers = portal.users.filter(
-    (user) => user.role === "staff" || user.role === "super_admin" || user.role === "ambassador"
+  const staffDirectoryUsers = portal.users.filter(
+    (user) => user.role === "staff" || user.role === "super_admin"
   );
+  const ambassadorDirectoryUsers = portal.users.filter((user) => user.role === "ambassador");
+  const usersTab =
+    readSearchParam(resolvedSearchParams, "tab") === "ambassadors" ? "ambassadors" : "staff";
+  const directoryUsers = usersTab === "ambassadors" ? ambassadorDirectoryUsers : staffDirectoryUsers;
+  const usersHref = (suffix?: string) => {
+    const parts = [usersTab === "ambassadors" ? "tab=ambassadors" : "", suffix ?? ""].filter(
+      Boolean
+    );
+    return parts.length > 0 ? `/admin/users?${parts.join("&")}` : "/admin/users";
+  };
   const selectedDeleteUser = deleteUserId
     ? directoryUsers.find((user) => user.id === deleteUserId)
     : null;
   const usersNotice = route === "users" ? getUsersNotice(resolvedSearchParams) : null;
+  const regionsNotice = route === "regions" ? getRegionsNotice(resolvedSearchParams) : null;
   const isCreatingPresentation = route === "presentations/new";
   const selectedPresentation =
     route.startsWith("presentations/") && !isCreatingPresentation
@@ -127,8 +166,9 @@ export default async function AdminPortalPage({
         yearLevels: "Years 7 to 13",
         durationMinutes: 45,
         deliveryFormats: ["Assembly", "Workshop"],
-        learningOutcomes: [],
-        requiredEquipment: [],
+        learningOutcomes: [] as string[],
+        requiredEquipment: [] as string[],
+        youtubeUrl: undefined as string | undefined,
         imageUrl: undefined,
         active: true,
         public: true
@@ -193,8 +233,6 @@ export default async function AdminPortalPage({
                   ? "Track ambassador invoices and payments"
           : route === "users"
             ? "Manage live access"
-            : route === "roles"
-              ? "Review active role coverage"
               : route === "presentations"
                 ? "Manage presentation content and visibility"
                 : route === "presentations/new"
@@ -280,6 +318,7 @@ export default async function AdminPortalPage({
             ambassadors={portal.ambassadors}
             activeView={activeBookingView}
             range={dashboardRange}
+            initialQuery={readSearchParam(resolvedSearchParams, "q")}
           />
         ) : null}
 
@@ -402,18 +441,35 @@ export default async function AdminPortalPage({
         ) : null}
 
         {route === "reports" ? (
-          <DataTable
-            title="Session reports"
-            columns={["School", "Presentation", "Submitted", "Attendees", "Ambassador", "Status"]}
-            rows={portal.reports.map((report) => [
-              report.schoolName,
-              report.presentationTitle,
-              formatDateTime(report.submittedAt),
-              String(report.attendeeCount),
-              report.ambassadorName ?? "Unassigned",
-              <StatusBadge key={`${report.id}-status`} value={report.status} />
-            ])}
-          />
+          <div className="grid gap-5">
+            <ReportsOverview reports={portal.reports} />
+            <DataTable
+              title="Session reports"
+              columns={[
+                "School",
+                "Presentation",
+                "Submitted",
+                "Attendees",
+                "Ambassador",
+                "Status",
+                "Report"
+              ]}
+              rows={portal.reports.map((report) => [
+                report.schoolName,
+                report.presentationTitle,
+                formatDateTime(report.submittedAt),
+                String(report.attendeeCount),
+                report.ambassadorName ?? "Unassigned",
+                <StatusBadge key={`${report.id}-status`} value={report.status} />,
+                <ReportDetailsButton
+                  key={`${report.id}-view`}
+                  report={report}
+                  reviewAction={markReportReviewedAction}
+                  reviewReturnTo="/admin/reports"
+                />
+              ])}
+            />
+          </div>
         ) : null}
 
         {route === "payments" ? (
@@ -451,7 +507,7 @@ export default async function AdminPortalPage({
                 </p>
               </div>
               <ButtonLink
-                href={composeOpen ? "/admin/users" : "/admin/users?compose=1"}
+                href={composeOpen ? usersHref() : usersHref("compose=1")}
                 variant={composeOpen ? "secondary" : "primary"}
                 className="min-w-[148px]"
               >
@@ -460,10 +516,47 @@ export default async function AdminPortalPage({
               </ButtonLink>
             </div>
 
+            <div className="mt-6 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-full border border-[rgba(4,15,75,0.08)] bg-[rgba(247,250,252,0.92)] p-1.5">
+              {[
+                {
+                  key: "staff",
+                  label: `Staff & admins (${staffDirectoryUsers.length})`,
+                  href: "/admin/users"
+                },
+                {
+                  key: "ambassadors",
+                  label: `Ambassadors (${ambassadorDirectoryUsers.length})`,
+                  href: "/admin/users?tab=ambassadors"
+                }
+              ].map((tab) => (
+                <Link
+                  key={tab.key}
+                  href={tab.href}
+                  className={cn(
+                    "inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-semibold transition",
+                    usersTab === tab.key
+                      ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                      : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
+                  )}
+                >
+                  {tab.label}
+                </Link>
+              ))}
+            </div>
+
             {usersNotice ? (
-              <NoticeBanner tone={usersNotice.tone} className="mt-6">
-                {usersNotice.message}
-              </NoticeBanner>
+              <div className="relative mt-6">
+                <NoticeBanner tone={usersNotice.tone} className="pr-14">
+                  {usersNotice.message}
+                </NoticeBanner>
+                <ButtonLink
+                  href={usersHref()}
+                  variant="ghost"
+                  className="absolute right-3 top-1/2 min-h-0 -translate-y-1/2 rounded-full px-2.5 py-1 text-base leading-none"
+                >
+                  ×
+                </ButtonLink>
+              </div>
             ) : null}
 
             {composeOpen ? (
@@ -545,116 +638,182 @@ export default async function AdminPortalPage({
               </div>
             ) : null}
 
-            <div className="mt-6 grid gap-4">
-              {directoryUsers.map((user) => {
+            <div className="mt-6 overflow-hidden rounded-[24px] border border-[color:var(--border-soft)] bg-white/92">
+              <div
+                className={cn(
+                  "hidden gap-4 border-b border-[color:var(--border-soft)] bg-[#f6f9fd] px-5 py-3 lg:grid",
+                  directoryGridClass
+                )}
+              >
+                {["User", "Joined", "Role", "Status", "Tags & access", "Actions"].map((label) => (
+                  <p
+                    key={label}
+                    className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
+                  >
+                    {label}
+                  </p>
+                ))}
+              </div>
+
+              {directoryUsers.length === 0 ? (
+                <p className="px-5 py-8 text-sm text-[color:var(--text-soft)]">
+                  {usersTab === "ambassadors"
+                    ? "No ambassador accounts yet. Invite one with “Add user” or approve an application from the Ambassadors page."
+                    : "No staff or admin accounts yet. Invite one with “Add user”."}
+                </p>
+              ) : null}
+
+              {directoryUsers.map((user, index) => {
                 const isDeleteOpen = selectedDeleteUser?.id === user.id;
                 const isCurrentUser = user.id === actor.id;
+                const accessFormId = `access-form-${user.id}`;
 
                 return (
                   <div
                     key={user.id}
-                    className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5"
+                    className={cn(
+                      "px-5 py-5",
+                      index > 0 && "border-t border-[color:var(--border-soft)]"
+                    )}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                    <form id={accessFormId} action={updateUserAccessAction} className="hidden">
+                      <input type="hidden" name="userId" value={user.id} />
+                      <input type="hidden" name="tab" value={usersTab} />
+                    </form>
+
+                    <div className={cn("grid gap-4 lg:items-center", directoryGridClass)}>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div
+                          className={cn(
+                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-semibold",
+                            avatarPalette[index % avatarPalette.length]
+                          )}
+                        >
+                          {(user.fullName || user.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[color:var(--navy)]">
+                            {user.fullName}
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <p className="truncate text-sm text-[color:var(--text-soft)]">
+                              {maskEmail(user.email)}
+                            </p>
+                            <CopyTextButton value={user.email} label="Copy email address" />
+                          </div>
+                        </div>
+                      </div>
+
                       <div>
-                        <p className="font-semibold text-[color:var(--navy)]">{user.fullName}</p>
-                        <p className="mt-1 text-sm text-[color:var(--text-soft)]">{user.email}</p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-                          Joined {user.createdAt ? formatShortDate(user.createdAt) : "recently"}
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] lg:hidden">
+                          Joined
+                        </p>
+                        <p className="mt-1 text-sm text-[color:var(--text-muted)] lg:mt-0">
+                          {user.createdAt ? formatShortDate(user.createdAt) : "Recently"}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        {isCurrentUser ? (
-                          <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1 text-xs font-semibold text-[color:var(--navy)]">
-                            Current user
-                          </span>
-                        ) : null}
-                        <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1 text-xs font-semibold text-[color:var(--navy)]">
-                          {titleCase(user.role)}
-                        </span>
-                        {user.role === "ambassador" ? (
-                          <span className="rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#c07a12]">
-                            {user.ambassadorStatus
-                              ? `Ambassador ${user.ambassadorStatus}`
-                              : "Missing ambassador profile"}
-                          </span>
-                        ) : null}
-                        <StatusBadge value={user.status === "active" ? "confirmed" : "cancelled"} />
-                        {user.role === "ambassador" && user.ambassadorProfileId ? (
-                          <ButtonLink
-                            href={`/admin/ambassadors/${user.ambassadorProfileId}`}
-                            variant="ghost"
-                            className="min-h-[36px] rounded-[14px] px-3 py-1.5"
-                          >
-                            Review ambassador
-                          </ButtonLink>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto]">
-                      <form action={updateUserRoleAction} className="grid gap-2">
-                        <input type="hidden" name="userId" value={user.id} />
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] lg:hidden">
                           Role
-                        </label>
-                        <div className="flex gap-2">
-                          <select
-                            name="role"
-                            defaultValue={user.role}
-                            className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm"
-                          >
-                            <option value="staff">Staff</option>
-                            <option value="super_admin">Super admin</option>
-                            <option value="ambassador">Ambassador</option>
-                          </select>
-                          <button
-                            type="submit"
-                            className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)]"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </form>
-                      <form action={updateUserStatusAction} className="grid gap-2">
-                        <input type="hidden" name="userId" value={user.id} />
-                        <label className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
+                        </p>
+                        <select
+                          name="role"
+                          form={accessFormId}
+                          defaultValue={user.role}
+                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm"
+                        >
+                          <option value="staff">Staff</option>
+                          <option value="super_admin">Super admin</option>
+                          <option value="ambassador">Ambassador</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] lg:hidden">
                           Status
-                        </label>
-                        <div className="flex gap-2">
-                          <select
-                            name="status"
-                            defaultValue={user.status}
-                            className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm"
-                          >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
-                          <button
-                            type="submit"
-                            className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)]"
-                          >
-                            Save
-                          </button>
+                        </p>
+                        <select
+                          name="status"
+                          form={accessFormId}
+                          defaultValue={user.status}
+                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] lg:hidden">
+                          Tags &amp; access
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isCurrentUser ? (
+                            <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1 text-xs font-semibold text-[color:var(--navy)]">
+                              Current user
+                            </span>
+                          ) : null}
+                          <span className="rounded-full bg-[#e9edff] px-3 py-1 text-xs font-semibold text-[#4a5fd5]">
+                            {titleCase(user.role)}
+                          </span>
+                          {user.role === "ambassador" ? (
+                            <span className="rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#c07a12]">
+                              {user.ambassadorStatus
+                                ? `Ambassador ${user.ambassadorStatus}`
+                                : "Missing ambassador profile"}
+                            </span>
+                          ) : null}
+                          <StatusBadge value={user.status === "active" ? "confirmed" : "cancelled"} />
+                          {user.role === "ambassador" && user.ambassadorProfileId ? (
+                            <ButtonLink
+                              href={`/admin/ambassadors/${user.ambassadorProfileId}`}
+                              variant="ghost"
+                              className="min-h-[30px] rounded-[10px] px-2 py-1 text-xs font-semibold text-[#4a5fd5]"
+                            >
+                              Review ambassador
+                            </ButtonLink>
+                          ) : null}
                         </div>
-                      </form>
-                      <div className="grid items-end">
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                         {isCurrentUser ? (
-                          <div className="rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--text-soft)]">
-                            Current account cannot be deleted here.
-                          </div>
-                        ) : isDeleteOpen ? (
-                          <ButtonLink href="/admin/users" variant="secondary" className="min-h-[44px]">
-                            Cancel
-                          </ButtonLink>
-                        ) : (
-                          <ButtonLink
-                            href={`/admin/users?delete=${user.id}`}
-                            variant="danger"
-                            className="min-h-[44px]"
+                          <span
+                            title="Manage your own access from another super admin account."
+                            className="inline-flex items-center gap-2 rounded-[14px] border border-[color:var(--border-soft)] bg-[#f2f5fa] px-4 py-2.5 text-sm font-semibold text-[color:var(--text-soft)]"
                           >
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </ButtonLink>
+                            Current account
+                            <Info className="h-4 w-4" />
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              type="submit"
+                              form={accessFormId}
+                              className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
+                            >
+                              Save
+                            </button>
+                            {isDeleteOpen ? (
+                              <ButtonLink
+                                href={usersHref()}
+                                variant="secondary"
+                                className="min-h-[42px] rounded-[14px] px-4 py-2"
+                              >
+                                Cancel
+                              </ButtonLink>
+                            ) : (
+                              <ButtonLink
+                                href={usersHref(`delete=${user.id}`)}
+                                variant="danger"
+                                className="min-h-[42px] rounded-[14px] px-4 py-2"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </ButtonLink>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -665,7 +824,7 @@ export default async function AdminPortalPage({
                         className="mt-5 grid gap-4 rounded-[24px] border border-[#f3b4b4] bg-[#fff7f7] p-4"
                       >
                         <input type="hidden" name="userId" value={user.id} />
-                        <input type="hidden" name="returnTo" value="/admin/users" />
+                        <input type="hidden" name="returnTo" value={usersHref()} />
                         <div>
                           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#b42318]">
                             Delete user
@@ -690,7 +849,7 @@ export default async function AdminPortalPage({
                           >
                             Permanently delete user
                           </button>
-                          <ButtonLink href="/admin/users" variant="secondary" className="min-h-[46px]">
+                          <ButtonLink href={usersHref()} variant="secondary" className="min-h-[46px]">
                             Keep user
                           </ButtonLink>
                         </div>
@@ -700,20 +859,12 @@ export default async function AdminPortalPage({
                 );
               })}
             </div>
-          </Card>
-        ) : null}
 
-        {route === "roles" ? (
-          <DataTable
-            title="Role coverage"
-            columns={["Role", "Description", "Members", "System role"]}
-            rows={portal.roles.map((role) => [
-              titleCase(role.name),
-              role.description,
-              String(role.memberCount),
-              role.isSystemRole ? "Yes" : "No"
-            ])}
-          />
+            <div className="mt-4 flex items-center gap-2 text-sm text-[color:var(--text-soft)]">
+              <Lock className="h-4 w-4 shrink-0" />
+              Changes apply as soon as you press Save. Deleting a user requires typed confirmation.
+            </div>
+          </Card>
         ) : null}
 
         {route === "presentations" ? (
@@ -964,6 +1115,38 @@ export default async function AdminPortalPage({
                     />
                   </Field>
                 </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Field label="Learning outcomes" hint="One per line — shown as a list on the public page">
+                    <textarea
+                      name="learningOutcomes"
+                      defaultValue={presentationEditor.learningOutcomes.join("\n")}
+                      placeholder={"Healthy screen routines\nDigital citizenship\nPositive online behaviour"}
+                      className="min-h-[9rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                    />
+                  </Field>
+                  <Field label="Required equipment" hint="One per line">
+                    <textarea
+                      name="requiredEquipment"
+                      defaultValue={presentationEditor.requiredEquipment.join("\n")}
+                      placeholder={"Projector or screen\nMicrophone if needed"}
+                      className="min-h-[9rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                    />
+                  </Field>
+                </div>
+
+                <Field
+                  label="YouTube video link"
+                  hint="Optional — embedded on the public presentation page so schools can watch a preview"
+                >
+                  <input
+                    name="youtubeUrl"
+                    type="url"
+                    defaultValue={presentationEditor.youtubeUrl ?? ""}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                  />
+                </Field>
               </div>
 
               <div className="grid content-start gap-5">
@@ -1018,10 +1201,14 @@ export default async function AdminPortalPage({
                   </div>
 
                   <div className="mt-5 grid gap-4">
-                    <Field label="Year levels">
+                    <Field
+                      label="Year levels"
+                      hint="Comma separate multiple groups, e.g. Years 5 to 6, Years 7 to 8, Years 9 to 13 — each shows as its own tag on the website"
+                    >
                       <input
                         name="yearLevels"
                         defaultValue={presentationEditor.yearLevels}
+                        placeholder="Years 5 to 6, Years 7 to 8"
                         className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
                       />
                     </Field>
@@ -1120,48 +1307,33 @@ export default async function AdminPortalPage({
         ) : null}
 
         {route === "regions" ? (
-          <DataTable
-            title="Regions"
-            columns={["Region", "Slug", "Status"]}
-            rows={portal.regions.map((region) => [
-              region.name,
-              region.slug,
-              <StatusBadge key={`${region.id}-status`} value={region.isActive ? "confirmed" : "cancelled"} />
-            ])}
-          />
+          <div className="grid gap-4">
+            {regionsNotice ? (
+              <NoticeBanner tone={regionsNotice.tone}>{regionsNotice.message}</NoticeBanner>
+            ) : null}
+            <RegionsManager
+              regions={portal.regions}
+              saveAction={saveRegionAction}
+              deleteAction={deleteRegionAction}
+            />
+          </div>
         ) : null}
 
         {route === "resources" ? (
-          <Card className="rounded-[34px]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Resource library
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                  Library inventory
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  Manage downloads, YouTube embeds, scripts, slide decks, and school or ambassador
-                  materials from one content catalogue.
-                </p>
-              </div>
-              <ButtonLink href="/admin/resources/new">
-                <Plus className="h-4 w-4" />
-                Add resource
-              </ButtonLink>
-            </div>
-
+          <div className="grid gap-4">
             {contentNotice?.scope === "resource" ? (
-              <NoticeBanner tone={contentNotice.tone} className="mt-6">
-                {contentNotice.message}
-              </NoticeBanner>
+              <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
             ) : null}
-
-            <div className="mt-6">
-              <ResourceLibrary resources={portal.resources} editBasePath="/admin/resources" />
-            </div>
-          </Card>
+            <ResourcesWorkspace
+              resources={portal.resources}
+              presentations={portal.presentations.map((presentation) => ({
+                id: presentation.id,
+                title: presentation.title
+              }))}
+              action={saveResourceAction}
+              returnTo="/admin/resources"
+            />
+          </div>
         ) : null}
 
         {resourceEditor && (selectedResource || isCreatingResource) ? (
@@ -1636,6 +1808,41 @@ function readSearchParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
+function getRegionsNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const error = readSearchParam(searchParams, "error");
+  const saved = readSearchParam(searchParams, "saved");
+
+  if (error === "invalid-region") {
+    return { tone: "error" as const, message: "Enter a region name of at least 2 characters." };
+  }
+
+  if (error === "region-exists") {
+    return { tone: "error" as const, message: "A region with that name already exists." };
+  }
+
+  if (error === "region-in-use") {
+    return {
+      tone: "error" as const,
+      message:
+        "That region is used by schools, bookings, or ambassadors, so it can't be deleted. Untick “Active” and save to hide it instead."
+    };
+  }
+
+  if (error === "region-save-failed" || error === "region-delete-failed") {
+    return { tone: "error" as const, message: "Something went wrong — please try again." };
+  }
+
+  if (saved === "region") {
+    return { tone: "success" as const, message: "Region saved." };
+  }
+
+  if (saved === "region-deleted") {
+    return { tone: "success" as const, message: "Region deleted." };
+  }
+
+  return null;
+}
+
 function getUsersNotice(searchParams: Record<string, string | string[] | undefined>) {
   const error = readSearchParam(searchParams, "error");
   const updated = readSearchParam(searchParams, "updated");
@@ -1697,6 +1904,10 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
 
   if (updated === "status") {
     return { tone: "success" as const, message: "User status updated." };
+  }
+
+  if (updated === "access") {
+    return { tone: "success" as const, message: "User access updated." };
   }
 
   if (readSearchParam(searchParams, "invited") === "1") {

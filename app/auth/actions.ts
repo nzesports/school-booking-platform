@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { buildAuthConfirmUrl, buildPublicAuthPath, portalPathForRole } from "@/lib/services/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { splitCommaList } from "@/lib/utils";
 
@@ -87,7 +88,10 @@ async function resolveLoginRedirect() {
   }
 
   if (profile.role === "ambassador") {
-    const { data: ambassador } = await supabase
+    // Use the service-role client so the approval check never depends on the
+    // ambassador's own RLS visibility of their profile row.
+    const adminClient = createAdminClient();
+    const { data: ambassador } = await (adminClient ?? supabase)
       .from("ambassador_profiles")
       .select("status")
       .eq("user_id", user.id)
@@ -106,9 +110,71 @@ function returnToPath(formData: FormData) {
   return String(formData.get("returnTo") || "/");
 }
 
-export async function registerSchoolAccountAction(formData: FormData) {
+export type SignupFormState = {
+  error: string;
+  values: Record<string, string>;
+  attempt: number;
+} | null;
+
+function signupIssueMessage(error: z.ZodError, fieldMessages: Record<string, string>) {
+  const issue = error.issues[0];
+  const field = String(issue?.path[0] ?? "");
+
+  if (field === "confirmPassword" && issue?.code === "custom") {
+    return "The passwords don't match — please re-enter them.";
+  }
+
+  if (field === "password" || field === "confirmPassword") {
+    return "Passwords need to be at least 8 characters. Please re-enter them.";
+  }
+
+  return fieldMessages[field] ?? "Please complete every field and make sure the passwords match.";
+}
+
+function isEmailTaken(
+  error: { message: string } | null,
+  user: { identities?: unknown[] | null } | null
+) {
+  if (error) {
+    return /already (been )?registered|already exists/i.test(error.message);
+  }
+
+  // Supabase obfuscates sign-ups for existing accounts by returning a user
+  // with no identities instead of an error.
+  return Boolean(user) && (user?.identities?.length ?? 0) === 0;
+}
+
+const schoolSignupFieldMessages: Record<string, string> = {
+  schoolName: "Enter your school name.",
+  contactName: "Enter the primary contact name.",
+  email: "Enter a valid email address.",
+  phone: "Enter a valid phone number.",
+  regionSlug: "Select your region."
+};
+
+const ambassadorSignupFieldMessages: Record<string, string> = {
+  fullName: "Enter your full name.",
+  email: "Enter a valid email address.",
+  phone: "Enter a valid phone number.",
+  regionSlug: "Select your primary region.",
+  experience: "Tell us a little more about your experience — at least 20 characters."
+};
+
+export async function registerSchoolAccountAction(
+  prevState: SignupFormState,
+  formData: FormData
+): Promise<SignupFormState> {
   const supabase = await createClient();
   const returnTo = returnToPath(formData);
+  const attempt = (prevState?.attempt ?? 0) + 1;
+  const values = {
+    schoolName: String(formData.get("schoolName") || ""),
+    contactName: String(formData.get("contactName") || ""),
+    email: String(formData.get("email") || ""),
+    phone: String(formData.get("phone") || ""),
+    regionSlug: String(formData.get("regionSlug") || ""),
+    marketingConsent: formData.get("marketingConsent") === "on" ? "on" : ""
+  };
 
   if (!supabase) {
     redirect(
@@ -121,24 +187,18 @@ export async function registerSchoolAccountAction(formData: FormData) {
   }
 
   const parsed = schoolSignupSchema.safeParse({
-    schoolName: String(formData.get("schoolName") || ""),
-    contactName: String(formData.get("contactName") || ""),
-    email: String(formData.get("email") || ""),
-    phone: String(formData.get("phone") || ""),
-    regionSlug: String(formData.get("regionSlug") || ""),
+    ...values,
     password: String(formData.get("password") || ""),
     confirmPassword: String(formData.get("confirmPassword") || ""),
-    marketingConsent: formData.get("marketingConsent") === "on"
+    marketingConsent: values.marketingConsent === "on"
   });
 
   if (!parsed.success) {
-    redirect(
-      buildPublicAuthPath(returnTo, {
-        auth: "signup",
-        role: "school",
-        error: "invalid-school-signup"
-      })
-    );
+    return {
+      error: signupIssueMessage(parsed.error, schoolSignupFieldMessages),
+      values,
+      attempt
+    };
   }
 
   const { error, data } = await supabase.auth.signUp({
@@ -157,14 +217,21 @@ export async function registerSchoolAccountAction(formData: FormData) {
     }
   });
 
-  if (error) {
+  if (isEmailTaken(error, data?.user ?? null)) {
     redirect(
       buildPublicAuthPath(returnTo, {
-        auth: "signup",
-        role: "school",
-        error: "signup-failed"
+        auth: "login",
+        error: "email-exists"
       })
     );
+  }
+
+  if (error) {
+    return {
+      error: "We couldn't create that account right now. Please try again.",
+      values,
+      attempt
+    };
   }
 
   if (data.session) {
@@ -179,9 +246,23 @@ export async function registerSchoolAccountAction(formData: FormData) {
   );
 }
 
-export async function registerAmbassadorAccountAction(formData: FormData) {
+export async function registerAmbassadorAccountAction(
+  prevState: SignupFormState,
+  formData: FormData
+): Promise<SignupFormState> {
   const supabase = await createClient();
   const returnTo = returnToPath(formData);
+  const attempt = (prevState?.attempt ?? 0) + 1;
+  const values = {
+    fullName: String(formData.get("fullName") || ""),
+    email: String(formData.get("email") || ""),
+    phone: String(formData.get("phone") || ""),
+    regionSlug: String(formData.get("regionSlug") || ""),
+    experience: String(formData.get("experience") || ""),
+    referredBy: String(formData.get("referredBy") || ""),
+    openToTravel: formData.get("openToTravel") === "on" ? "on" : "",
+    travelRegions: String(formData.get("travelRegions") || "")
+  };
 
   if (!supabase) {
     redirect(
@@ -194,26 +275,18 @@ export async function registerAmbassadorAccountAction(formData: FormData) {
   }
 
   const parsed = ambassadorSignupSchema.safeParse({
-    fullName: String(formData.get("fullName") || ""),
-    email: String(formData.get("email") || ""),
-    phone: String(formData.get("phone") || ""),
-    regionSlug: String(formData.get("regionSlug") || ""),
-    experience: String(formData.get("experience") || ""),
-    referredBy: String(formData.get("referredBy") || ""),
-    openToTravel: formData.get("openToTravel") === "on",
-    travelRegions: String(formData.get("travelRegions") || ""),
+    ...values,
+    openToTravel: values.openToTravel === "on",
     password: String(formData.get("password") || ""),
     confirmPassword: String(formData.get("confirmPassword") || "")
   });
 
   if (!parsed.success) {
-    redirect(
-      buildPublicAuthPath(returnTo, {
-        auth: "signup",
-        role: "ambassador",
-        error: "invalid-ambassador-signup"
-      })
-    );
+    return {
+      error: signupIssueMessage(parsed.error, ambassadorSignupFieldMessages),
+      values,
+      attempt
+    };
   }
 
   const { error, data } = await supabase.auth.signUp({
@@ -234,14 +307,21 @@ export async function registerAmbassadorAccountAction(formData: FormData) {
     }
   });
 
-  if (error) {
+  if (isEmailTaken(error, data?.user ?? null)) {
     redirect(
       buildPublicAuthPath(returnTo, {
-        auth: "signup",
-        role: "ambassador",
-        error: "signup-failed"
+        auth: "login",
+        error: "email-exists"
       })
     );
+  }
+
+  if (error) {
+    return {
+      error: "We couldn't create that account right now. Please try again.",
+      values,
+      attempt
+    };
   }
 
   if (data.session) {

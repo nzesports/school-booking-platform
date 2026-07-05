@@ -1,6 +1,7 @@
 import {
   BookOpenCheck,
   CalendarCheck2,
+  CheckCircle2,
   Coins,
   FileSpreadsheet,
   GraduationCap,
@@ -12,14 +13,18 @@ import { logoutAction } from "@/app/auth/actions";
 import {
   applyToSessionAction,
   markTrainingCompleteAction,
-  saveAmbassadorPaymentDetailsAction,
+  saveAmbassadorProfileAction,
   submitAmbassadorReportAction,
   submitPaymentInvoiceAction
 } from "@/app/portal/actions";
+import { AmbassadorProfileWorkspace } from "@/components/dashboard/ambassador-profile";
+import { AmbassadorReportForm } from "@/components/dashboard/ambassador-report-form";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { MetricGrid } from "@/components/dashboard/metric-grid";
-import { ResourceLibrary } from "@/components/dashboard/resource-library";
+import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
+import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
+import { TrainingWorkspace } from "@/components/dashboard/training-workspace";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -87,6 +92,20 @@ export default async function AmbassadorPortalPage({
         )
       : 0;
   const notice = getAmbassadorNotice(resolvedSearchParams);
+  const reportRatings = portal.reports.flatMap((report) =>
+    [report.teacherResponseRating, report.studentEngagementRating].filter(
+      (rating): rating is number => typeof rating === "number" && rating > 0
+    )
+  );
+  const profileStats = {
+    schoolVisits: completedSessions.length,
+    nextPayoutCents: portal.ambassador.pendingPaymentsCents,
+    ratingAverage:
+      reportRatings.length > 0
+        ? reportRatings.reduce((total, rating) => total + rating, 0) / reportRatings.length
+        : null,
+    ratingCount: portal.reports.length
+  };
 
   const metrics: DashboardMetric[] = [
     {
@@ -145,7 +164,9 @@ export default async function AmbassadorPortalPage({
   const subheadline =
     route === ""
       ? "Here’s what’s happening across your upcoming presentations, applications, and reporting work."
-      : "Everything here is scoped to the ambassador experience, with privacy-safe access before assignment and operational tools after confirmation.";
+      : route === "training" || route === "resources" || route.startsWith("training/")
+        ? "Build your confidence and access everything you need to deliver great sessions."
+        : "Everything here is scoped to the ambassador experience, with privacy-safe access before assignment and operational tools after confirmation.";
 
   return (
     <main className="pb-12">
@@ -223,16 +244,23 @@ export default async function AmbassadorPortalPage({
                         >
                           View safe details
                         </ButtonLink>
-                        <form action={applyToSessionAction}>
-                          <input type="hidden" name="bookingSessionId" value={session.id} />
-                          <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
-                          <button
-                            type="submit"
-                            className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
-                          >
-                            Apply
-                          </button>
-                        </form>
+                        {session.myApplicationStatus ? (
+                          <span className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-2.5 text-sm font-semibold text-[#1d6f35]">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Applied — in review
+                          </span>
+                        ) : (
+                          <form action={applyToSessionAction}>
+                            <input type="hidden" name="bookingSessionId" value={session.id} />
+                            <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                            <button
+                              type="submit"
+                              className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
+                            >
+                              Apply
+                            </button>
+                          </form>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -255,6 +283,12 @@ export default async function AmbassadorPortalPage({
                 </div>
 
                 <div className="mt-6 grid gap-4">
+                  {upcomingSessions.length === 0 ? (
+                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                      No confirmed sessions yet. Apply for an open opportunity and it will appear
+                      here once staff assign you.
+                    </p>
+                  ) : null}
                   {upcomingSessions.map((session) => (
                     <div
                       key={session.id}
@@ -274,6 +308,9 @@ export default async function AmbassadorPortalPage({
                         </div>
                         <StatusBadge value={session.status} />
                       </div>
+                      <div className="mt-3">
+                        <SessionDetailsButton session={session} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -286,6 +323,12 @@ export default async function AmbassadorPortalPage({
                   Training progress
                 </p>
                 <div className="mt-5 grid gap-4">
+                  {portal.trainingModules.length === 0 ? (
+                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                      No training modules have been published yet. They&apos;ll appear here as soon
+                      as the team adds them.
+                    </p>
+                  ) : null}
                   {portal.trainingModules.map((module) => (
                     <div key={module.id}>
                       <div className="flex items-center justify-between gap-3">
@@ -315,6 +358,11 @@ export default async function AmbassadorPortalPage({
                   Recent reports
                 </p>
                 <div className="mt-5 grid gap-4">
+                  {portal.reports.length === 0 ? (
+                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                      Reports you submit after each session will appear here.
+                    </p>
+                  ) : null}
                   {portal.reports.map((report) => (
                     <div
                       key={report.id}
@@ -329,39 +377,53 @@ export default async function AmbassadorPortalPage({
                         </div>
                         <StatusBadge value={report.status} />
                       </div>
-                      <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                        {report.attendeeCount} attendees · {formatShortDate(report.submittedAt)}
-                      </p>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-[color:var(--text-soft)]">
+                          {report.attendeeCount} attendees · {formatShortDate(report.submittedAt)}
+                        </p>
+                        <ReportDetailsButton report={report} />
+                      </div>
                     </div>
                   ))}
                 </div>
               </Card>
 
               <Card className="rounded-[34px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Resource library
-                </p>
-                <div className="mt-5 grid gap-4">
-                  {portal.resources
-                    .map((resource) => (
-                      <div key={resource.id}>
-                        <p className="font-semibold text-[color:var(--navy)]">{resource.title}</p>
-                        <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                          {resource.description}
-                        </p>
-                        {resource.downloadUrl ? (
-                          <ButtonLink href={resource.downloadUrl} variant="secondary" className="mt-4">
-                            Download
-                          </ButtonLink>
-                        ) : null}
-                      </div>
-                    ))}
-                </div>
-                <div className="mt-8 rounded-[24px] bg-white/92 px-4 py-4 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]">
-                  <p className="text-sm text-[color:var(--text-soft)]">Paid so far</p>
-                  <p className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                    {formatCurrency(portal.ambassador.paidPaymentsCents)}
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                    Resource library
                   </p>
+                  <ButtonLink href="/ambassador/training" variant="ghost" className="min-h-[36px] px-3 py-1.5 text-xs">
+                    View all
+                  </ButtonLink>
+                </div>
+                <div className="mt-5 grid gap-4">
+                  {portal.resources.length === 0 ? (
+                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                      Presentation decks, delivery checklists, and guides will appear here once the
+                      team publishes them.
+                    </p>
+                  ) : null}
+                  {portal.resources.slice(0, 3).map((resource) => (
+                    <div
+                      key={resource.id}
+                      className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4"
+                    >
+                      <p className="font-semibold text-[color:var(--navy)]">{resource.title}</p>
+                      <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
+                        {resource.description}
+                      </p>
+                      {resource.downloadUrl ? (
+                        <ButtonLink
+                          href={resource.downloadUrl}
+                          variant="secondary"
+                          className="mt-3 min-h-[38px] rounded-[14px] px-3.5 py-1.5 text-xs"
+                        >
+                          Open resource
+                        </ButtonLink>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </Card>
             </div>
@@ -375,15 +437,25 @@ export default async function AmbassadorPortalPage({
             rows={portal.openSessions.map((session) => [
               session.presentationTitle,
               `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
-              session.regionSlug,
+              session.regionName ?? session.regionSlug,
               <StatusBadge key={`${session.id}-status`} value={session.status} />,
-              <form key={`${session.id}-apply`} action={applyToSessionAction} className="flex flex-wrap gap-2">
-                <input type="hidden" name="bookingSessionId" value={session.id} />
-                <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
-                <Button type="submit" variant="secondary">
-                  Apply
-                </Button>
-              </form>
+              session.myApplicationStatus ? (
+                <span
+                  key={`${session.id}-applied`}
+                  className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-3 py-1.5 text-xs font-semibold text-[#1d6f35]"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Applied — in review
+                </span>
+              ) : (
+                <form key={`${session.id}-apply`} action={applyToSessionAction} className="flex flex-wrap gap-2">
+                  <input type="hidden" name="bookingSessionId" value={session.id} />
+                  <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                  <Button type="submit" variant="secondary">
+                    Apply
+                  </Button>
+                </form>
+              )
             ])}
           />
         ) : null}
@@ -397,23 +469,37 @@ export default async function AmbassadorPortalPage({
               The staff team will review applications and decide assignment. Teacher contact
               details stay hidden at this stage.
             </p>
-            <form action={applyToSessionAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
-              <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
-              <Textarea
-                name="message"
-                placeholder="Share why you're a strong fit for this presentation."
-                required
-              />
-              <Button type="submit">Submit application</Button>
-            </form>
+            {portal.openSessions.find((session) => session.id === slug?.[1])
+              ?.myApplicationStatus ? (
+              <p className="mt-6 inline-flex items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
+                <CheckCircle2 className="h-4 w-4" />
+                You&apos;ve applied for this session — staff are reviewing applications now.
+              </p>
+            ) : (
+              <form action={applyToSessionAction} className="mt-6 grid gap-4">
+                <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
+                <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                <Textarea
+                  name="message"
+                  placeholder="Share why you're a strong fit for this presentation."
+                  required
+                />
+                <Button type="submit">Submit application</Button>
+              </form>
+            )}
           </Card>
         ) : null}
 
         {route === "upcoming" || route === "completed" ? (
           <DataTable
             title={route === "upcoming" ? "Assigned upcoming sessions" : "Completed sessions"}
-            columns={["Presentation", "School", "Time", "Status", "Report"]}
+            columns={[
+              "Presentation",
+              "School",
+              "Time",
+              "Status",
+              route === "upcoming" ? "Details" : "Report"
+            ]}
             rows={(route === "upcoming" ? upcomingSessions : completedSessions).map((session) => [
               session.presentationTitle,
               session.schoolName,
@@ -430,70 +516,19 @@ export default async function AmbassadorPortalPage({
               ) : route === "completed" ? (
                 <StatusBadge key={`${session.id}-report-status`} value={session.reportStatus} />
               ) : (
-                "Available after delivery"
+                <SessionDetailsButton key={`${session.id}-details`} session={session} />
               )
             ])}
           />
         ) : null}
 
         {selectedReportSessionId ? (
-          <Card className="rounded-[34px]">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              Submit ambassador report
-            </h2>
-            <form action={submitAmbassadorReportAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="bookingSessionId" value={selectedReportSessionId} />
-              <input type="hidden" name="returnTo" value="/ambassador/completed" />
-              <div className="grid gap-4 md:grid-cols-3">
-                <Input name="attendeeCount" type="number" min={0} placeholder="Attendees" required />
-                <Input name="yearLevels" placeholder="Year levels, e.g. Years 9-10" required />
-                <select
-                  name="teacherResponseRating"
-                  required
-                  className="min-h-[48px] rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]"
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Teacher response
-                  </option>
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <option key={rating} value={rating}>
-                      {rating}/5
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <select
-                name="studentEngagementRating"
-                required
-                className="min-h-[48px] rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Student engagement rating
-                </option>
-                {[1, 2, 3, 4, 5].map((rating) => (
-                  <option key={rating} value={rating}>
-                    {rating}/5
-                  </option>
-                ))}
-              </select>
-              <Textarea
-                name="presentationFeedback"
-                placeholder="Capture attendance, audience reaction, themes, and next-step notes."
-                required
-              />
-              <Textarea
-                name="notableQuestions"
-                placeholder="Any notable student questions or themes?"
-              />
-              <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                <input type="checkbox" name="mediaConsentObtained" />
-                Media consent was checked or obtained where needed.
-              </label>
-              <Button type="submit">Submit report</Button>
-            </form>
-          </Card>
+          <AmbassadorReportForm
+            sessionId={selectedReportSessionId}
+            session={ownedSessions.find((session) => session.id === selectedReportSessionId) ?? null}
+            presenterName={actor.fullName}
+            action={submitAmbassadorReportAction}
+          />
         ) : null}
 
         {route === "earnings" ? (
@@ -600,78 +635,34 @@ export default async function AmbassadorPortalPage({
         ) : null}
 
         {route === "resources" || route === "training" || route.startsWith("training/") ? (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {portal.trainingModules.map((module) => (
-              <Card key={module.id} className="rounded-[32px]">
-                <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                  {module.title}
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {module.description}
-                </p>
-                <p className="mt-4 text-sm font-semibold text-[color:var(--green)]">
-                  Progress: {module.progress}%
-                </p>
-                <form action={markTrainingCompleteAction} className="mt-5">
-                  <input type="hidden" name="trainingModuleId" value={module.id} />
-                  <input type="hidden" name="returnTo" value="/ambassador/training" />
-                  <Button type="submit" variant="secondary">
-                    Mark complete
-                  </Button>
-                </form>
-              </Card>
-            ))}
-            <div className="xl:col-span-2">
-              <ResourceLibrary resources={portal.resources} />
-            </div>
-          </div>
+          <TrainingWorkspace
+            modules={portal.trainingModules}
+            resources={portal.resources}
+            markCompleteAction={markTrainingCompleteAction}
+            returnTo="/ambassador/training"
+          />
         ) : null}
 
         {route === "profile" ? (
-          <Card className="rounded-[34px]">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              Payment details
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-              These details prefill your invoices so you don&apos;t have to type them in each time.
-              They appear on the invoice PDF sent to finance.
-            </p>
-            <form action={saveAmbassadorPaymentDetailsAction} className="mt-6 grid max-w-2xl gap-4">
-              <input type="hidden" name="returnTo" value="/ambassador/profile" />
-              <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
-                Bank account number *
-                <Input
-                  name="bankAccountNumber"
-                  required
-                  defaultValue={portal.ambassador.bankAccountNumber ?? ""}
-                  placeholder="12-3456-7890123-00"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
-                GST number (optional)
-                <Input
-                  name="gstNumber"
-                  defaultValue={portal.ambassador.gstNumber ?? ""}
-                  placeholder="123-456-789"
-                />
-              </label>
-              <Button type="submit" className="justify-self-start">
-                Save payment details
-              </Button>
-            </form>
-          </Card>
+          <AmbassadorProfileWorkspace
+            ambassador={portal.ambassador}
+            regions={portal.regions}
+            stats={profileStats}
+            action={saveAmbassadorProfileAction}
+          />
         ) : null}
 
         {route === "reports" ? (
           <DataTable
             title="Submitted reports"
-            columns={["School", "Presentation", "Submitted", "Attendees", "Status"]}
+            columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Details"]}
             rows={portal.reports.map((report) => [
               report.schoolName,
               report.presentationTitle,
               formatShortDate(report.submittedAt),
               String(report.attendeeCount),
-              <StatusBadge key={`${report.id}-status`} value={report.status} />
+              <StatusBadge key={`${report.id}-status`} value={report.status} />,
+              <ReportDetailsButton key={`${report.id}-details`} report={report} />
             ])}
           />
         ) : null}
@@ -713,6 +704,21 @@ function getAmbassadorNotice(
       tone: "success",
       message: "Application submitted. Staff will review and assign the best-fit ambassador."
     };
+  }
+
+  if (error === "already-applied") {
+    return {
+      tone: "error",
+      message: "You've already applied for that session — staff are reviewing it now."
+    };
+  }
+
+  if (saved === "profile") {
+    return { tone: "success", message: "Profile saved." };
+  }
+
+  if (error === "profile-save-failed") {
+    return { tone: "error", message: "Your profile couldn't be saved. Please try again." };
   }
 
   if (completed === "training") {

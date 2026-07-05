@@ -17,26 +17,34 @@ import type {
 } from "@/lib/domain/types";
 
 export const regions: Region[] = [
-  "Auckland Central",
-  "South Auckland",
-  "West Auckland",
-  "East Auckland",
-  "North Shore",
-  "Christchurch",
-  "Wellington",
-  "Hamilton",
-  "Tauranga",
-  "Dunedin",
-  "Palmerston North",
-  "Nelson",
-  "Queenstown",
-  "Other / request region"
-].map((name) => ({
-  id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-  name,
-  slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-  isActive: true
-}));
+  ...[
+    "Auckland Central",
+    "South Auckland",
+    "West Auckland",
+    "East Auckland",
+    "North Shore",
+    "Christchurch",
+    "Wellington",
+    "Hamilton",
+    "Tauranga",
+    "Dunedin",
+    "Palmerston North",
+    "Nelson",
+    "Queenstown"
+  ].map((name) => ({
+    id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    name,
+    slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    isActive: true
+  })),
+  // Keeps the historical slug so existing bookings and seeded rows still resolve.
+  {
+    id: "other-request-region",
+    name: "Other",
+    slug: "other-request-region",
+    isActive: true
+  }
+];
 
 export const presentations: PresentationType[] = [
   {
@@ -48,7 +56,7 @@ export const presentations: PresentationType[] = [
     fullDescription:
       "A practical school presentation focused on digital habits, online wellbeing, and helping students build healthy relationships with technology and gaming.",
     durationMinutes: 10,
-    yearLevels: "Years 7 to 8",
+    yearLevels: "Years 5 to 6, Years 7 to 8, Years 9 to 13",
     deliveryFormats: ["assembly", "classroom"],
     learningOutcomes: [
       "Healthy screen routines",
@@ -68,7 +76,7 @@ export const presentations: PresentationType[] = [
     fullDescription:
       "An engaging overview of the wider esports ecosystem, highlighting event operations, coaching, production, and the positive skills students can build through organised play.",
     durationMinutes: 10,
-    yearLevels: "Years 9 to 13",
+    yearLevels: "Years 7 to 8, Years 9 to 13",
     deliveryFormats: ["assembly", "workshop"],
     learningOutcomes: [
       "Understanding esports roles",
@@ -108,7 +116,7 @@ export const presentations: PresentationType[] = [
     fullDescription:
       "A foundational session for educators and students covering what esports is, how it works in school settings, and how structured programmes can support engagement and belonging.",
     durationMinutes: 10,
-    yearLevels: "Years 1 to 6",
+    yearLevels: "Years 5 to 6, Years 7 to 8, Years 9 to 13",
     deliveryFormats: ["assembly", "online"],
     learningOutcomes: [
       "Esports literacy",

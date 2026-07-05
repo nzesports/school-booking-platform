@@ -27,17 +27,24 @@ const audienceLabels = {
 
 export function ResourceLibrary({
   resources,
-  editBasePath
+  editBasePath,
+  showAudienceTabs = false
 }: {
   resources: ResourceRecord[];
   editBasePath?: string;
+  showAudienceTabs?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [activeType, setActiveType] = useState("all");
+  const [activeAudience, setActiveAudience] = useState<"all" | "ambassador" | "school" | "staff">(
+    "all"
+  );
   const tags = Array.from(new Set(resources.flatMap((resource) => resource.tags))).sort();
   const types = Array.from(new Set(resources.map((resource) => resource.type))).sort();
   const normalizedQuery = query.trim().toLowerCase();
+  const audienceCount = (audience: "ambassador" | "school" | "staff") =>
+    resources.filter((resource) => resource.audiences.includes(audience)).length;
   const visibleResources = resources.filter((resource) => {
     const haystack = [
       resource.title,
@@ -51,12 +58,41 @@ export function ResourceLibrary({
     const matchesType = activeType === "all" || resource.type === activeType;
     const matchesTags =
       activeTags.length === 0 || activeTags.every((tag) => resource.tags.includes(tag));
+    const matchesAudience =
+      activeAudience === "all" || resource.audiences.includes(activeAudience);
 
-    return matchesQuery && matchesType && matchesTags;
+    return matchesQuery && matchesType && matchesTags && matchesAudience;
   });
+
+  const audienceTabs: Array<{ key: "all" | "ambassador" | "school" | "staff"; label: string }> = [
+    { key: "all", label: `All (${resources.length})` },
+    { key: "ambassador", label: `Ambassadors (${audienceCount("ambassador")})` },
+    { key: "school", label: `Schools (${audienceCount("school")})` },
+    { key: "staff", label: `Staff (${audienceCount("staff")})` }
+  ];
 
   return (
     <div className="grid gap-5">
+      {showAudienceTabs ? (
+        <div className="flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-full border border-[rgba(4,15,75,0.08)] bg-[rgba(247,250,252,0.92)] p-1.5">
+          {audienceTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveAudience(tab.key)}
+              className={cn(
+                "inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-semibold transition",
+                activeAudience === tab.key
+                  ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                  : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <div className="rounded-[30px] border border-[color:var(--border-soft)] bg-white/90 p-4 shadow-[0_18px_42px_rgba(11,24,77,0.06)]">
         <label className="flex min-h-[52px] items-center gap-3 rounded-[20px] bg-[color:var(--blue-soft)] px-4 text-sm text-[color:var(--navy)]">
           <Search className="h-4 w-4 text-[color:var(--green)]" />

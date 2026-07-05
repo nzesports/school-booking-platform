@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useActionState, useEffect, type ReactNode } from "react";
 import { CheckCircle2, School, UserRound, X } from "lucide-react";
 
+import type { SignupFormState } from "@/app/auth/actions";
 import {
   type AuthModalMode,
   type AuthModalRole
@@ -26,6 +27,8 @@ const loginMessages: Record<string, string> = {
   "confirm-failed": "We couldn't verify that link. Try requesting a new password reset or sign in again.",
   "invalid-confirm-link": "That confirmation link is invalid or has expired.",
   "invalid-credentials": "The email or password was incorrect.",
+  "email-exists":
+    "That email address already has an account. Log in below, or use “Forgot password” if you need to reset it.",
   "profile-missing": "Your account exists, but the portal profile is missing. Please contact support.",
   "supabase-unavailable": "Authentication is not configured yet in this environment."
 };
@@ -46,6 +49,7 @@ const forgotMessages: Record<string, string> = {
 };
 
 type AuthAction = (formData: FormData) => void | Promise<void>;
+type SignupAction = (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;
 
 export function AuthModalHost({
   mode,
@@ -74,8 +78,8 @@ export function AuthModalHost({
   };
   regions: Region[];
   loginAction: AuthAction;
-  registerSchoolAction: AuthAction;
-  registerAmbassadorAction: AuthAction;
+  registerSchoolAction: SignupAction;
+  registerAmbassadorAction: SignupAction;
   forgotPasswordAction: AuthAction;
   authEnabled: boolean;
   returnTo: string;
@@ -406,12 +410,15 @@ function SignupPanel({
   };
   regions: Region[];
   returnTo: string;
-  registerSchoolAction: AuthAction;
-  registerAmbassadorAction: AuthAction;
+  registerSchoolAction: SignupAction;
+  registerAmbassadorAction: SignupAction;
   openLogin: () => void;
   openRole: (role: AuthModalRole) => void;
 }) {
   const isAmbassador = role === "ambassador";
+  const [schoolState, schoolFormAction] = useActionState(registerSchoolAction, null);
+  const [ambassadorState, ambassadorFormAction] = useActionState(registerAmbassadorAction, null);
+  const formError = (isAmbassador ? ambassadorState : schoolState)?.error ?? null;
 
   return (
     <>
@@ -446,25 +453,51 @@ function SignupPanel({
         />
       </div>
 
-      {query.error && signupMessages[query.error] ? (
+      {formError ? (
+        <Banner tone="error">{formError}</Banner>
+      ) : query.error && signupMessages[query.error] ? (
         <Banner tone="error">{signupMessages[query.error]}</Banner>
       ) : null}
 
       {isAmbassador ? (
-        <form action={registerAmbassadorAction} className="mt-5 grid gap-4">
+        <form
+          key={`ambassador-${ambassadorState?.attempt ?? 0}`}
+          action={ambassadorFormAction}
+          className="mt-5 grid gap-4"
+        >
           <input type="hidden" name="returnTo" value={returnTo} />
           <div className="grid gap-4 md:grid-cols-2">
             <AuthField label="Full name">
-              <Input name="fullName" placeholder="Alex Tane" required />
+              <Input
+                name="fullName"
+                placeholder="Alex Tane"
+                defaultValue={ambassadorState?.values.fullName ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Email">
-              <Input name="email" type="email" placeholder="alex@example.com" required />
+              <Input
+                name="email"
+                type="email"
+                placeholder="alex@example.com"
+                defaultValue={ambassadorState?.values.email ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Phone">
-              <Input name="phone" placeholder="+64 21 000 0000" required />
+              <Input
+                name="phone"
+                placeholder="+64 21 000 0000"
+                defaultValue={ambassadorState?.values.phone ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Primary region">
-              <Select name="regionSlug" required defaultValue="">
+              <Select
+                name="regionSlug"
+                required
+                defaultValue={ambassadorState?.values.regionSlug || ""}
+              >
                 <option value="" disabled>
                   Select your region
                 </option>
@@ -482,16 +515,25 @@ function SignupPanel({
               name="experience"
               className="min-h-24"
               placeholder="Tell us about your presenting, education, youth work, esports, or facilitation experience."
+              defaultValue={ambassadorState?.values.experience ?? ""}
               required
             />
           </AuthField>
 
           <div className="grid gap-4 md:grid-cols-2">
             <AuthField label="Who referred you?" hint="Optional">
-              <Input name="referredBy" placeholder="Name of the person or organisation" />
+              <Input
+                name="referredBy"
+                placeholder="Name of the person or organisation"
+                defaultValue={ambassadorState?.values.referredBy ?? ""}
+              />
             </AuthField>
             <label className="flex items-center gap-3 rounded-[20px] border border-[color:var(--border-soft)] bg-white/86 px-4 py-4 text-sm text-[color:var(--text-soft)]">
-              <input type="checkbox" name="openToTravel" />
+              <input
+                type="checkbox"
+                name="openToTravel"
+                defaultChecked={ambassadorState?.values.openToTravel === "on"}
+              />
               I’m open to travel beyond my main region if needed.
             </label>
           </div>
@@ -503,6 +545,10 @@ function SignupPanel({
                 label: region.name,
                 value: region.slug
               }))}
+              defaultValue={(ambassadorState?.values.travelRegions ?? "")
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean)}
               placeholder="Choose regions and they will appear as tags"
             />
           </AuthField>
@@ -525,23 +571,52 @@ function SignupPanel({
           </SubmitButton>
         </form>
       ) : (
-        <form action={registerSchoolAction} className="mt-5 grid gap-4">
+        <form
+          key={`school-${schoolState?.attempt ?? 0}`}
+          action={schoolFormAction}
+          className="mt-5 grid gap-4"
+        >
           <input type="hidden" name="returnTo" value={returnTo} />
           <div className="grid gap-4 md:grid-cols-2">
             <AuthField label="School name">
-              <Input name="schoolName" placeholder="e.g. Harbour Secondary College" required />
+              <Input
+                name="schoolName"
+                placeholder="e.g. Harbour Secondary College"
+                defaultValue={schoolState?.values.schoolName ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Primary contact name">
-              <Input name="contactName" placeholder="e.g. Jules Morgan" required />
+              <Input
+                name="contactName"
+                placeholder="e.g. Jules Morgan"
+                defaultValue={schoolState?.values.contactName ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Contact email">
-              <Input name="email" type="email" placeholder="e.g. jules@school.nz" required />
+              <Input
+                name="email"
+                type="email"
+                placeholder="e.g. jules@school.nz"
+                defaultValue={schoolState?.values.email ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Phone number">
-              <Input name="phone" placeholder="e.g. +64 21 555 123" required />
+              <Input
+                name="phone"
+                placeholder="e.g. +64 21 555 123"
+                defaultValue={schoolState?.values.phone ?? ""}
+                required
+              />
             </AuthField>
             <AuthField label="Region">
-              <Select name="regionSlug" required defaultValue="">
+              <Select
+                name="regionSlug"
+                required
+                defaultValue={schoolState?.values.regionSlug || ""}
+              >
                 <option value="" disabled>
                   Select your region
                 </option>
@@ -564,7 +639,12 @@ function SignupPanel({
           </div>
 
           <label className="flex items-start gap-3 rounded-[20px] border border-[color:var(--border-soft)] bg-white/86 px-4 py-4 text-sm text-[color:var(--text-soft)]">
-            <input type="checkbox" name="marketingConsent" defaultChecked className="mt-0.5" />
+            <input
+              type="checkbox"
+              name="marketingConsent"
+              defaultChecked={schoolState ? schoolState.values.marketingConsent === "on" : true}
+              className="mt-0.5"
+            />
             Keep me updated about future NZ Esports school resources and presentation news.
           </label>
 

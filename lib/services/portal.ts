@@ -24,6 +24,7 @@ import type {
   PaymentRecord,
   PortalNotification,
   PresentationType,
+  Region,
   ReportSummary,
   Role,
   School,
@@ -31,6 +32,7 @@ import type {
   TrainingModule,
   UserSummary
 } from "@/lib/domain/types";
+import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
@@ -53,6 +55,8 @@ export type ResourceRecord = {
   versionLabel?: string;
   isCurrent: boolean;
   isActive: boolean;
+  updatedAt?: string;
+  createdByName?: string;
 };
 
 type RoleSummary = {
@@ -125,6 +129,7 @@ export type AmbassadorPortalData = {
   resources: ResourceRecord[];
   payments: PaymentRecord[];
   trainingModules: TrainingModule[];
+  regions: Region[];
 };
 
 type RawPlatformData = Awaited<ReturnType<typeof loadPlatformData>>;
@@ -147,7 +152,9 @@ async function loadPlatformData() {
     presentationsResult,
     ambassadorProfilesResult,
     ambassadorTravelRegionsResult,
+    sessionApplicationsResult,
     reportsResult,
+    reportMediaResult,
     schoolReviewsResult,
     paymentsResult,
     resourcesResult,
@@ -164,9 +171,14 @@ async function loadPlatformData() {
     trainingProgressResult
   ] = await Promise.all([
     admin.from("profiles").select("id, email, full_name, phone, role, status, created_at"),
-    admin.from("regions").select("id, name, slug, is_active"),
-    admin.from("schools").select("id, name, city, roll_size, status, region_id"),
-    admin.from("school_contacts").select("id, school_id, full_name, email, is_primary"),
+    admin
+      .from("regions")
+      .select("id, name, slug, is_active, sort_order")
+      .order("sort_order", { ascending: true }),
+    admin
+      .from("schools")
+      .select("id, name, city, roll_size, status, region_id, address, suburb, postcode"),
+    admin.from("school_contacts").select("id, school_id, full_name, email, phone, is_primary"),
     admin.from("school_contact_users").select("school_contact_id, user_id"),
     admin
       .from("booking_requests")
@@ -177,22 +189,22 @@ async function loadPlatformData() {
     admin
       .from("booking_sessions")
       .select(
-        "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status"
+        "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador"
       )
       .order("starts_at", { ascending: true }),
-    admin.from("presentation_types").select(
-      "id, slug, title, short_summary, full_description, content_snippet, year_levels, duration_minutes, delivery_formats, learning_outcomes, required_equipment, is_active, is_public, image_url"
-    ),
-    admin.from("ambassador_profiles").select(
-      "id, user_id, region_id, status, open_to_travel, experience, referred_by, bank_account_number, gst_number"
-    ),
+    admin.from("presentation_types").select("*"),
+    // Select * so optional columns added by later migrations (profile_details)
+    // don't break the whole portal query before the migration runs.
+    admin.from("ambassador_profiles").select("*"),
     admin.from("ambassador_travel_regions").select("ambassador_profile_id, region_id"),
     admin
-      .from("ambassador_reports")
-      .select(
-        "id, booking_session_id, ambassador_profile_id, attendee_count, submitted_at, teacher_response_rating, student_response_rating, student_questions_themes, presentation_feedback, year_levels, reviewed_for_payment_at"
-      )
-      .order("submitted_at", { ascending: false }),
+      .from("booking_session_applications")
+      .select("id, booking_session_id, ambassador_profile_id, status"),
+    admin.from("ambassador_reports").select("*").order("submitted_at", { ascending: false }),
+    admin
+      .from("media_library")
+      .select("id, report_id, public_url, media_type, title")
+      .not("report_id", "is", null),
     admin
       .from("presentation_reviews")
       .select("id, presentation_type_id, school_id, quote, attribution, rating, is_approved, is_public, created_at")
@@ -202,12 +214,9 @@ async function loadPlatformData() {
       .select(
         "id, booking_session_id, ambassador_profile_id, amount_cents, status, eligibility_reason, created_at, paid_at, invoice_number, invoice_submitted_at, sent_to_finance_at, sent_to_email, sent_cc_email, bank_account_number, gst_number, invoice_notes"
       ),
-    admin
-      .from("presentation_resources")
-      .select(
-        "id, presentation_type_id, title, description, resource_type, storage_path, public_url, youtube_url, version_label, is_current, is_active, audiences, tags"
-      )
-      .order("created_at", { ascending: false }),
+    // Select * so environments missing the 0006 columns (audiences/tags)
+    // still load resources instead of failing the whole query.
+    admin.from("presentation_resources").select("*").order("created_at", { ascending: false }),
     admin
       .from("notifications")
       .select(
@@ -235,10 +244,9 @@ async function loadPlatformData() {
       .select("booking_request_id, booking_session_id, action, details, created_at, actor_type")
       .order("created_at", { ascending: false })
       .limit(500),
-    admin
-      .from("training_modules")
-      .select("id, title, description, sort_order, is_active, is_required, is_published")
-      .order("sort_order", { ascending: true }),
+    // Select * so environments missing the 0004 columns (is_published etc.)
+    // still load training modules.
+    admin.from("training_modules").select("*").order("sort_order", { ascending: true }),
     admin
       .from("training_lessons")
       .select("id, training_module_id, title, lesson_type, content, youtube_url, sort_order")
@@ -259,7 +267,9 @@ async function loadPlatformData() {
     presentations: presentationsResult.data ?? [],
     ambassadorProfiles: ambassadorProfilesResult.data ?? [],
     ambassadorTravelRegions: ambassadorTravelRegionsResult.data ?? [],
+    sessionApplications: sessionApplicationsResult.data ?? [],
     reports: reportsResult.data ?? [],
+    reportMedia: reportMediaResult.data ?? [],
     schoolReviews: schoolReviewsResult.data ?? [],
     payments: paymentsResult.data ?? [],
     resources: resourcesResult.data ?? [],
@@ -300,7 +310,7 @@ function buildLookups(data: NonNullable<RawPlatformData>) {
 }
 
 async function mapResources(data: NonNullable<RawPlatformData>) {
-  const { presentationsById } = buildLookups(data);
+  const { presentationsById, profilesById } = buildLookups(data);
 
   return Promise.all(
     data.resources.map(async (resource) => {
@@ -308,10 +318,11 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
       const downloadUrl =
         (resource.public_url as string | null) ??
         (resource.storage_path ? `/portal/download/${resource.id}` : null);
+      const legacyAudience = resource.audience as "school" | "ambassador" | "staff" | undefined;
       const audiences =
         Array.isArray(resource.audiences) && resource.audiences.length > 0
           ? (resource.audiences as Array<"school" | "ambassador" | "staff">)
-          : ["staff" as const];
+          : [legacyAudience ?? ("staff" as const)];
 
       return {
         id: resource.id as string,
@@ -331,7 +342,14 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
         embedUrl: toYouTubeEmbedUrl(resource.youtube_url as string | null) ?? undefined,
         versionLabel: (resource.version_label as string | null) ?? undefined,
         isCurrent: Boolean(resource.is_current),
-        isActive: Boolean(resource.is_active)
+        isActive: Boolean(resource.is_active),
+        updatedAt:
+          (resource.updated_at as string | null) ??
+          (resource.created_at as string | null) ??
+          undefined,
+        createdByName:
+          (profilesById.get(resource.created_by as string)?.full_name as string | undefined) ??
+          undefined
       } satisfies ResourceRecord;
     })
   );
@@ -348,6 +366,43 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
   } = buildLookups(data);
 
   const sessionsByBookingId = new Map<string, BookingSessionView[]>();
+  const applicantsBySessionId = new Map<string, Array<{ id: string; name: string }>>();
+
+  for (const application of data.sessionApplications) {
+    const ambassadorProfile = data.ambassadorProfiles.find(
+      (profile) => profile.id === application.ambassador_profile_id
+    );
+    const user = ambassadorProfile
+      ? data.profiles.find((profile) => profile.id === ambassadorProfile.user_id)
+      : null;
+
+    if (!ambassadorProfile) {
+      continue;
+    }
+
+    const sessionId = application.booking_session_id as string;
+    applicantsBySessionId.set(sessionId, [
+      ...(applicantsBySessionId.get(sessionId) ?? []),
+      {
+        id: ambassadorProfile.id as string,
+        name: (user?.full_name as string | undefined) ?? "Ambassador"
+      }
+    ]);
+  }
+
+  const requestStatusById = new Map(
+    data.bookingRequests.map((request) => [request.id as string, request.status as string])
+  );
+  const primaryContactBySchoolId = new Map<string, (typeof data.contacts)[number]>();
+
+  for (const contact of data.contacts) {
+    const schoolId = contact.school_id as string;
+    const existing = primaryContactBySchoolId.get(schoolId);
+
+    if (!existing || (contact.is_primary && !existing.is_primary)) {
+      primaryContactBySchoolId.set(schoolId, contact);
+    }
+  }
 
   for (const session of data.bookingSessions) {
     const bookingId = session.booking_request_id as string;
@@ -358,6 +413,15 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     const ambassadorUser = ambassadorProfile
       ? profilesById.get(ambassadorProfile.user_id as string)
       : null;
+    const schoolAddress = school
+      ? [school.address, school.suburb, school.city, school.postcode]
+          .map((part) => (part as string | null)?.trim())
+          .filter(Boolean)
+          .join(", ")
+      : "";
+    const sharedContact = session.share_contact_with_ambassador
+      ? primaryContactBySchoolId.get(session.school_id as string)
+      : undefined;
 
     const mappedSession: BookingSessionView = {
       id: session.id as string,
@@ -365,8 +429,14 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       presentationSlug: (presentation?.slug as string | undefined) ?? "presentation",
       presentationTitle: (presentation?.title as string | undefined) ?? "Presentation",
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
+      regionName: (region?.name as string | undefined) ?? undefined,
       schoolId: (session.school_id as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
+      schoolAddress: schoolAddress || undefined,
+      locationAddress: (session.location_address as string | null) ?? undefined,
+      contactName: (sharedContact?.full_name as string | undefined) ?? undefined,
+      contactEmail: (sharedContact?.email as string | undefined) ?? undefined,
+      contactPhone: (sharedContact?.phone as string | undefined) ?? undefined,
       startsAt: session.starts_at as string,
       endsAt: session.ends_at as string,
       yearLevels: (session.year_levels as string | null) ?? "Years 7 to 13",
@@ -377,7 +447,11 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       status: session.status as BookingSessionView["status"],
       assignedAmbassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
       reportStatus: session.report_status as BookingSessionView["reportStatus"],
-      paymentStatus: session.payment_status as BookingSessionView["paymentStatus"]
+      paymentStatus: session.payment_status as BookingSessionView["paymentStatus"],
+      applicants: applicantsBySessionId.get(session.id as string) ?? [],
+      bookingRequestId: bookingId,
+      bookingStatus:
+        (requestStatusById.get(bookingId) as BookingSessionView["bookingStatus"]) ?? undefined
     };
 
     sessionsByBookingId.set(bookingId, [...(sessionsByBookingId.get(bookingId) ?? []), mappedSession]);
@@ -443,14 +517,19 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       (payment) => payment.ambassador_profile_id === profile.id
     );
 
+    const region = regionsById.get(profile.region_id as string);
+
     return {
       id: profile.id as string,
       name: (user?.full_name as string | undefined) ?? "Ambassador",
       email: (user?.email as string | undefined) ?? "",
-      regionSlug: (regionsById.get(profile.region_id as string)?.slug as string | undefined) ?? "unassigned",
+      phone: (user?.phone as string | undefined) ?? undefined,
+      regionSlug: (region?.slug as string | undefined) ?? "unassigned",
+      regionName: (region?.name as string | undefined) ?? undefined,
       status: profile.status as AmbassadorProfile["status"],
       openToTravel: Boolean(profile.open_to_travel),
       travelRegions: travelRegionsByAmbassador.get(profile.id as string) ?? [],
+      bio: (profile.bio as string | null) ?? undefined,
       experience: (profile.experience as string | null) ?? undefined,
       referredBy: (profile.referred_by as string | null) ?? undefined,
       estimatedEarningsCents: payments.reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
@@ -460,8 +539,10 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       paidPaymentsCents: payments
         .filter((payment) => payment.status === "paid")
         .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
+      bankAccountName: (profile.bank_account_name as string | null) ?? undefined,
       bankAccountNumber: (profile.bank_account_number as string | null) ?? undefined,
-      gstNumber: (profile.gst_number as string | null) ?? undefined
+      gstNumber: (profile.gst_number as string | null) ?? undefined,
+      details: (profile.profile_details as AmbassadorProfile["details"] | null) ?? undefined
     } satisfies AmbassadorProfile;
   });
 }
@@ -469,6 +550,33 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
 function mapReports(data: NonNullable<RawPlatformData>) {
   const { schoolsById, presentationsById, ambassadorProfilesById, profilesById } = buildLookups(data);
   const sessionsById = new Map(data.bookingSessions.map((session) => [session.id as string, session]));
+  const requestsById = new Map(
+    data.bookingRequests.map((request) => [request.id as string, request])
+  );
+  const mediaByReportId = new Map<string, Array<{ url: string; type: string; title?: string }>>();
+
+  for (const media of data.reportMedia) {
+    const reportId = media.report_id as string;
+    const url = media.public_url as string | null;
+
+    if (!url) {
+      continue;
+    }
+
+    mediaByReportId.set(reportId, [
+      ...(mediaByReportId.get(reportId) ?? []),
+      {
+        url,
+        type: (media.media_type as string | null) ?? "image",
+        title: (media.title as string | null) ?? undefined
+      }
+    ]);
+  }
+
+  const optionalNumber = (value: unknown) =>
+    value === null || value === undefined ? undefined : Number(value);
+  const optionalBoolean = (value: unknown) =>
+    value === null || value === undefined ? undefined : Boolean(value);
 
   return data.reports.map((report) => {
     const session = sessionsById.get(report.booking_session_id as string);
@@ -489,21 +597,36 @@ function mapReports(data: NonNullable<RawPlatformData>) {
       attendeeCount: Number(report.attendee_count ?? 0),
       status: report.reviewed_for_payment_at ? "reviewed" : "submitted",
       ambassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
-      teacherResponseRating:
-        report.teacher_response_rating === null || report.teacher_response_rating === undefined
-          ? undefined
-          : Number(report.teacher_response_rating),
-      studentEngagementRating:
-        report.student_response_rating === null || report.student_response_rating === undefined
-          ? undefined
-          : Number(report.student_response_rating),
+      presenterName: (report.presenter_name as string | null) ?? undefined,
+      schoolRollSize: optionalNumber(report.school_roll_size),
+      primaryContactName: (report.primary_contact_name as string | null) ?? undefined,
+      primaryContactEmail: (report.primary_contact_email as string | null) ?? undefined,
+      deliveredAt: (report.delivered_at as string | null) ?? undefined,
+      firstPresentationToSchool: optionalBoolean(report.first_presentation_to_school),
+      studentsCompetedInEsports: optionalBoolean(report.students_competed_in_esports),
+      parentsPresent: optionalBoolean(report.parents_present),
+      ageGroups: (report.age_groups as string | null) ?? undefined,
+      mediaConsentConfirmed: optionalBoolean(report.media_consent_confirmed),
+      attendeeQuotes: (report.attendee_quotes as string | null) ?? undefined,
+      attendanceRating: optionalNumber(report.attendance_rating),
+      teacherResponseRating: optionalNumber(report.teacher_response_rating),
+      studentEngagementRating: optionalNumber(report.student_response_rating),
+      presentationEnergyRating: optionalNumber(report.presentation_energy_rating),
       notableQuestions: (report.student_questions_themes as string | null) ?? undefined,
       presentationFeedback: (report.presentation_feedback as string | null) ?? undefined,
+      additionalNotes: (report.additional_notes as string | null) ?? undefined,
       yearLevels:
         (report.year_levels as string | null) ??
         (session?.year_levels as string | null) ??
         undefined,
-      sessionStartsAt: (session?.starts_at as string | undefined) ?? undefined
+      sessionStartsAt: (session?.starts_at as string | undefined) ?? undefined,
+      media: mediaByReportId.get(report.id as string) ?? [],
+      bookingRequestId: (session?.booking_request_id as string | null) ?? undefined,
+      bookingRequestedAt:
+        (requestsById.get(session?.booking_request_id as string)?.created_at as
+          | string
+          | undefined) ?? undefined,
+      reviewedAt: (report.reviewed_for_payment_at as string | null) ?? undefined
     } satisfies ReportSummary;
   });
 }
@@ -599,8 +722,9 @@ function mapPresentations(data: NonNullable<RawPlatformData>) {
     durationMinutes: Number(presentation.duration_minutes ?? 45),
     yearLevels: (presentation.year_levels as string | null) ?? "Years 7 to 13",
     deliveryFormats: (presentation.delivery_formats as string[] | null) ?? [],
-    learningOutcomes: [],
-    requiredEquipment: [],
+    learningOutcomes: splitContentLines(presentation.learning_outcomes),
+    requiredEquipment: splitContentLines(presentation.required_equipment),
+    youtubeUrl: (presentation.youtube_url as string | null) ?? undefined,
     imageUrl: (presentation.image_url as string | null) ?? undefined,
     active: Boolean(presentation.is_active),
     public: Boolean(presentation.is_public)
@@ -784,7 +908,8 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
     id: region.id as string,
     name: region.name as string,
     slug: region.slug as string,
-    isActive: Boolean(region.is_active)
+    isActive: Boolean(region.is_active),
+    sortOrder: Number(region.sort_order ?? 0)
   }));
   const upcomingSessions = bookings
     .flatMap((booking) => booking.sessions)
@@ -881,7 +1006,8 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
     id: region.id as string,
     name: region.name as string,
     slug: region.slug as string,
-    isActive: Boolean(region.is_active)
+    isActive: Boolean(region.is_active),
+    sortOrder: Number(region.sort_order ?? 0)
   }));
   const emailTemplates = mapEmailTemplates(data);
   const auditLogs = mapAuditLogs(data);
@@ -991,7 +1117,8 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
         isActive: true
       })),
       payments: demoPayments,
-      trainingModules: demoTrainingModules
+      trainingModules: demoTrainingModules,
+      regions: demoRegions.filter((region) => region.isActive)
     };
   }
 
@@ -1002,10 +1129,23 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
   const rawAmbassador = data.ambassadorProfiles.find((profile) => profile.user_id === userId);
   const bookings = mapBookingRequests(data);
   const reports = mapReports(data);
+  const myApplicationStatusBySessionId = new Map(
+    data.sessionApplications
+      .filter((application) => application.ambassador_profile_id === rawAmbassador?.id)
+      .map((application) => [
+        application.booking_session_id as string,
+        application.status as string
+      ])
+  );
   const openSessions = bookings.flatMap((booking) =>
-    booking.sessions.filter((session) =>
-      ["ambassador_needed", "ambassador_applied"].includes(session.status)
-    )
+    booking.sessions
+      .filter((session) =>
+        ["ambassador_needed", "ambassador_applied"].includes(session.status)
+      )
+      .map((session) => ({
+        ...session,
+        myApplicationStatus: myApplicationStatusBySessionId.get(session.id)
+      }))
   );
   const assignedSessions = bookings.flatMap((booking) =>
     booking.sessions.filter((session) => {
@@ -1039,6 +1179,14 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
 
       return rawAmbassador?.user_id === userId;
     }),
-    trainingModules: mapTrainingModules(data, rawAmbassador?.id as string | undefined)
+    trainingModules: mapTrainingModules(data, rawAmbassador?.id as string | undefined),
+    regions: data.regions
+      .filter((region) => region.is_active !== false)
+      .map((region) => ({
+        id: region.id as string,
+        name: region.name as string,
+        slug: region.slug as string,
+        isActive: Boolean(region.is_active)
+      }))
   };
 }

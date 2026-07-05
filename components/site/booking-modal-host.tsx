@@ -17,19 +17,26 @@ import {
 } from "lucide-react";
 
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
+import { BookingDatePicker, BookingTimeCombobox } from "@/components/site/booking-field-pickers";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { isOtherRegionSlug, regionDisplayName } from "@/lib/domain/regions";
 import type { PresentationType, Region } from "@/lib/domain/types";
 import {
   BOOKING_WINDOW_DAYS,
   type AvailabilityConfig,
-  buildAvailabilitySlots,
   isBookableDate,
   nextBookableDates
 } from "@/lib/services/availability";
+import {
+  addTenMinutes,
+  formatDisplayDate,
+  formatTimeLabel,
+  resolveTypedTimeInWindow
+} from "@/lib/services/time-slots";
 
 type BookingStep = "plan" | "review";
 
@@ -131,10 +138,10 @@ function BookingModalFlow({
   const maxBookableDate = dates[dates.length - 1] ?? firstDate;
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
-  const initialSlots = buildAvailabilitySlots(firstDate, availabilityConfig);
-  const preferredInitialTime = initialTime
-    ? normalizeTimeToSlot(initialTime, initialSlots)
-    : { startTime: "", label: "" };
+  const preferredInitialTime = (initialTime ? resolveTypedTimeInWindow(initialTime) : null) ?? {
+    startTime: "",
+    label: ""
+  };
   const firstRegionSlug =
     regions.find((item) => item.slug === initialRegionSlug)?.slug ?? "";
   const initialDraftSessions =
@@ -145,8 +152,7 @@ function BookingModalFlow({
           regions,
           dates,
           fallbackDate: firstDate,
-          fallbackPresentation: initialPresentation,
-          availabilityConfig
+          fallbackPresentation: initialPresentation
         })
       : [
           createDraftSession({
@@ -163,7 +169,8 @@ function BookingModalFlow({
       Boolean(session.presentationSlug) &&
       Boolean(session.date) &&
       Boolean(session.startTime) &&
-      Boolean(session.regionSlug)
+      Boolean(session.regionSlug) &&
+      (!isOtherRegionSlug(session.regionSlug) || Boolean(session.customRegion?.trim()))
   );
 
   const [step, setStep] = useState<BookingStep>(
@@ -173,13 +180,14 @@ function BookingModalFlow({
   const [sessions, setSessions] = useState<HeroBookingDraftSession[]>(initialDraftSessions);
   const [isReturningToDetails, setIsReturningToDetails] = useState(false);
 
-  const reviewSessions = normalizeSessions(sessions, availabilityConfig);
+  const reviewSessions = normalizeSessions(sessions);
   const canContinueToReview = sessions.every(
     (session) =>
       Boolean(session.presentationSlug) &&
       Boolean(session.date) &&
       Boolean(session.startTime) &&
-      Boolean(session.regionSlug)
+      Boolean(session.regionSlug) &&
+      (!isOtherRegionSlug(session.regionSlug) || Boolean(session.customRegion?.trim()))
   );
 
   return (
@@ -224,9 +232,6 @@ function BookingModalFlow({
             <div className="grid gap-4">
             {sessions.map((session, index) => {
               const selectedDateIsBookable = isBookableDate(session.date, availabilityConfig);
-              const timeOptions = selectedDateIsBookable
-                ? buildAvailabilitySlots(session.date, availabilityConfig)
-                : [];
 
               return (
                 <div
@@ -300,35 +305,17 @@ function BookingModalFlow({
 
                     <PlannerField icon={<CalendarDays className="h-4 w-4" />} label="Date">
                       <div>
-                        <Input
-                          type="date"
-                          className="h-[56px] text-base"
-                          min={firstDate}
-                          max={maxBookableDate}
+                        <BookingDatePicker
+                          className="min-h-[56px] text-base"
                           value={session.date}
-                          onChange={(event) =>
-                          setSessions((current) =>
-                            current.map((item) => {
-                              if (item.id !== session.id) {
-                                return item;
-                              }
-
-                                const nextDate = event.target.value;
-                                const nextDateIsBookable = isBookableDate(nextDate, availabilityConfig);
-                                const nextTimeOptions = nextDateIsBookable
-                                  ? buildAvailabilitySlots(nextDate, availabilityConfig)
-                                  : [];
-                                const normalized = nextDateIsBookable
-                                  ? normalizeTimeToSlot(item.startTime, nextTimeOptions)
-                                  : { startTime: "", label: "" };
-
-                                return {
-                                  ...item,
-                                  date: nextDate,
-                                  startTime: normalized.startTime,
-                                  timeText: normalized.label
-                                };
-                              })
+                          minDate={firstDate}
+                          maxDate={maxBookableDate}
+                          isDateBookable={(date) => isBookableDate(date, availabilityConfig)}
+                          onChange={(nextDate) =>
+                            setSessions((current) =>
+                              current.map((item) =>
+                                item.id === session.id ? { ...item, date: nextDate } : item
+                              )
                             )
                           }
                         />
@@ -340,44 +327,29 @@ function BookingModalFlow({
 
                     <PlannerField icon={<Clock3 className="h-4 w-4" />} label="Time">
                       <div>
-                        <Select
-                          className="h-[56px] text-base"
-                          value={session.startTime}
+                        <BookingTimeCombobox
+                          className="min-h-[56px] text-base"
+                          startTime={session.startTime}
+                          timeText={session.timeText}
                           disabled={!selectedDateIsBookable}
-                          onChange={(event) =>
+                          placeholder={
+                            selectedDateIsBookable
+                              ? "Select a time"
+                              : "Choose a weekday date first"
+                          }
+                          onChange={(next) =>
                             setSessions((current) =>
-                              current.map((item) => {
-                                if (item.id !== session.id) {
-                                  return item;
-                                }
-
-                                const selectedSlot =
-                                  timeOptions.find((slot) => slot.startTime === event.target.value) ??
-                                  null;
-
-                                return {
-                                  ...item,
-                                  startTime: selectedSlot?.startTime ?? "",
-                                  timeText: selectedSlot?.label ?? ""
-                                };
-                              })
+                              current.map((item) =>
+                                item.id === session.id
+                                  ? { ...item, startTime: next.startTime, timeText: next.timeText }
+                                  : item
+                              )
                             )
                           }
-                        >
-                          <option value="">
-                            {selectedDateIsBookable
-                              ? "Select a time"
-                              : "Choose a weekday date first"}
-                          </option>
-                          {timeOptions.map((slot) => (
-                            <option key={slot.startTime} value={slot.startTime}>
-                              {slot.label}
-                            </option>
-                          ))}
-                        </Select>
+                        />
                         {selectedDateIsBookable ? (
                           <p className="mt-2 text-xs text-[color:var(--text-soft)]">
-                            Available between 8:00am and 4:00pm in 10-minute slots.
+                            Type any time between 8:00am and 4:00pm.
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-[#9d2424]">
@@ -388,26 +360,51 @@ function BookingModalFlow({
                     </PlannerField>
 
                     <PlannerField icon={<MapPin className="h-4 w-4" />} label="Region">
-                      <Select
-                        className="h-[56px] text-base"
-                        value={session.regionSlug}
-                        onChange={(event) =>
-                          setSessions((current) =>
-                            current.map((item) =>
-                              item.id === session.id
-                                ? { ...item, regionSlug: event.target.value }
-                                : item
+                      <div>
+                        <Select
+                          className="h-[56px] text-base"
+                          value={session.regionSlug}
+                          onChange={(event) =>
+                            setSessions((current) =>
+                              current.map((item) =>
+                                item.id === session.id
+                                  ? {
+                                      ...item,
+                                      regionSlug: event.target.value,
+                                      customRegion: isOtherRegionSlug(event.target.value)
+                                        ? item.customRegion ?? ""
+                                        : ""
+                                    }
+                                  : item
+                              )
                             )
-                          )
-                        }
-                      >
-                        <option value="">Select your region</option>
-                        {regions.map((item) => (
-                          <option key={item.id} value={item.slug}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </Select>
+                          }
+                        >
+                          <option value="">Select your region</option>
+                          {regions.map((item) => (
+                            <option key={item.id} value={item.slug}>
+                              {regionDisplayName(item)}
+                            </option>
+                          ))}
+                        </Select>
+                        {isOtherRegionSlug(session.regionSlug) ? (
+                          <Input
+                            className="mt-2 h-[56px] text-base"
+                            value={session.customRegion ?? ""}
+                            placeholder="Type your region"
+                            aria-label="Type your region"
+                            onChange={(event) =>
+                              setSessions((current) =>
+                                current.map((item) =>
+                                  item.id === session.id
+                                    ? { ...item, customRegion: event.target.value }
+                                    : item
+                                )
+                              )
+                            }
+                          />
+                        ) : null}
+                      </div>
                     </PlannerField>
                   </div>
                 </div>
@@ -456,7 +453,7 @@ function BookingModalFlow({
                       return;
                     }
 
-                    setSessions((current) => normalizeSessions(current, availabilityConfig));
+                    setSessions((current) => normalizeSessions(current));
                     setIsReturningToDetails(false);
                     setStep("review");
                   }}
@@ -537,9 +534,12 @@ function BookingModalFlow({
                 const selectedPresentation = presentations.find(
                   (item) => item.slug === session.presentationSlug
                 );
+                const customRegion = session.customRegion?.trim() ?? "";
                 const regionName =
-                  regions.find((item) => item.slug === session.regionSlug)?.name ??
-                  "Selected region";
+                  isOtherRegionSlug(session.regionSlug) && customRegion
+                    ? customRegion
+                    : regions.find((item) => item.slug === session.regionSlug)?.name ??
+                      "Selected region";
 
                 return (
                   <div
@@ -612,6 +612,11 @@ function BookingModalFlow({
                       type="hidden"
                       name={`session-${index}-regionSlug`}
                       value={session.regionSlug}
+                    />
+                    <input
+                      type="hidden"
+                      name={`session-${index}-customRegion`}
+                      value={customRegion}
                     />
                     <input type="hidden" name={`session-${index}-date`} value={session.date} />
                     <input
@@ -839,7 +844,8 @@ function createDraftSession({
   date,
   startTime,
   timeText,
-  regionSlug
+  regionSlug,
+  customRegion = ""
 }: {
   id: string;
   presentation?: PresentationType;
@@ -847,6 +853,7 @@ function createDraftSession({
   startTime: string;
   timeText: string;
   regionSlug: string;
+  customRegion?: string;
 }): HeroBookingDraftSession {
   return {
     id,
@@ -855,6 +862,7 @@ function createDraftSession({
     startTime,
     timeText,
     regionSlug,
+    customRegion,
     yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
     expectedStudentCount: 120
   };
@@ -866,8 +874,7 @@ function hydrateInitialSessions({
   regions,
   dates,
   fallbackDate,
-  fallbackPresentation,
-  availabilityConfig
+  fallbackPresentation
 }: {
   sessions: HeroBookingDraftSession[];
   presentations: PresentationType[];
@@ -875,7 +882,6 @@ function hydrateInitialSessions({
   dates: string[];
   fallbackDate: string;
   fallbackPresentation?: PresentationType;
-  availabilityConfig?: AvailabilityConfig;
 }) {
   return sessions.map((session, index) => {
     const presentation =
@@ -884,13 +890,11 @@ function hydrateInitialSessions({
     const regionSlug = regions.some((item) => item.slug === session.regionSlug)
       ? session.regionSlug
       : "";
-    const normalizedTime =
-      session.startTime || session.timeText
-        ? normalizeTimeToSlot(
-            session.startTime || session.timeText,
-            buildAvailabilitySlots(date, availabilityConfig)
-          )
-        : { startTime: "", label: "" };
+    const customRegion = isOtherRegionSlug(regionSlug) ? session.customRegion ?? "" : "";
+    const normalizedTime = resolveTypedTimeInWindow(session.startTime || session.timeText) ?? {
+      startTime: "",
+      label: ""
+    };
 
     return {
       id: session.id || `session-${index + 1}`,
@@ -899,6 +903,7 @@ function hydrateInitialSessions({
       startTime: normalizedTime.startTime,
       timeText: normalizedTime.label,
       regionSlug,
+      customRegion,
       yearLevels: session.yearLevels || presentation?.yearLevels || "Years 7 to 8",
       expectedStudentCount:
         session.expectedStudentCount && session.expectedStudentCount > 0
@@ -908,14 +913,13 @@ function hydrateInitialSessions({
   });
 }
 
-function normalizeSessions(current: HeroBookingDraftSession[], availabilityConfig?: AvailabilityConfig) {
+function normalizeSessions(current: HeroBookingDraftSession[]) {
   return current.map((session) => {
-    if (!session.timeText && !session.startTime) {
+    const normalized = resolveTypedTimeInWindow(session.timeText || session.startTime);
+
+    if (!normalized) {
       return session;
     }
-
-    const timeOptions = buildAvailabilitySlots(session.date, availabilityConfig);
-    const normalized = normalizeTimeToSlot(session.timeText || session.startTime, timeOptions);
 
     return {
       ...session,
@@ -925,120 +929,4 @@ function normalizeSessions(current: HeroBookingDraftSession[], availabilityConfi
   });
 }
 
-function formatDisplayDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-NZ", {
-    weekday: "short",
-    day: "numeric",
-    month: "short"
-  }).format(date);
-}
-
-function normalizeTimeToSlot(
-  value: string,
-  timeOptions: Array<{ startTime: string; label: string }>
-) {
-  if (!value.trim()) {
-    return { startTime: "", label: "" };
-  }
-
-  const fallback = timeOptions[0] ?? { startTime: "08:00", label: "8:00 AM - 8:10 AM" };
-  const directMatch =
-    timeOptions.find(
-      (slot) =>
-        slot.label.toLowerCase() === value.trim().toLowerCase() ||
-        slot.startTime === value.trim()
-    ) ?? null;
-
-  if (directMatch) {
-    return { startTime: directMatch.startTime, label: formatTimeLabel(directMatch.startTime) };
-  }
-
-  const parsedMinutes = parseTypedTime(value);
-
-  if (parsedMinutes === null) {
-    return { startTime: fallback.startTime, label: formatTimeLabel(fallback.startTime) };
-  }
-
-  const nearest = timeOptions.reduce((closest, slot) => {
-    const slotMinutes = toMinutes(slot.startTime);
-    const slotDistance = Math.abs(slotMinutes - parsedMinutes);
-    const closestDistance = Math.abs(toMinutes(closest.startTime) - parsedMinutes);
-
-    return slotDistance < closestDistance ? slot : closest;
-  }, fallback);
-
-  return { startTime: nearest.startTime, label: formatTimeLabel(nearest.startTime) };
-}
-
-function parseTypedTime(value: string) {
-  const normalised = value.trim().toLowerCase().replace(/\s+/g, "");
-
-  if (!normalised) {
-    return null;
-  }
-
-  const meridiemMatch = normalised.match(/^(\d{1,2})(?::?(\d{2}))?(am|pm)$/);
-
-  if (meridiemMatch) {
-    let hours = Number(meridiemMatch[1]);
-    const minutes = Number(meridiemMatch[2] ?? "0");
-    const meridiem = meridiemMatch[3];
-
-    if (meridiem === "pm" && hours !== 12) {
-      hours += 12;
-    }
-
-    if (meridiem === "am" && hours === 12) {
-      hours = 0;
-    }
-
-    return hours * 60 + minutes;
-  }
-
-  const plainMatch = normalised.match(/^(\d{1,2})(?::?(\d{2}))?$/);
-
-  if (!plainMatch) {
-    return null;
-  }
-
-  const hours = Number(plainMatch[1]);
-  const minutes = Number(plainMatch[2] ?? "0");
-
-  return hours * 60 + minutes;
-}
-
-function toMinutes(value: string) {
-  const [hoursString, minutesString] = value.split(":");
-  return Number(hoursString) * 60 + Number(minutesString);
-}
-
-function formatTimeLabel(value: string) {
-  const [hoursString, minutesString] = value.split(":");
-  const hours = Number(hoursString);
-  const minutes = Number(minutesString);
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-
-  return new Intl.DateTimeFormat("en-NZ", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true
-  }).format(date);
-}
-
-function addTenMinutes(value: string) {
-  const [hoursString, minutesString] = value.split(":");
-  const hours = Number(hoursString);
-  const minutes = Number(minutesString);
-
-  const date = new Date();
-  date.setHours(hours, minutes + 10, 0, 0);
-
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}

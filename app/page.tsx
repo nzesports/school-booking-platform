@@ -65,7 +65,7 @@ export default async function HomePage() {
     listRegions(),
     listHomepageSections(),
     listPublicTestimonials(8),
-    loadAvailabilityConfig(21)
+    loadAvailabilityConfig()
   ]);
   const showDemoFeedbackNote = !config.isSupabaseConfigured;
   const homepageSectionMap = new Map(

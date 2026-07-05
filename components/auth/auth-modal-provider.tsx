@@ -10,6 +10,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 
+import type { SignupFormState } from "@/app/auth/actions";
 import { AuthModalHost } from "@/components/auth/auth-modal-host";
 import type { Region } from "@/lib/domain/types";
 import { PUBLIC_AUTH_QUERY_KEYS } from "@/lib/services/auth-public";
@@ -28,6 +29,7 @@ type AuthModalContextValue = {
 const AuthModalContext = createContext<AuthModalContextValue | null>(null);
 
 type AuthAction = (formData: FormData) => void | Promise<void>;
+type SignupAction = (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;
 
 const AUTH_URL_CHANGE_EVENT = "nz-esports-auth-url-change";
 const AUTH_URL_HISTORY_PATCH_FLAG = "__nzEsportsAuthHistoryPatched";
@@ -96,8 +98,8 @@ export function AuthModalProvider({
   children: ReactNode;
   regions: Region[];
   loginAction: AuthAction;
-  registerSchoolAction: AuthAction;
-  registerAmbassadorAction: AuthAction;
+  registerSchoolAction: SignupAction;
+  registerAmbassadorAction: SignupAction;
   forgotPasswordAction: AuthAction;
   authEnabled: boolean;
 }) {

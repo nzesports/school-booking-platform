@@ -534,7 +534,9 @@ export function buildSchoolDeliverySummaries(schools: School[], bookings: Bookin
       yearGroupsReachedLabel: formatYearGroups(yearGroups),
       yearGroupGapsLabel: gaps.length > 0 ? formatYearGroups(gaps) : "No obvious gaps",
       lastDeliveredLabel: lastDelivered ? formatShortDate(lastDelivered) : "Not yet",
-      nextSessionLabel: nextSession ? formatShortDate(nextSession) : "None scheduled"
+      nextSessionLabel: nextSession ? formatShortDate(nextSession) : "None scheduled",
+      lastDeliveredAt: lastDelivered ?? null,
+      nextSessionAt: nextSession ?? null
     };
   });
 }

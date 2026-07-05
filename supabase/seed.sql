@@ -21,7 +21,7 @@ values
   ('Palmerston North', 'palmerston-north', 11),
   ('Nelson', 'nelson', 12),
   ('Queenstown', 'queenstown', 13),
-  ('Other / request region', 'other-request-region', 14)
+  ('Other', 'other-request-region', 14)
 on conflict (slug) do nothing;
 
 insert into public.presentation_types (
@@ -32,6 +32,8 @@ insert into public.presentation_types (
   year_levels,
   duration_minutes,
   delivery_formats,
+  learning_outcomes,
+  required_equipment,
   is_active,
   is_public,
   sort_order
@@ -42,9 +44,11 @@ values
     'digital-wellbeing',
     'Promote healthy habits, screen balance and positive digital choices.',
     'A practical presentation that helps students build healthy relationships with technology and gaming.',
-    'Years 7 to 13',
+    'Years 5 to 6, Years 7 to 8, Years 9 to 13',
     60,
     array['assembly', 'classroom'],
+    E'Healthy screen routines\nDigital citizenship\nPositive online behaviour',
+    E'Projector or screen\nMicrophone if needed',
     true,
     true,
     1
@@ -54,9 +58,11 @@ values
     'esports-pathways',
     'Explore structured esports and the roles around it.',
     'An engaging session covering teamwork, competition, events, production, and future opportunities in esports.',
-    'Years 7 to 13',
+    'Years 7 to 8, Years 9 to 13',
     50,
     array['assembly', 'workshop'],
+    E'Understanding esports roles\nTeamwork and communication\nStructured competition awareness',
+    E'Projector or screen',
     true,
     true,
     2
@@ -69,6 +75,8 @@ values
     'Years 9 to 13',
     45,
     array['assembly', 'classroom'],
+    E'Career awareness\nPathway planning\nIndustry role discovery',
+    E'Projector or screen',
     true,
     true,
     3
@@ -78,9 +86,11 @@ values
     'understanding-esports',
     'Help schools understand esports in a safe, structured education context.',
     'A foundational overview of esports for schools, students, and whānau-facing contexts.',
-    'Years 7 to 13',
+    'Years 5 to 6, Years 7 to 8, Years 9 to 13',
     45,
     array['assembly', 'online'],
+    E'Esports literacy\nSafety and inclusion\nSchool implementation basics',
+    E'Projector or screen\nStable internet for online mode',
     true,
     true,
     4
@@ -213,8 +223,8 @@ values
   (
     'how_it_works',
     'How school bookings work',
-    'Simple for schools, operationally strong for staff',
-    'Schools request sessions, staff review capacity, ambassadors apply, and confirmed sessions sync into internal workflows.',
+    'Simple steps for schools to book',
+    'Please select the dates that suit your school. You can book multiple sessions at the same time. Our team will be in touch to confirm your presentation, and you will then receive a booking confirmation.',
     2
   ),
   (

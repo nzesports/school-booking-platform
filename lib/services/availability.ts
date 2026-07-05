@@ -33,7 +33,18 @@ const holidayDates = new Set([
   "2026-07-10",
   "2026-10-26",
   "2026-12-25",
-  "2026-12-28"
+  "2026-12-28",
+  "2027-01-01",
+  "2027-01-04",
+  "2027-02-08",
+  "2027-03-26",
+  "2027-03-29",
+  "2027-04-26",
+  "2027-06-07",
+  "2027-06-25",
+  "2027-10-25",
+  "2027-12-27",
+  "2027-12-28"
 ]);
 
 const slotStarts = Array.from({ length: 48 }, (_, index) => 8 * 60 + index * 10);
@@ -64,6 +75,12 @@ export function isBookableDate(dateString: string, config?: AvailabilityConfig) 
     return override.isAvailable;
   }
 
+  // Public holidays stay blocked even when weekly availability rules exist;
+  // only an explicit per-date override can open one.
+  if (holidayDates.has(dateString)) {
+    return false;
+  }
+
   const rules = getRulesForDate(date, config);
 
   if (rules.length > 0) {
@@ -71,7 +88,7 @@ export function isBookableDate(dateString: string, config?: AvailabilityConfig) 
   }
 
   const day = date.getDay();
-  return day !== 0 && day !== 6 && !holidayDates.has(dateString);
+  return day !== 0 && day !== 6;
 }
 
 export function buildAvailabilitySlots(dateString: string, config?: AvailabilityConfig): AvailabilitySlot[] {

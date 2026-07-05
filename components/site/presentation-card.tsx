@@ -10,10 +10,11 @@ import {
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { Card } from "@/components/ui/card";
 import type { PresentationType } from "@/lib/domain/types";
+import { splitYearGroups, yearGroupChipClass } from "@/lib/domain/year-groups";
 
 export function PresentationCard({ presentation }: { presentation: PresentationType }) {
   const Icon = iconMap[presentation.slug] ?? UsersRound;
-  const yearGroupClass = yearGroupStyles[presentation.yearLevels] ?? yearGroupStyles.default;
+  const yearGroups = splitYearGroups(presentation.yearLevels);
 
   return (
     <Card className="group flex h-full flex-col rounded-[30px] p-6 transition hover:-translate-y-1">
@@ -32,9 +33,14 @@ export function PresentationCard({ presentation }: { presentation: PresentationT
             <Clock3 className="h-4 w-4" />
             {presentation.durationMinutes} mins
           </span>
-          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 ${yearGroupClass}`}>
-            {presentation.yearLevels}
-          </span>
+          {yearGroups.map((group) => (
+            <span
+              key={group}
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 ${yearGroupChipClass(group)}`}
+            >
+              {group}
+            </span>
+          ))}
         </div>
 
         <div className="flex items-center justify-between gap-4 border-t border-[color:var(--border-soft)] pt-6">
@@ -64,9 +70,3 @@ const iconMap: Record<string, typeof HeartHandshake> = {
   "understanding-esports": UsersRound
 };
 
-const yearGroupStyles: Record<string, string> = {
-  "Years 1 to 6": "bg-[#fff3d8] text-[#9a6900]",
-  "Years 7 to 8": "bg-[#e6f5ee] text-[#178247]",
-  "Years 9 to 13": "bg-[#ecebff] text-[#4a43a9]",
-  default: "bg-[color:var(--green-soft)] text-[color:var(--green)]"
-};

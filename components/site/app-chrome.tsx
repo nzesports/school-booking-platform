@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
+import type { SignupFormState } from "@/app/auth/actions";
 import { AuthModalProvider } from "@/components/auth/auth-modal-provider";
 import { BookingModalProvider } from "@/components/site/booking-modal-provider";
 import { SiteFooter } from "@/components/site/site-footer";
@@ -32,8 +33,11 @@ export function AppChrome({
   availabilityConfig?: AvailabilityConfig;
   bookingAction: (formData: FormData) => void | Promise<void>;
   loginAction: (formData: FormData) => void | Promise<void>;
-  registerSchoolAction: (formData: FormData) => void | Promise<void>;
-  registerAmbassadorAction: (formData: FormData) => void | Promise<void>;
+  registerSchoolAction: (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;
+  registerAmbassadorAction: (
+    state: SignupFormState,
+    formData: FormData
+  ) => Promise<SignupFormState>;
   forgotPasswordAction: (formData: FormData) => void | Promise<void>;
   authEnabled: boolean;
 }) {

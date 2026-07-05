@@ -15,7 +15,13 @@ import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { isOtherRegionSlug } from "@/lib/domain/regions";
 import type { PresentationType, Region } from "@/lib/domain/types";
+import {
+  addTenMinutes,
+  formatDisplayDate,
+  formatTimeLabel
+} from "@/lib/services/time-slots";
 
 export type HeroBookingDraftSession = {
   id: string;
@@ -24,6 +30,7 @@ export type HeroBookingDraftSession = {
   startTime: string;
   timeText: string;
   regionSlug: string;
+  customRegion?: string;
   yearLevels: string;
   expectedStudentCount: number;
 };
@@ -117,9 +124,12 @@ export function HeroBookingModal({
                   const presentation = presentations.find(
                     (item) => item.slug === session.presentationSlug
                   );
+                  const customRegion = session.customRegion?.trim() ?? "";
                   const regionName =
-                    regions.find((region) => region.slug === session.regionSlug)?.name ??
-                    "Selected region";
+                    isOtherRegionSlug(session.regionSlug) && customRegion
+                      ? customRegion
+                      : regions.find((region) => region.slug === session.regionSlug)?.name ??
+                        "Selected region";
 
                   return (
                     <div
@@ -192,6 +202,11 @@ export function HeroBookingModal({
                         type="hidden"
                         name={`session-${index}-regionSlug`}
                         value={session.regionSlug}
+                      />
+                      <input
+                        type="hidden"
+                        name={`session-${index}-customRegion`}
+                        value={customRegion}
                       />
                       <input type="hidden" name={`session-${index}-date`} value={session.date} />
                       <input
@@ -339,41 +354,3 @@ function SessionSummaryItem({
   );
 }
 
-function addTenMinutes(value: string) {
-  const [hoursString, minutesString] = value.split(":");
-  const hours = Number(hoursString);
-  const minutes = Number(minutesString);
-
-  const date = new Date();
-  date.setHours(hours, minutes + 10, 0, 0);
-
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function formatDisplayDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-NZ", {
-    weekday: "short",
-    day: "numeric",
-    month: "short"
-  }).format(date);
-}
-
-function formatTimeLabel(value: string) {
-  const [hoursString, minutesString] = value.split(":");
-  const hours = Number(hoursString);
-  const minutes = Number(minutesString);
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-
-  return new Intl.DateTimeFormat("en-NZ", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true
-  }).format(date);
-}

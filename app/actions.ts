@@ -37,6 +37,19 @@ export async function submitBookingRequestAction(formData: FormData) {
 
   const count = Number(formData.get("sessionsCount") || 0);
   const firstSessionRegion = String(formData.get("session-0-regionSlug") || "");
+  const customRegions = Array.from(
+    new Set(
+      Array.from({ length: count }, (_, index) =>
+        String(formData.get(`session-${index}-customRegion`) || "").trim()
+      ).filter(Boolean)
+    )
+  );
+  const schoolNotes = [
+    String(formData.get("schoolNotes") || "").trim(),
+    customRegions.length > 0 ? `Requested region: ${customRegions.join(", ")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const parsed = bookingSchema.parse({
     schoolName: formData.get("schoolName"),
@@ -44,7 +57,7 @@ export async function submitBookingRequestAction(formData: FormData) {
     contactEmail: formData.get("contactEmail"),
     contactPhone: formData.get("contactPhone"),
     regionSlug: formData.get("regionSlug") || firstSessionRegion,
-    schoolNotes: formData.get("schoolNotes") || undefined,
+    schoolNotes: schoolNotes || undefined,
     marketingConsent: formData.get("marketingConsent") === "on",
     sessions: Array.from({ length: count }, (_, index) => ({
       presentationSlug: String(formData.get(`session-${index}-presentationSlug`) || ""),

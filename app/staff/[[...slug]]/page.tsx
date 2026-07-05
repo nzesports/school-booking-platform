@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   FolderKanban,
   MessageSquareText,
-  Plus,
   School2,
   Settings,
   UsersRound
@@ -15,6 +14,7 @@ import {
 import { logoutAction } from "@/app/auth/actions";
 import {
   markNotificationReadAction,
+  markReportReviewedAction,
   reviewAmbassadorAction,
   saveResourceAction
 } from "@/app/portal/actions";
@@ -28,7 +28,9 @@ import {
   PaymentsWorkspace,
   getPaymentsNotice
 } from "@/components/dashboard/payments-workspace";
-import { ResourceLibrary } from "@/components/dashboard/resource-library";
+import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
+import { ReportsOverview } from "@/components/dashboard/reports-overview";
+import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
@@ -206,6 +208,7 @@ export default async function StaffPortalPage({
             ambassadors={portal.ambassadors}
             activeView={activeBookingView}
             range={dashboardRange}
+            initialQuery={readSearchParam(resolvedSearchParams, "q")}
           />
         ) : null}
 
@@ -343,17 +346,26 @@ export default async function StaffPortalPage({
         ) : null}
 
         {route === "reports" ? (
-          <DataTable
-            title="Session reports"
-            columns={["School", "Presentation", "Submitted", "Attendees", "Status"]}
-            rows={portal.reports.map((report) => [
-              report.schoolName,
-              report.presentationTitle,
-              formatDateTime(report.submittedAt),
-              String(report.attendeeCount),
-              <StatusBadge key={`${report.id}-status`} value={report.status} />
-            ])}
-          />
+          <div className="grid gap-5">
+            <ReportsOverview reports={portal.reports} />
+            <DataTable
+              title="Session reports"
+              columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Report"]}
+              rows={portal.reports.map((report) => [
+                report.schoolName,
+                report.presentationTitle,
+                formatDateTime(report.submittedAt),
+                String(report.attendeeCount),
+                <StatusBadge key={`${report.id}-status`} value={report.status} />,
+                <ReportDetailsButton
+                  key={`${report.id}-view`}
+                  report={report}
+                  reviewAction={markReportReviewedAction}
+                  reviewReturnTo="/staff/reports"
+                />
+              ])}
+            />
+          </div>
         ) : null}
 
         {route === "payments" ? (
@@ -375,36 +387,20 @@ export default async function StaffPortalPage({
         ) : null}
 
         {route === "resources" ? (
-          <Card className="rounded-[34px]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Resource library
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                  Library inventory
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  Manage downloads, YouTube embeds, scripts, slide decks, and school or ambassador
-                  materials from one content catalogue.
-                </p>
-              </div>
-              <ButtonLink href="/staff/resources/new">
-                <Plus className="h-4 w-4" />
-                Add resource
-              </ButtonLink>
-            </div>
-
+          <div className="grid gap-4">
             {resourceNotice ? (
-              <NoticeBanner tone={resourceNotice.tone} className="mt-6">
-                {resourceNotice.message}
-              </NoticeBanner>
+              <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
             ) : null}
-
-            <div className="mt-6">
-              <ResourceLibrary resources={portal.resources} editBasePath="/staff/resources" />
-            </div>
-          </Card>
+            <ResourcesWorkspace
+              resources={portal.resources}
+              presentations={portal.presentations.map((presentation) => ({
+                id: presentation.id,
+                title: presentation.title
+              }))}
+              action={saveResourceAction}
+              returnTo="/staff/resources"
+            />
+          </div>
         ) : null}
 
         {resourceEditor && (selectedResource || isCreatingResource) ? (

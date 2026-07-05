@@ -21,6 +21,7 @@ export default async function ResetPasswordPage({
 }) {
   const [query, supabase] = await Promise.all([searchParams, createClient()]);
   const errorKey = typeof query.error === "string" ? query.error : null;
+  const isWelcome = query.welcome === "1";
 
   if (!supabase) {
     redirect("/login?error=supabase-unavailable");
@@ -38,14 +39,15 @@ export default async function ResetPasswordPage({
     <main className="site-shell-narrow flex min-h-[70vh] items-center justify-center py-20">
       <Card className="w-full max-w-xl rounded-[34px]">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-          Reset password
+          {isWelcome ? "Welcome aboard" : "Reset password"}
         </p>
         <h1 className="mt-4 text-4xl font-semibold text-[color:var(--navy)]">
-          Choose a new password.
+          {isWelcome ? "Create your password." : "Choose a new password."}
         </h1>
         <p className="mt-4 text-sm leading-7 text-[color:var(--text-soft)]">
-          Set a strong password for {user.email}. Once this is saved, you’ll log in again with the
-          new password.
+          {isWelcome
+            ? `Your invite has been accepted. Create a password for ${user.email} to finish setting up your account — you'll use it to log in from now on.`
+            : `Set a strong password for ${user.email}. Once this is saved, you'll log in again with the new password.`}
         </p>
 
         {errorKey && messages[errorKey] ? (
