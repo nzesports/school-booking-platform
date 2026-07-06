@@ -404,6 +404,24 @@ create table if not exists public.presentation_resources (
   updated_at timestamptz not null default now()
 );
 
+alter table public.presentation_resources
+  add column if not exists audiences text[] not null default '{}',
+  add column if not exists tags text[] not null default '{}';
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'presentation_resources'
+      and column_name = 'audience'
+  ) then
+    update public.presentation_resources
+    set audiences = array[audience]
+    where audiences = '{}';
+  end if;
+end $$;
+
 create table if not exists public.training_modules (
   id uuid primary key default gen_random_uuid(),
   presentation_type_id uuid references public.presentation_types(id) on delete set null,
@@ -552,78 +570,97 @@ left join public.presentation_types pt on pt.id = bs.presentation_type_id
 left join public.regions r on r.id = bs.region_id
 where bs.status in ('ambassador_needed', 'ambassador_applied');
 
+drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_regions_updated_at on public.regions;
 create trigger set_regions_updated_at
 before update on public.regions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_schools_updated_at on public.schools;
 create trigger set_schools_updated_at
 before update on public.schools
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_school_contacts_updated_at on public.school_contacts;
 create trigger set_school_contacts_updated_at
 before update on public.school_contacts
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_presentation_types_updated_at on public.presentation_types;
 create trigger set_presentation_types_updated_at
 before update on public.presentation_types
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_ambassador_profiles_updated_at on public.ambassador_profiles;
 create trigger set_ambassador_profiles_updated_at
 before update on public.ambassador_profiles
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_availability_rules_updated_at on public.availability_rules;
 create trigger set_availability_rules_updated_at
 before update on public.availability_rules
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_booking_requests_updated_at on public.booking_requests;
 create trigger set_booking_requests_updated_at
 before update on public.booking_requests
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_booking_sessions_updated_at on public.booking_sessions;
 create trigger set_booking_sessions_updated_at
 before update on public.booking_sessions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_media_library_updated_at on public.media_library;
 create trigger set_media_library_updated_at
 before update on public.media_library
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_payments_updated_at on public.payments;
 create trigger set_payments_updated_at
 before update on public.payments
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_presentation_resources_updated_at on public.presentation_resources;
 create trigger set_presentation_resources_updated_at
 before update on public.presentation_resources
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_training_modules_updated_at on public.training_modules;
 create trigger set_training_modules_updated_at
 before update on public.training_modules
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_training_lessons_updated_at on public.training_lessons;
 create trigger set_training_lessons_updated_at
 before update on public.training_lessons
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_training_progress_updated_at on public.training_progress;
 create trigger set_training_progress_updated_at
 before update on public.training_progress
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_homepage_sections_updated_at on public.homepage_sections;
 create trigger set_homepage_sections_updated_at
 before update on public.homepage_sections
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_faqs_updated_at on public.faqs;
 create trigger set_faqs_updated_at
 before update on public.faqs
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_email_templates_updated_at on public.email_templates;
 create trigger set_email_templates_updated_at
 before update on public.email_templates
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_calendar_events_updated_at on public.calendar_events;
 create trigger set_calendar_events_updated_at
 before update on public.calendar_events
 for each row execute function public.set_updated_at();
@@ -664,78 +701,92 @@ alter table public.settings enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.calendar_events enable row level security;
 
+drop policy if exists "public can read public presentation types" on public.presentation_types;
 create policy "public can read public presentation types"
 on public.presentation_types for select
 to anon, authenticated
 using (is_active and is_public);
 
+drop policy if exists "staff manage presentation types" on public.presentation_types;
 create policy "staff manage presentation types"
 on public.presentation_types for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "public can read active faqs" on public.faqs;
 create policy "public can read active faqs"
 on public.faqs for select
 to anon, authenticated
 using (is_active);
 
+drop policy if exists "staff manage faqs" on public.faqs;
 create policy "staff manage faqs"
 on public.faqs for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "public can read active homepage sections" on public.homepage_sections;
 create policy "public can read active homepage sections"
 on public.homepage_sections for select
 to anon, authenticated
 using (is_active);
 
+drop policy if exists "staff manage homepage sections" on public.homepage_sections;
 create policy "staff manage homepage sections"
 on public.homepage_sections for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "users read own profile" on public.profiles;
 create policy "users read own profile"
 on public.profiles for select
 to authenticated
 using (id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "users insert own profile" on public.profiles;
 create policy "users insert own profile"
 on public.profiles for insert
 to authenticated
 with check (id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "users update own profile" on public.profiles;
 create policy "users update own profile"
 on public.profiles for update
 to authenticated
 using (id = auth.uid() or public.is_staff_like())
 with check (id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "staff manage roles" on public.roles;
 create policy "staff manage roles"
 on public.roles for all
 to authenticated
 using (public.current_role() = 'super_admin')
 with check (public.current_role() = 'super_admin');
 
+drop policy if exists "staff manage role permissions" on public.role_permissions;
 create policy "staff manage role permissions"
 on public.role_permissions for all
 to authenticated
 using (public.current_role() = 'super_admin')
 with check (public.current_role() = 'super_admin');
 
+drop policy if exists "public can read active regions" on public.regions;
 create policy "public can read active regions"
 on public.regions for select
 to anon, authenticated
 using (is_active or public.is_staff_like());
 
+drop policy if exists "staff manage regions" on public.regions;
 create policy "staff manage regions"
 on public.regions for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and schools read schools" on public.schools;
 create policy "staff and schools read schools"
 on public.schools for select
 to authenticated
@@ -744,12 +795,14 @@ using (
   or public.is_school_contact_for_school(id)
 );
 
+drop policy if exists "staff manage schools" on public.schools;
 create policy "staff manage schools"
 on public.schools for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and mapped users read school contacts" on public.school_contacts;
 create policy "staff and mapped users read school contacts"
 on public.school_contacts for select
 to authenticated
@@ -763,18 +816,21 @@ using (
   )
 );
 
+drop policy if exists "staff manage school contacts" on public.school_contacts;
 create policy "staff manage school contacts"
 on public.school_contacts for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff manage school contact mappings" on public.school_contact_users;
 create policy "staff manage school contact mappings"
 on public.school_contact_users for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and school users read booking requests" on public.booking_requests;
 create policy "staff and school users read booking requests"
 on public.booking_requests for select
 to authenticated
@@ -784,17 +840,20 @@ using (
   or submitted_by_user_id = auth.uid()
 );
 
+drop policy if exists "public submit booking requests" on public.booking_requests;
 create policy "public submit booking requests"
 on public.booking_requests for insert
 to anon, authenticated
 with check (true);
 
+drop policy if exists "staff manage booking requests" on public.booking_requests;
 create policy "staff manage booking requests"
 on public.booking_requests for update
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and related users read booking sessions" on public.booking_sessions;
 create policy "staff and related users read booking sessions"
 on public.booking_sessions for select
 to authenticated
@@ -804,17 +863,20 @@ using (
   or assigned_ambassador_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "public and staff create booking sessions" on public.booking_sessions;
 create policy "public and staff create booking sessions"
 on public.booking_sessions for insert
 to anon, authenticated
 with check (true);
 
+drop policy if exists "staff manage booking sessions" on public.booking_sessions;
 create policy "staff manage booking sessions"
 on public.booking_sessions for update
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and ambassadors read applications" on public.booking_session_applications;
 create policy "staff and ambassadors read applications"
 on public.booking_session_applications for select
 to authenticated
@@ -823,17 +885,20 @@ using (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "ambassadors apply to booking sessions" on public.booking_session_applications;
 create policy "ambassadors apply to booking sessions"
 on public.booking_session_applications for insert
 to authenticated
 with check (ambassador_profile_id = public.current_ambassador_profile_id());
 
+drop policy if exists "staff review applications" on public.booking_session_applications;
 create policy "staff review applications"
 on public.booking_session_applications for update
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and ambassadors read ambassador profiles" on public.ambassador_profiles;
 create policy "staff and ambassadors read ambassador profiles"
 on public.ambassador_profiles for select
 to authenticated
@@ -842,17 +907,20 @@ using (
   or user_id = auth.uid()
 );
 
+drop policy if exists "ambassadors create own profile" on public.ambassador_profiles;
 create policy "ambassadors create own profile"
 on public.ambassador_profiles for insert
 to authenticated
 with check (user_id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "ambassadors update own profile" on public.ambassador_profiles;
 create policy "ambassadors update own profile"
 on public.ambassador_profiles for update
 to authenticated
 using (user_id = auth.uid() or public.is_staff_like())
 with check (user_id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "ambassadors manage own travel regions" on public.ambassador_travel_regions;
 create policy "ambassadors manage own travel regions"
 on public.ambassador_travel_regions for all
 to authenticated
@@ -865,6 +933,7 @@ with check (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "ambassadors manage own availability" on public.ambassador_availability;
 create policy "ambassadors manage own availability"
 on public.ambassador_availability for all
 to authenticated
@@ -877,38 +946,45 @@ with check (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "staff manage availability rules" on public.availability_rules;
 create policy "staff manage availability rules"
 on public.availability_rules for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff manage availability overrides" on public.availability_overrides;
 create policy "staff manage availability overrides"
 on public.availability_overrides for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and related users read booking history" on public.booking_status_history;
 create policy "staff and related users read booking history"
 on public.booking_status_history for select
 to authenticated
 using (public.is_staff_like());
 
+drop policy if exists "staff write booking history" on public.booking_status_history;
 create policy "staff write booking history"
 on public.booking_status_history for insert
 to authenticated
 with check (public.is_staff_like());
 
+drop policy if exists "staff and related users read booking activity" on public.booking_activity_logs;
 create policy "staff and related users read booking activity"
 on public.booking_activity_logs for select
 to authenticated
 using (public.is_staff_like());
 
+drop policy if exists "staff write booking activity" on public.booking_activity_logs;
 create policy "staff write booking activity"
 on public.booking_activity_logs for insert
 to authenticated
 with check (public.is_staff_like());
 
+drop policy if exists "staff and authors read reports" on public.ambassador_reports;
 create policy "staff and authors read reports"
 on public.ambassador_reports for select
 to authenticated
@@ -917,17 +993,20 @@ using (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "ambassadors create own reports" on public.ambassador_reports;
 create policy "ambassadors create own reports"
 on public.ambassador_reports for insert
 to authenticated
 with check (ambassador_profile_id = public.current_ambassador_profile_id());
 
+drop policy if exists "staff review reports" on public.ambassador_reports;
 create policy "staff review reports"
 on public.ambassador_reports for update
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and authors read media" on public.media_library;
 create policy "staff and authors read media"
 on public.media_library for select
 to authenticated
@@ -936,6 +1015,7 @@ using (
   or uploaded_by = auth.uid()
 );
 
+drop policy if exists "authenticated users insert media" on public.media_library;
 create policy "authenticated users insert media"
 on public.media_library for insert
 to authenticated
@@ -944,12 +1024,14 @@ with check (
   or public.is_staff_like()
 );
 
+drop policy if exists "staff approve media" on public.media_library;
 create policy "staff approve media"
 on public.media_library for update
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff and ambassadors read payments" on public.payments;
 create policy "staff and ambassadors read payments"
 on public.payments for select
 to authenticated
@@ -958,49 +1040,57 @@ using (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "staff manage payments" on public.payments;
 create policy "staff manage payments"
 on public.payments for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "relevant users read resources" on public.presentation_resources;
 create policy "relevant users read resources"
 on public.presentation_resources for select
 to authenticated
 using (
   public.is_staff_like()
-  or audience = 'ambassador'
-  or audience = 'school'
+  or (audiences && array['ambassador'] and public.current_ambassador_profile_id() is not null)
+  or (audiences && array['school'])
 );
 
+drop policy if exists "staff manage resources" on public.presentation_resources;
 create policy "staff manage resources"
 on public.presentation_resources for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "authenticated read training" on public.training_modules;
 create policy "authenticated read training"
 on public.training_modules for select
 to authenticated
 using (is_active);
 
+drop policy if exists "staff manage training modules" on public.training_modules;
 create policy "staff manage training modules"
 on public.training_modules for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "authenticated read training lessons" on public.training_lessons;
 create policy "authenticated read training lessons"
 on public.training_lessons for select
 to authenticated
 using (true);
 
+drop policy if exists "staff manage training lessons" on public.training_lessons;
 create policy "staff manage training lessons"
 on public.training_lessons for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "ambassadors manage own progress" on public.training_progress;
 create policy "ambassadors manage own progress"
 on public.training_progress for all
 to authenticated
@@ -1013,59 +1103,70 @@ with check (
   or ambassador_profile_id = public.current_ambassador_profile_id()
 );
 
+drop policy if exists "staff manage email templates" on public.email_templates;
 create policy "staff manage email templates"
 on public.email_templates for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff read email logs" on public.email_logs;
 create policy "staff read email logs"
 on public.email_logs for select
 to authenticated
 using (public.is_staff_like());
 
+drop policy if exists "staff write email logs" on public.email_logs;
 create policy "staff write email logs"
 on public.email_logs for insert
 to authenticated
 with check (public.is_staff_like());
 
+drop policy if exists "users read own notifications" on public.notifications;
 create policy "users read own notifications"
 on public.notifications for select
 to authenticated
 using (user_id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "users update own notifications" on public.notifications;
 create policy "users update own notifications"
 on public.notifications for update
 to authenticated
 using (user_id = auth.uid() or public.is_staff_like())
 with check (user_id = auth.uid() or public.is_staff_like());
 
+drop policy if exists "staff write notifications" on public.notifications;
 create policy "staff write notifications"
 on public.notifications for insert
 to authenticated
 with check (public.is_staff_like());
 
+drop policy if exists "staff manage settings" on public.settings;
 create policy "staff manage settings"
 on public.settings for all
 to authenticated
 using (public.is_staff_like())
 with check (public.is_staff_like());
 
+drop policy if exists "staff read audit logs" on public.audit_logs;
 create policy "staff read audit logs"
 on public.audit_logs for select
 to authenticated
 using (public.is_staff_like());
 
+drop policy if exists "staff write audit logs" on public.audit_logs;
 create policy "staff write audit logs"
 on public.audit_logs for insert
 to authenticated
 with check (public.is_staff_like());
 
+drop policy if exists "staff read calendar events" on public.calendar_events;
 create policy "staff read calendar events"
 on public.calendar_events for select
 to authenticated
 using (public.is_staff_like());
 
+drop policy if exists "staff manage calendar events" on public.calendar_events;
 create policy "staff manage calendar events"
 on public.calendar_events for all
 to authenticated
