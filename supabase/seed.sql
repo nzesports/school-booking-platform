@@ -217,21 +217,21 @@ values
     'hero',
     'Inspiring the next generation through esports.',
     'School Presentations',
-    'Curriculum-aligned, engaging presentations that educate, inspire and empower students to thrive in the digital age.',
+    'Free, school-ready presentations on digital wellbeing, screen time, esports careers and pathways, delivered by NZ Esports ambassadors during your school assembly.',
     1
   ),
   (
     'how_it_works',
     'How school bookings work',
     'Simple steps for schools to book',
-    'Please select the dates that suit your school. You can book multiple sessions at the same time. Our team will be in touch to confirm your presentation, and you will then receive a booking confirmation.',
+    'Build a visit around your students, select your preferred date, and our team will confirm everything with you.',
     2
   ),
   (
     'cta',
-    'Ready to book a presentation?',
+    'Bring esports into the conversation, the right way',
     'Book a Presentation',
-    'Start with one session or build a multi-session school request.',
+    'Gaming is already part of students’ lives. Invite our ambassadors to help your school create a supportive, balanced conversation around esports, play and positive digital habits.',
     3
   )
 on conflict (section_key) do nothing;

@@ -81,7 +81,9 @@ export function PaymentsWorkspace({
       ? `${session.presentationTitle} · ${session.schoolName} · ${formatShortDate(session.startsAt)}`
       : payment.bookingSessionId;
   };
-  const returnTo = `${basePath}/payments`;
+  // Anchor keeps the page at the payment queues after a status update
+  // instead of jumping back to the top.
+  const returnTo = `${basePath}/payments#payments-queue`;
 
   const awaitingInvoice = payments.filter((payment) => payment.status === "pending");
   const invoiceReceived = payments.filter((payment) => payment.status === "invoiced");
@@ -98,7 +100,7 @@ export function PaymentsWorkspace({
     .slice(0, 10);
 
   return (
-    <div className="grid gap-6">
+    <div id="payments-queue" className="grid scroll-mt-24 gap-6">
       {notice ? (
         <Card
           className={cn(

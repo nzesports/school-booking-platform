@@ -1,3 +1,4 @@
+import { config } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { sendTransactionalEmail } from "./email";
@@ -134,6 +135,58 @@ export async function sendBookingConfirmedEmail(opts: {
       <p>Great news: your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> is now confirmed.</p>
       <p>We'll send you a reminder closer to the date.</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "school"
+  });
+  return result;
+}
+
+// Sent when staff mark a booking delivered, inviting the school to complete
+// the post-session feedback form in their portal.
+export async function sendFeedbackRequestEmail(opts: {
+  contactEmail: string;
+  contactName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  bookingId?: string;
+  bookingSessionId?: string;
+}) {
+  const contactName = escapeHtml(opts.contactName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const sessionDate = escapeHtml(opts.sessionDate);
+  const presentationTitle = escapeHtml(opts.presentationTitle);
+  // Absolute public link — works whether or not the school has a portal login.
+  const reviewUrl = opts.bookingSessionId
+    ? `${config.siteUrl}/feedback/${opts.bookingSessionId}`
+    : `${config.siteUrl}/school/reviews`;
+  const template = await renderTemplate("school_feedback_request", {
+    contactName: opts.contactName,
+    schoolName: opts.schoolName,
+    sessionDate: opts.sessionDate,
+    presentationTitle: opts.presentationTitle,
+    reviewUrl
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "school_feedback_request",
+    recipientEmail: opts.contactEmail,
+    subject: template?.subject ?? `How was your ${opts.presentationTitle} session?`,
+    html:
+      template?.html ??
+      `
+      <p>Hi ${contactName},</p>
+      <p>Thanks for hosting the <strong>${presentationTitle}</strong> session at
+      <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
+      <p>We'd love your feedback — it takes about two minutes and helps us keep
+      improving for schools across Aotearoa.</p>
+      <p><a href="${escapeHtml(reviewUrl)}">Leave your feedback here</a> — no login needed.</p>
+      <p>If your school has a portal account you can also leave it under
+      Bookings &rarr; Leave review.</p>
     `
   });
 

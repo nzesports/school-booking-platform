@@ -118,6 +118,12 @@ export interface School {
   city: string;
   rollSize: number;
   status: "active" | "pending_review";
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  logoUrl?: string | null;
+  // Availability windows / site instructions the school shares with staff.
+  profileNotes?: string | null;
 }
 
 export interface SchoolFeedbackSummary {
@@ -132,6 +138,19 @@ export interface SchoolFeedbackSummary {
   createdAt: string;
   isApproved: boolean;
   isPublic: boolean;
+  bookingSessionId?: string;
+  // Structured answers from the post-session feedback form.
+  details?: {
+    studentsCompeted?: string;
+    attendeeFeedback?: string;
+    attendanceRating?: number;
+    studentResponseRating?: number;
+    contentRating?: number;
+    presenterEnergyRating?: number;
+    hadEsportsClub?: string;
+    consideringClub?: string;
+    mailingListOptIn?: string;
+  };
 }
 
 export interface AmbassadorProfileDetails {

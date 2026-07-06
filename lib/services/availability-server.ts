@@ -1,10 +1,20 @@
 import { addDays, format } from "date-fns";
+import { unstable_cache } from "next/cache";
 
 import type { AvailabilityConfig } from "@/lib/services/availability";
 import { BOOKING_WINDOW_DAYS } from "@/lib/services/availability";
+import { PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function loadAvailabilityConfig(daysAhead = BOOKING_WINDOW_DAYS): Promise<AvailabilityConfig> {
+// Queried by the root layout on every page render — cache it. The date window
+// drifting by up to 5 minutes is harmless; staff settings saves bust the tag.
+export const loadAvailabilityConfig = unstable_cache(
+  loadAvailabilityConfigUncached,
+  ["availability-config"],
+  { revalidate: 300, tags: [PUBLIC_CONTENT_TAG] }
+);
+
+async function loadAvailabilityConfigUncached(daysAhead = BOOKING_WINDOW_DAYS): Promise<AvailabilityConfig> {
   const admin = createAdminClient();
 
   if (!admin) {

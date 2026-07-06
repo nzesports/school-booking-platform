@@ -12,6 +12,7 @@ import {
 import { logoutAction } from "@/app/auth/actions";
 import {
   applyToSessionAction,
+  markNotificationReadAction,
   markTrainingCompleteAction,
   saveAmbassadorProfileAction,
   submitAmbassadorReportAction,
@@ -32,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { DashboardMetric } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
-import { getAmbassadorPortalData } from "@/lib/services/portal";
+import { getAmbassadorPortalData, loadUserNotifications } from "@/lib/services/portal";
 import {
   formatCurrency,
   formatShortDate,
@@ -62,6 +63,7 @@ export default async function AmbassadorPortalPage({
   const route = slug?.join("/") ?? "";
   const actor = await requirePortalAccess("ambassador");
   const portal = await getAmbassadorPortalData(actor.id);
+  const notifications = await loadUserNotifications(actor.id);
   const ownedSessions = portal.assignedSessions;
   const now = new Date();
   const upcomingSessions = ownedSessions.filter(
@@ -169,7 +171,7 @@ export default async function AmbassadorPortalPage({
         : "Everything here is scoped to the ambassador experience, with privacy-safe access before assignment and operational tools after confirmation.";
 
   return (
-    <main className="pb-12">
+    <main className="min-h-screen">
       <DashboardShell
         title="Ambassador Portal"
         role="ambassador"
@@ -178,6 +180,8 @@ export default async function AmbassadorPortalPage({
         headline={headline}
         subheadline={subheadline}
         dateLabel="This month"
+        notifications={notifications}
+        markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
@@ -202,8 +206,8 @@ export default async function AmbassadorPortalPage({
 
             <div className="grid gap-5 xl:grid-cols-[1.04fr_0.96fr]">
               <Card className="rounded-[34px]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                       Open opportunities
                     </p>
@@ -211,7 +215,11 @@ export default async function AmbassadorPortalPage({
                       Available bookings you can apply for
                     </h2>
                   </div>
-                  <ButtonLink href="/ambassador/open-bookings" variant="ghost">
+                  <ButtonLink
+                    href="/ambassador/open-bookings"
+                    variant="ghost"
+                    className="shrink-0 whitespace-nowrap"
+                  >
                     View all
                   </ButtonLink>
                 </div>
@@ -381,7 +389,11 @@ export default async function AmbassadorPortalPage({
                         <p className="text-sm text-[color:var(--text-soft)]">
                           {report.attendeeCount} attendees · {formatShortDate(report.submittedAt)}
                         </p>
-                        <ReportDetailsButton report={report} />
+                        <ReportDetailsButton
+                          report={report}
+                          label="View"
+                          className="min-h-[32px] rounded-[11px] px-2.5 py-1 text-xs"
+                        />
                       </div>
                     </div>
                   ))}

@@ -138,7 +138,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     title: `New booking request from ${input.schoolName}`,
     body: `${input.contactName} submitted ${input.sessions.length} requested session${input.sessions.length === 1 ? "" : "s"}.`,
     type: "booking_request_submitted",
-    relatedUrl: "/staff/bookings"
+    relatedUrl: `/staff/bookings?status=all&range=all&booking=${bookingRequest.id}#booking-${bookingRequest.id}`
   }).catch(() => {});
 
   return {

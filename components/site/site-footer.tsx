@@ -43,10 +43,27 @@ export function SiteFooter({ compact = false }: { compact?: boolean }) {
         )}
       >
         <div id="about">
-          <BrandLockup />
+          <a
+            href="https://www.nzesports.org.nz/"
+            aria-label="Visit the NZ Esports website"
+            className="inline-flex"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <BrandLockup size="footer" />
+          </a>
           <p className="mt-4 max-w-sm text-sm leading-7 text-[color:var(--text-soft)]">
-            Empowering students through esports education, pathways, and opportunity across
-            Aotearoa New Zealand.
+            <a
+              href="https://www.nzesports.org.nz/"
+              className="font-semibold text-[color:var(--navy)] underline-offset-4 transition hover:text-[color:var(--green)] hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              NZ Esports
+            </a>{" "}
+            supports schools across Aotearoa New Zealand with free esports education,
+            student presentations, healthy gaming guidance and pathways into the wider digital
+            and esports ecosystem.
           </p>
           <div className="mt-5 flex gap-3 text-[color:var(--navy)]">
             {socialLinks.map(({ href, label, icon: Icon }) => (
@@ -86,7 +103,6 @@ export function SiteFooter({ compact = false }: { compact?: boolean }) {
             <Link href="/presentations/esports-pathways">Esports Pathways</Link>
             <Link href="/presentations/careers">Careers</Link>
             <Link href="/presentations/understanding-esports">Understanding Esports</Link>
-            <Link href="/presentations">View all presentations</Link>
           </div>
         </div>
 
@@ -117,7 +133,26 @@ export function SiteFooter({ compact = false }: { compact?: boolean }) {
             compact ? "py-3" : "py-4"
           )}
         >
-          <p>&copy; 2026 NZ Esports. All rights reserved.</p>
+          <p>
+            &copy; 2026{" "}
+            <a
+              href="https://www.nzesports.org.nz/"
+              className="font-semibold text-[color:var(--navy)] underline-offset-4 transition hover:text-[color:var(--green)] hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              NZ Esports
+            </a>
+            . All rights reserved.{" "}
+            <a
+              href="https://www.nzesports.org.nz/privacypolicy/"
+              className="font-semibold text-[color:var(--navy)] underline-offset-4 transition hover:text-[color:var(--green)] hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Privacy Policy
+            </a>
+          </p>
           <p>Proudly designed for school presentation operations in Aotearoa New Zealand.</p>
         </div>
       </div>

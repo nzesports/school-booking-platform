@@ -49,19 +49,36 @@
 }
 
 html {
+  /* Scale the whole interface down ~10% — every rem-based size (text,
+     spacing) follows this root value. */
+  font-size: 90%;
   scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
-  font-family: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  font-family: var(--font-quicksand), "Quicksand", system-ui, sans-serif;
   color: var(--text-dark);
   background: var(--page-background);
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Rozha One only ships weight 400 — pin the weight and relax the tight
+   sans-serif tracking so the serif headlines don't render faux-bold and
+   cramped. Unlayered rules intentionally win over Tailwind utilities. */
+h1,
+h2 {
+  font-family: var(--font-rozha-one), "Rozha One", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Layered so text-color utilities on links (e.g. text-white on green button
+   links) win — an unlayered rule here overrides every Tailwind utility. */
+@layer base {
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
 }
 
 button,
@@ -154,9 +171,9 @@ summary {
 }
 
 .site-navbar {
-  background: rgba(255, 255, 255, 0.72);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
-  box-shadow: 0 16px 34px rgba(11, 24, 77, 0.08);
+  background: rgba(248, 252, 255, 0.96);
+  border-bottom: 1px solid rgba(4, 15, 75, 0.1);
+  box-shadow: 0 18px 38px rgba(11, 24, 77, 0.1);
   backdrop-filter: blur(var(--glass-blur-soft));
   -webkit-backdrop-filter: blur(var(--glass-blur-soft));
 }

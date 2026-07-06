@@ -1,9 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { submitBookingRequest } from "@/lib/services/bookings";
 
 const bookingSchema = z.object({
@@ -77,6 +78,7 @@ export async function submitBookingRequestAction(formData: FormData) {
   });
 
   const booking = await submitBookingRequest(parsed);
+  updateTag(PLATFORM_DATA_TAG);
   revalidatePath("/staff");
   redirect(`/booking/confirmation/${booking.id}`);
 }

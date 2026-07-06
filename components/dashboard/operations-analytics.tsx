@@ -224,7 +224,7 @@ export function OperationsAnalytics({
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
         <SectionKicker label="Key analytics" />
-        <div className="mt-5 grid gap-5 2xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
           <ChartPanel title={`Bookings and sessions over time (${year})`}>
             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
               <LegendDot color="#18a83b" label="Bookings" />
@@ -263,7 +263,7 @@ export function OperationsAnalytics({
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
         <SectionKicker label={`Students reached (${year})`} />
-        <div className="mt-5 grid gap-6 2xl:grid-cols-[0.32fr_0.68fr] 2xl:items-center">
+        <div className="mt-5 grid gap-6 xl:grid-cols-[0.32fr_0.68fr] xl:items-center">
           <div>
             <p className="text-6xl font-semibold tracking-[-0.06em] text-[color:var(--navy)]">
               {yearStudentsTotal.toLocaleString("en-NZ")}
@@ -332,7 +332,7 @@ export function OperationsAnalytics({
           />
         </div>
 
-        <div className="mt-5 grid gap-5 2xl:grid-cols-2">
+        <div className="mt-5 grid gap-5 xl:grid-cols-2">
           <ChartPanel title={`Ambassador coverage by region (${year})`} tone="green">
             {regionCoverage.length > 0 ? (
               <>
@@ -708,22 +708,21 @@ const PIPELINE_STAGES = [
 
 function PipelineTimeline() {
   return (
-    <div className="mt-6 hidden px-3 xl:block">
-      <div className="relative flex items-center justify-between">
-        <span className="absolute inset-x-4 top-1/2 h-px -translate-y-1/2 border-t border-dashed border-[color:rgba(4,15,75,0.16)]" />
-        {PIPELINE_STAGES.map((stage) => (
+    <div className="mt-6 hidden grid-cols-5 gap-3 xl:grid">
+      {PIPELINE_STAGES.map((stage, index) => (
+        <div key={stage.label} className="relative grid justify-items-center gap-2 text-center">
+          {index > 0 ? (
+            <span className="absolute right-1/2 top-2 h-px w-[calc(100%+0.75rem)] border-t border-dashed border-[color:rgba(4,15,75,0.16)]" />
+          ) : null}
           <span
-            key={stage.label}
-            className="relative h-4 w-4 rounded-full border-4 bg-white"
+            className="relative z-10 h-4 w-4 rounded-full border-4 bg-white"
             style={{ borderColor: stage.color }}
           />
-        ))}
-      </div>
-      <div className="mt-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
-        {PIPELINE_STAGES.map((stage) => (
-          <span key={stage.label}>{stage.label}</span>
-        ))}
-      </div>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+            {stage.label}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1145,7 +1144,7 @@ function buildSourceBreakdown(yearBookings: BookingRequestView[]) {
 
   const segments = [
     { label: "School-sourced", value: count("public"), color: "#18a83b" },
-    { label: "Staff/agency", value: count("staff"), color: "#246bff" },
+    { label: "Staff", value: count("staff"), color: "#246bff" },
     { label: "Ambassador-referred", value: count("ambassador"), color: "#f5a623" }
   ].map((segment) => ({ ...segment, percent: percent(segment.value) }));
 

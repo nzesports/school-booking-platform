@@ -152,7 +152,7 @@ export function HeroBookingModal({
                         </div>
                       </div>
 
-                      <div className="mt-5 grid gap-0 divide-y divide-[rgba(4,15,75,0.1)] md:grid-cols-4 md:divide-x md:divide-y-0">
+                      <div className="mt-5 grid grid-cols-2 gap-x-4 md:grid-cols-4 md:gap-x-0 md:divide-x md:divide-[rgba(4,15,75,0.1)]">
                         <SessionSummaryItem
                           icon={<CalendarDays className="h-5 w-5" />}
                           label="Date"
@@ -180,7 +180,12 @@ export function HeroBookingModal({
                                   name={`session-${index}-expectedStudentCount`}
                                   type="number"
                                   min={1}
-                                  defaultValue={session.expectedStudentCount}
+                                  defaultValue={
+                                    session.expectedStudentCount > 0
+                                      ? session.expectedStudentCount
+                                      : ""
+                                  }
+                                  placeholder="e.g. 120"
                                   required
                                   className="h-11 max-w-[128px] rounded-[14px] px-3 py-2"
                                 />

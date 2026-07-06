@@ -23,7 +23,7 @@ import {
   UserRound
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
@@ -46,6 +46,15 @@ const BOOKING_STATUS_OPTIONS = [
   ["cancelled", "Cancelled"],
   ["declined", "Declined"]
 ] as const;
+
+// Statuses that mean "this booking has been delivered" — not selectable while
+// any of the booking's sessions are still in the future.
+const COMPLETION_STATUSES = new Set([
+  "completed_pending_report",
+  "report_submitted",
+  "paid",
+  "closed"
+]);
 
 const statusPillStyles: Record<string, string> = {
   tentative: "bg-[#fff5df] text-[#9a5a00]",
@@ -73,6 +82,11 @@ const calendarToneStyles: Record<CalendarTone, string> = {
   red: "border-[#f3c1c1] bg-[#fdecec] text-[#b3372e] hover:bg-[#fbdfdf]",
   grey: "border-[color:var(--border-soft)] bg-[#f1f5f9] text-[#64748b] hover:bg-[#e8eef5]"
 };
+
+function subscribeToHashChange(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
 
 function calendarTone(status: string): CalendarTone {
   if (["confirmed", "report_submitted", "paid"].includes(status)) {
@@ -119,7 +133,8 @@ export function BookingsExplorer({
   presentationTitles,
   updateStatusAction,
   assignAmbassadorAction,
-  initialQuery
+  initialQuery,
+  initialBookingId
 }: {
   bookings: BookingRequestView[];
   allBookings: BookingRequestView[];
@@ -132,20 +147,39 @@ export function BookingsExplorer({
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   initialQuery?: string;
+  initialBookingId?: string;
 }) {
   // Deep links like /bookings?q=School+Name (e.g. "View bookings" on the
-  // schools page) land pre-filtered on the list view.
+  // schools page) land pre-filtered on the list view. Deep links with
+  // ?booking=<id> (notifications, post-update redirects) land on the list
+  // view with that booking's card expanded and its page selected.
+  const initialBookingIndex = initialBookingId
+    ? bookings.findIndex((booking) => booking.id === initialBookingId)
+    : -1;
   const [viewMode, setViewMode] = useState<"calendar" | "list">(
-    initialQuery ? "list" : "calendar"
+    initialQuery || initialBookingIndex >= 0 ? "list" : "calendar"
   );
   const [query, setQuery] = useState(initialQuery ?? "");
   const [regionFilter, setRegionFilter] = useState("all");
   const [presentationFilter, setPresentationFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [page, setPage] = useState(
+    initialBookingIndex >= 0 ? Math.floor(initialBookingIndex / PAGE_SIZE) + 1 : 1
+  );
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(
+    initialBookingId ? { [initialBookingId]: true } : {}
+  );
+  // After a status update or assignment, the server action redirects back to
+  // #booking-{id}, so the page scrolls to and re-expands the card in question
+  // instead of jumping to the top.
+  const activeHash = useSyncExternalStore(
+    subscribeToHashChange,
+    () => window.location.hash,
+    () => ""
+  );
 
   const returnTo = `${basePath}/bookings?status=${activeView}&range=${range}`;
+  const nowMs = new Date().getTime();
   const regionOptions = useMemo(
     () => Array.from(new Set(allBookings.map((booking) => booking.regionSlug))).sort(),
     [allBookings]
@@ -195,10 +229,11 @@ export function BookingsExplorer({
     query !== "" || regionFilter !== "all" || presentationFilter !== "all" || statusFilter !== "all";
 
   const isExpanded = (bookingId: string, index: number) =>
-    expanded[bookingId] ?? (safePage === 1 && index === 0);
+    expanded[bookingId] ??
+    (activeHash === `#booking-${bookingId}` || (!activeHash && safePage === 1 && index === 0));
 
   return (
-    <div className="grid gap-5">
+    <div id="bookings-panel" className="grid scroll-mt-24 gap-5">
       {/* ------------------------------------------------ filter toolbar */}
       <div className="surface-panel flex flex-wrap items-end gap-3 rounded-[24px] p-4">
         <div className="flex overflow-hidden rounded-[14px] border border-[color:var(--border-soft)] bg-white">
@@ -318,7 +353,7 @@ export function BookingsExplorer({
         <BookingsCalendar
           entries={calendarSessions}
           updateStatusAction={updateStatusAction}
-          returnTo={returnTo}
+          returnTo={`${returnTo}#bookings-panel`}
         />
       ) : (
         <>
@@ -331,9 +366,29 @@ export function BookingsExplorer({
 
           {pageBookings.map((booking, index) => {
             const open = isExpanded(booking.id, index);
+            // The booking param makes the server render the list view with
+            // this card expanded, so the #booking anchor exists on load.
+            const cardReturnTo = `${returnTo}&booking=${booking.id}#booking-${booking.id}`;
+            // Future bookings can't be marked delivered — hide those options.
+            const hasFutureSession = booking.sessions.some(
+              (session) =>
+                new Date(session.endsAt).getTime() > nowMs &&
+                session.status !== "cancelled" &&
+                session.status !== "declined"
+            );
+            const statusOptions = BOOKING_STATUS_OPTIONS.filter(
+              ([value]) =>
+                !hasFutureSession ||
+                !COMPLETION_STATUSES.has(value) ||
+                value === booking.status
+            );
 
             return (
-              <section key={booking.id} className="surface-panel rounded-[26px] p-5 md:p-6">
+              <section
+                key={booking.id}
+                id={`booking-${booking.id}`}
+                className="surface-panel scroll-mt-24 rounded-[26px] p-5 md:p-6"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <span className="inline-flex rounded-full bg-[color:var(--green-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#117a2e]">
@@ -383,7 +438,7 @@ export function BookingsExplorer({
                       className="mt-5 grid items-end gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,220px)_minmax(0,1.2fr)_auto]"
                     >
                       <input type="hidden" name="bookingRequestId" value={booking.id} />
-                      <input type="hidden" name="returnTo" value={returnTo} />
+                      <input type="hidden" name="returnTo" value={cardReturnTo} />
                       <div>
                         <p className="text-sm font-semibold text-[color:var(--navy)]">Booking status</p>
                         <p className="text-xs text-[color:var(--text-soft)]">
@@ -395,7 +450,7 @@ export function BookingsExplorer({
                         defaultValue={booking.status}
                         className="min-h-[46px] rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
                       >
-                        {BOOKING_STATUS_OPTIONS.map(([value, label]) => (
+                        {statusOptions.map(([value, label]) => (
                           <option key={value} value={value}>
                             {label}
                           </option>
@@ -470,7 +525,7 @@ export function BookingsExplorer({
                                   className="flex min-w-[250px] items-center gap-2"
                                 >
                                   <input type="hidden" name="bookingSessionId" value={session.id} />
-                                  <input type="hidden" name="returnTo" value={returnTo} />
+                                  <input type="hidden" name="returnTo" value={cardReturnTo} />
                                   <AmbassadorSearchSelect
                                     ambassadors={ambassadors}
                                     applicants={session.applicants ?? []}
@@ -495,7 +550,7 @@ export function BookingsExplorer({
                                   session={session}
                                   className="min-h-[36px] rounded-[12px] px-3 py-1.5 text-xs"
                                   updateStatusAction={updateStatusAction}
-                                  returnTo={returnTo}
+                                  returnTo={cardReturnTo}
                                 />
                               </td>
                             </tr>

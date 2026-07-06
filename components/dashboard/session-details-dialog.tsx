@@ -65,6 +65,15 @@ const BOOKING_REVIEW_STATUS_OPTIONS = [
   ["declined", "Declined"]
 ] as const;
 
+// Statuses that mean "delivered" — hidden while the session is still ahead,
+// since a future session can't have been completed yet.
+const COMPLETION_STATUSES = new Set([
+  "completed_pending_report",
+  "report_submitted",
+  "paid",
+  "closed"
+]);
+
 export function SessionDetailsButton({
   session,
   className,
@@ -82,6 +91,12 @@ export function SessionDetailsButton({
 }) {
   const [open, setOpen] = useState(false);
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
+  // Future sessions can't be marked delivered — hide those status options.
+  const sessionEnded = new Date(session.endsAt).getTime() < new Date().getTime();
+  const statusOptions = BOOKING_REVIEW_STATUS_OPTIONS.filter(
+    ([value]) =>
+      sessionEnded || !COMPLETION_STATUSES.has(value) || value === session.bookingStatus
+  );
 
   const location = session.locationAddress || session.schoolAddress || session.schoolName;
   const calendarEvent: CalendarEventInput = {
@@ -313,7 +328,7 @@ export function SessionDetailsButton({
                           defaultValue={session.bookingStatus ?? "tentative"}
                           className="min-h-[44px] w-full appearance-none rounded-[12px] border border-[color:var(--border-soft)] bg-white pl-3 pr-9 text-sm font-semibold text-[color:var(--navy)] outline-none"
                         >
-                          {BOOKING_REVIEW_STATUS_OPTIONS.map(([value, optionLabel]) => (
+                          {statusOptions.map(([value, optionLabel]) => (
                             <option key={value} value={value}>
                               {optionLabel}
                             </option>

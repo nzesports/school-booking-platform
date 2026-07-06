@@ -1,3 +1,4 @@
+import { AuthModalButton } from "@/components/auth/auth-modal-trigger";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -23,7 +24,9 @@ export default async function BookingConfirmationPage({
           before confirming.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <ButtonLink href="/school">View school portal scaffold</ButtonLink>
+          <AuthModalButton mode="signup" role="school">
+            Create an account to view your booking
+          </AuthModalButton>
           <ButtonLink href="/" variant="secondary">
             Back to homepage
           </ButtonLink>

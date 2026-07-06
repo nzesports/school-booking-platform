@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
@@ -11,7 +12,7 @@ import {
   UsersRound
 } from "lucide-react";
 
-import { AuthModalButton } from "@/components/auth/auth-modal-trigger";
+import bookingPlatformVisual from "@/public/media/booking-platform.png";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
@@ -79,16 +80,17 @@ export default async function HomePage() {
     <main className="public-stack">
       <section
         id="for-schools"
-        className="public-band relative overflow-hidden border-b border-[rgba(4,15,75,0.06)] pt-8"
+        className="public-band relative overflow-hidden border-b border-[rgba(4,15,75,0.06)]"
+        style={{ paddingBlock: "1.75rem 2.5rem" }}
       >
         <div className="hero-aurora" />
         <div className="site-shell relative">
           <div className="hero-grid items-center">
-            <div className="max-w-3xl py-4">
+            <div className="max-w-3xl self-center py-4">
               <span className="section-kicker">School presentations</span>
               <h1 className="mt-6 text-5xl font-semibold leading-[0.97] tracking-[-0.06em] text-[color:var(--navy)] md:text-7xl">
                 {heroSection?.title ? (
-                  heroSection.title
+                  renderHeroTitle(heroSection.title)
                 ) : (
                   <>
                     Inspiring the next generation through{" "}
@@ -103,12 +105,13 @@ export default async function HomePage() {
                 />
               ) : (
                 <p className="mt-6 max-w-2xl text-lg leading-8 text-[color:var(--text-soft)]">
-                  Curriculum-aligned, engaging presentations that educate, inspire, and empower
-                  students to thrive in the digital age.
+                  Free, school-ready presentations on digital wellbeing, screen time, esports
+                  careers and pathways, delivered by NZ Esports ambassadors during your school
+                  assembly.
                 </p>
               )}
 
-              <div className="mt-10 flex flex-wrap gap-3">
+              <div className="mt-7 flex flex-wrap gap-3">
                 {highlights.map(({ label, icon: Icon }) => (
                   <div
                     key={label}
@@ -132,30 +135,19 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="public-band public-band-compact">
+      <section id="presentations" className="public-band public-band-compact scroll-mt-24">
         <div className="site-shell">
-          <div className="flex flex-wrap items-end justify-between gap-5">
-            <div className="max-w-3xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                Our presentation topics
-              </p>
-              <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                Choose the session mix that fits your school.
-              </h2>
-              <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                Explore wellbeing, pathways, careers, and foundational esports sessions that
-                can be delivered as one-off talks or grouped into a broader visit.
-              </p>
-            </div>
-
-            <ButtonLink
-              href="/presentations"
-              variant="secondary"
-              className="min-h-[46px] rounded-[16px] px-5 py-2.5"
-            >
-              View all presentations
-              <ArrowRight className="h-4 w-4" />
-            </ButtonLink>
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+              Our presentation topics
+            </p>
+            <h2 className="mt-3 text-5xl font-semibold tracking-[-0.03em] text-[color:var(--navy)] md:text-[3.4rem]">
+              Build the right session mix for your students
+            </h2>
+            <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
+              Book one presentation or combine multiple sessions into a broader visit. Explore
+              our presentations designed for school assemblies and student groups.
+            </p>
           </div>
 
           <div className="homepage-gap mt-10 grid xl:grid-cols-4">
@@ -168,15 +160,15 @@ export default async function HomePage() {
 
       <section
         id="how-it-works"
-        className="public-band public-band-soft public-band-divider py-[clamp(4.5rem,7vw,7rem)]"
+        className="public-band public-band-soft public-band-divider py-[clamp(2.75rem,4.5vw,4.25rem)]"
       >
-        <div className="site-shell xl:min-h-[440px]">
-          <div className="grid gap-12 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-center">
+        <div className="site-shell">
+          <div className="grid gap-10 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-center">
             <div className="max-w-sm">
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                 {howItWorksSection?.subtitle ?? "How it works"}
               </p>
-              <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+              <h2 className="mt-3 text-5xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                 {howItWorksSection?.title ?? "Simple steps to bring NZ Esports to your school."}
               </h2>
               {howItWorksSection?.body ? (
@@ -186,8 +178,8 @@ export default async function HomePage() {
                 />
               ) : (
                 <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                  A straightforward booking flow for schools, from choosing the right topic to
-                  delivering a session that lands well with students.
+                  Build a visit around your students, select your preferred date, and our team
+                  will confirm everything with you.
                 </p>
               )}
             </div>
@@ -215,11 +207,10 @@ export default async function HomePage() {
               School feedback
             </p>
             <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-              How schools describe the experience.
+              What schools say after a visit
             </h2>
             <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-              A clearer snapshot of the kind of post-session feedback schools share after
-              wellbeing, careers, and esports pathway presentations.
+              A quick look at the feedback schools share after our presentations.
             </p>
             {showDemoFeedbackNote ? (
               <p className="mt-4 inline-flex max-w-xl rounded-[18px] border border-[rgba(4,15,75,0.08)] bg-white/80 px-4 py-3 text-sm text-[color:var(--navy)]">
@@ -274,16 +265,20 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="public-band public-band-alt public-band-divider">
+      <section
+        className="public-band public-band-divider"
+        style={{
+          background: "linear-gradient(135deg, #eaf8ee 0%, #ffffff 55%, #f0faf3 100%)"
+        }}
+      >
         <div className="site-shell">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-16">
             <div className="max-w-2xl">
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                 {ctaSection?.subtitle ?? "Book a presentation"}
               </p>
               <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                {ctaSection?.title ??
-                  "Inspire your students with a session designed for real school contexts."}
+                {ctaSection?.title ?? "Bring esports into the conversation, the right way"}
               </h2>
               {ctaSection?.body ? (
                 <div
@@ -292,33 +287,25 @@ export default async function HomePage() {
                 />
               ) : (
                 <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-                  Presentations are delivered by NZ Esports, the national sporting organisation for
-                  esports in New Zealand. Spaces fill fast, especially for grouped school visits and
-                  preferred time slots, so start the booking flow now and we&apos;ll take it from
-                  there.
+                  Gaming is already part of students&apos; lives. Invite our ambassadors to help
+                  your school create a supportive, balanced conversation around esports, play and
+                  positive digital habits.
                 </p>
               )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <BookPresentationButton className="min-h-[48px] rounded-[16px] px-5 py-2.5">
-                Book a Presentation
+            <div className="flex flex-wrap gap-3 lg:ml-auto lg:mr-24">
+              <BookPresentationButton className="min-h-[46px] rounded-[16px] border-[#149238] bg-[color:var(--green)] px-5 py-2.5 text-white shadow-[0_12px_28px_rgba(24,168,59,0.28)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+                Book a free school visit
                 <ArrowRight className="h-4 w-4" />
               </BookPresentationButton>
-              <AuthModalButton
-                mode="signup"
-                role="school"
-                className="min-h-[48px] rounded-[16px] px-5 py-2.5"
-              >
-                Create portal account
-              </AuthModalButton>
-              <AuthModalButton
-                mode="login"
+              <ButtonLink
+                href="/#contact"
                 variant="secondary"
-                className="min-h-[48px] rounded-[16px] px-5 py-2.5"
+                className="min-h-[46px] rounded-[16px] border-[rgba(20,146,56,0.4)] bg-transparent px-5 py-2.5 text-[#117a2e] shadow-none hover:bg-[rgba(24,168,59,0.06)]"
               >
-                Log in
-              </AuthModalButton>
+                Contact us
+              </ButtonLink>
             </div>
           </div>
         </div>
@@ -327,38 +314,38 @@ export default async function HomePage() {
   );
 }
 
+// Renders "esports" in brand green wherever it appears in the CMS-managed
+// hero title.
+function renderHeroTitle(title: string) {
+  return title.split(/(esports\.?)/i).map((part, index) =>
+    /^esports\.?$/i.test(part) ? (
+      <span key={index} className="text-[color:var(--green)]">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
+
 function HeroVisual() {
   return (
-    <div className="relative min-h-[420px] overflow-hidden lg:min-h-[540px]">
-      <div className="absolute inset-x-[8%] top-[6%] h-[74%] rounded-[40px] border border-white/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.5),rgba(255,255,255,0.14))] shadow-[0_30px_60px_rgba(11,24,77,0.1)] backdrop-blur-xl" />
+    <div className="relative">
       <div className="absolute -left-8 top-20 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(24,168,59,0.18),transparent_68%)]" />
       <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(175,213,237,0.36),transparent_70%)]" />
 
-      <div className="absolute right-6 top-0 rounded-[26px] border border-white/60 bg-white/52 px-8 py-6 shadow-[0_16px_36px_rgba(11,24,77,0.08)] backdrop-blur-xl">
-        <span className="bg-[linear-gradient(135deg,var(--green),var(--light-blue))] bg-clip-text text-[72px] font-black tracking-[-0.1em] text-transparent">
-          NZ
-        </span>
-      </div>
+      <Image
+        src={bookingPlatformVisual}
+        alt="An NZ Esports presenter delivering a session to a classroom of students"
+        priority
+        className="relative mx-auto h-auto w-full max-w-[680px] object-contain drop-shadow-[0_30px_60px_rgba(11,24,77,0.16)]"
+      />
 
-      <div className="absolute left-[16%] top-[16%] h-48 w-48 rounded-[38px] border border-white/50 bg-white/28 backdrop-blur-md" />
-      <div className="absolute left-[28%] top-[24%] h-56 w-56 rounded-[42px] border border-white/45 bg-[linear-gradient(160deg,rgba(255,255,255,0.16),rgba(255,255,255,0.02))]" />
-
-      <div className="absolute inset-x-0 bottom-0 h-[34%] rounded-t-[42px] bg-[linear-gradient(180deg,rgba(4,15,75,0.02),rgba(4,15,75,0.14))]" />
-      <div className="absolute bottom-12 left-[8%] h-20 w-20 rounded-full bg-[linear-gradient(180deg,#223168,#10183d)]" />
-      <div className="absolute bottom-16 left-[24%] h-16 w-16 rounded-full bg-[linear-gradient(180deg,#223168,#10183d)]" />
-      <div className="absolute bottom-10 left-[38%] h-24 w-24 rounded-full bg-[linear-gradient(180deg,#223168,#10183d)]" />
-      <div className="absolute bottom-14 right-[11%] h-24 w-24 rounded-full bg-[linear-gradient(180deg,#223168,#10183d)]" />
-
-      <div className="absolute bottom-14 right-[26%] h-56 w-32 rounded-[28px] bg-[linear-gradient(180deg,#0f1f59,#0a133d)] shadow-[0_28px_50px_rgba(11,24,77,0.22)]" />
-      <div className="absolute bottom-56 right-[31%] h-16 w-16 rounded-full bg-[linear-gradient(180deg,#f2d6c3,#ca8d6d)]" />
-      <div className="absolute bottom-34 right-[38%] h-12 w-[4.5rem] rotate-[14deg] rounded-[20px] bg-[linear-gradient(180deg,#14255f,#0a1337)]" />
-      <div className="absolute bottom-34 right-[22%] h-12 w-[4.5rem] -rotate-[14deg] rounded-[20px] bg-[linear-gradient(180deg,#14255f,#0a1337)]" />
-
-      <div className="absolute bottom-7 left-0 max-w-[280px] rounded-[26px] border border-white/60 bg-white/76 p-5 shadow-[0_20px_40px_rgba(11,24,77,0.1)] backdrop-blur-xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+      <div className="relative -mt-24 ml-auto mr-1 max-w-[230px] rounded-[20px] border border-white/55 bg-white/42 p-4 shadow-[0_16px_36px_rgba(11,24,77,0.14)] backdrop-blur-2xl md:mr-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
           Presentation impact
         </p>
-        <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+        <p className="mt-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-[color:var(--navy)]">
           Clear, engaging sessions schools can trust.
         </p>
       </div>
@@ -380,7 +367,7 @@ function StepRailItem({
   isLast: boolean;
 }) {
   return (
-    <div className="relative text-center md:px-4 xl:min-h-[290px]">
+    <div className="relative text-center md:px-4">
       {!isLast ? (
         <div className="absolute left-[calc(50%+3rem)] right-[-12%] top-10 hidden border-t border-dashed border-[rgba(4,15,75,0.16)] md:block" />
       ) : null}

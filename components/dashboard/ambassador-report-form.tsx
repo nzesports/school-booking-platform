@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
+import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
-import { cn } from "@/lib/utils";
 
 const RATING_ROWS = [
   { name: "attendanceRating", label: "Attendance" },
@@ -277,27 +277,7 @@ function RatingRow({ name, label }: { name: string; label: string }) {
   return (
     <div className="grid items-center gap-2 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)]">
       <p className="text-sm font-medium text-[color:var(--navy)]">{label}</p>
-      <div className="grid grid-cols-5 gap-1.5">
-        {[1, 2, 3, 4, 5].map((rating) => (
-          <label key={rating} className="cursor-pointer">
-            <input
-              type="radio"
-              name={name}
-              value={rating}
-              required
-              className="peer sr-only"
-            />
-            <span
-              className={cn(
-                "flex min-h-[42px] items-center justify-center rounded-[12px] border border-[color:var(--border-soft)] bg-[#f1f5f9] text-sm font-semibold text-[color:var(--text-soft)] transition",
-                "peer-checked:border-[#2563eb] peer-checked:bg-[#5a96f5] peer-checked:text-white"
-              )}
-            >
-              {rating}
-            </span>
-          </label>
-        ))}
-      </div>
+      <StarRatingInput name={name} label={label} />
     </div>
   );
 }

@@ -32,6 +32,9 @@ import type {
   TrainingModule,
   UserSummary
 } from "@/lib/domain/types";
+import { unstable_cache } from "next/cache";
+
+import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
@@ -114,8 +117,22 @@ export type AdminPortalData = {
   faqs: Array<{ id: string; question: string; answer: string }>;
 };
 
+export type SchoolProfileDetails = {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  suburb: string;
+  postcode: string;
+  logoUrl: string | null;
+  profileNotes: string | null;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+};
+
 export type SchoolPortalData = {
-  school: { id: string; name: string; city: string } | null;
+  school: SchoolProfileDetails | null;
   bookings: BookingRequestView[];
   resources: ResourceRecord[];
   myReviews: SchoolFeedbackSummary[];
@@ -132,14 +149,30 @@ export type AmbassadorPortalData = {
   regions: Region[];
 };
 
-type RawPlatformData = Awaited<ReturnType<typeof loadPlatformData>>;
+type RawPlatformData = Awaited<ReturnType<typeof loadPlatformDataUncached>>;
 
-async function loadPlatformData() {
+// Every portal page render used to run all of these table reads directly,
+// which was the platform's dominant source of database disk IO. The load is
+// user-independent (per-user filtering happens in the mappers), so one cached
+// copy is shared across all portals and users for up to 60 seconds; every
+// server action busts PLATFORM_DATA_TAG on write so changes appear instantly.
+const loadPlatformData = unstable_cache(loadPlatformDataUncached, [PLATFORM_DATA_TAG], {
+  revalidate: 60,
+  tags: [PLATFORM_DATA_TAG]
+});
+
+async function loadPlatformDataUncached() {
   const admin = createAdminClient();
 
   if (!admin) {
     return null;
   }
+
+  // Dashboards operate on recent history — cap bookings at a two-year window
+  // so IO stops scaling with all-time data volume.
+  const bookingWindowStart = new Date();
+  bookingWindowStart.setMonth(bookingWindowStart.getMonth() - 24);
+  const bookingWindowIso = bookingWindowStart.toISOString();
 
   const [
     profilesResult,
@@ -158,7 +191,6 @@ async function loadPlatformData() {
     schoolReviewsResult,
     paymentsResult,
     resourcesResult,
-    notificationsResult,
     settingsResult,
     rolesResult,
     homepageSectionsResult,
@@ -175,9 +207,9 @@ async function loadPlatformData() {
       .from("regions")
       .select("id, name, slug, is_active, sort_order")
       .order("sort_order", { ascending: true }),
-    admin
-      .from("schools")
-      .select("id, name, city, roll_size, status, region_id, address, suburb, postcode"),
+    // Select * so environments missing the 0013 columns (logo_url,
+    // profile_notes) still load schools.
+    admin.from("schools").select("*"),
     admin.from("school_contacts").select("id, school_id, full_name, email, phone, is_primary"),
     admin.from("school_contact_users").select("school_contact_id, user_id"),
     admin
@@ -185,12 +217,14 @@ async function loadPlatformData() {
       .select(
         "id, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id"
       )
+      .gte("created_at", bookingWindowIso)
       .order("created_at", { ascending: false }),
     admin
       .from("booking_sessions")
       .select(
         "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador"
       )
+      .gte("starts_at", bookingWindowIso)
       .order("starts_at", { ascending: true }),
     admin.from("presentation_types").select("*"),
     // Select * so optional columns added by later migrations (profile_details)
@@ -205,9 +239,10 @@ async function loadPlatformData() {
       .from("media_library")
       .select("id, report_id, public_url, media_type, title")
       .not("report_id", "is", null),
+    // Select * so environments missing the 0012 details column still load.
     admin
       .from("presentation_reviews")
-      .select("id, presentation_type_id, school_id, quote, attribution, rating, is_approved, is_public, created_at")
+      .select("*")
       .order("created_at", { ascending: false }),
     admin
       .from("payments")
@@ -217,12 +252,6 @@ async function loadPlatformData() {
     // Select * so environments missing the 0006 columns (audiences/tags)
     // still load resources instead of failing the whole query.
     admin.from("presentation_resources").select("*").order("created_at", { ascending: false }),
-    admin
-      .from("notifications")
-      .select(
-        "id, user_id, title, body, notification_type, related_url, read_at, resolved_at, created_at"
-      )
-      .order("created_at", { ascending: false }),
     admin.from("settings").select("setting_key, setting_value"),
     admin.from("roles").select("id, name, description, is_system_role"),
     admin
@@ -273,7 +302,6 @@ async function loadPlatformData() {
     schoolReviews: schoolReviewsResult.data ?? [],
     payments: paymentsResult.data ?? [],
     resources: resourcesResult.data ?? [],
-    notifications: notificationsResult.data ?? [],
     settings: settingsResult.data ?? [],
     roles: rolesResult.data ?? [],
     homepageSections: homepageSectionsResult.data ?? [],
@@ -404,6 +432,8 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     }
   }
 
+  const nowMs = Date.now();
+
   for (const session of data.bookingSessions) {
     const bookingId = session.booking_request_id as string;
     const region = regionsById.get(session.region_id as string);
@@ -422,6 +452,15 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     const sharedContact = session.share_contact_with_ambassador
       ? primaryContactBySchoolId.get(session.school_id as string)
       : undefined;
+    // A confirmed/assigned session whose time has passed reads as delivered
+    // everywhere immediately — the hourly completion sweep persists the same
+    // transition in the database, this just doesn't wait for it.
+    const rawStatus = session.status as BookingSessionView["status"];
+    const sessionEnded = new Date(session.ends_at as string).getTime() < nowMs;
+    const effectiveStatus =
+      sessionEnded && (rawStatus === "confirmed" || rawStatus === "ambassador_assigned")
+        ? ("completed_pending_report" as BookingSessionView["status"])
+        : rawStatus;
 
     const mappedSession: BookingSessionView = {
       id: session.id as string,
@@ -444,7 +483,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       actualStudentCount: session.actual_student_count
         ? Number(session.actual_student_count)
         : undefined,
-      status: session.status as BookingSessionView["status"],
+      status: effectiveStatus,
       assignedAmbassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
       reportStatus: session.report_status as BookingSessionView["reportStatus"],
       paymentStatus: session.payment_status as BookingSessionView["paymentStatus"],
@@ -480,15 +519,34 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
 
 function mapSchools(data: NonNullable<RawPlatformData>) {
   const { regionsById } = buildLookups(data);
+  const primaryContactBySchoolId = new Map<string, (typeof data.contacts)[number]>();
 
-  return data.schools.map((school) => ({
-    id: school.id as string,
-    name: school.name as string,
-    regionSlug: (regionsById.get(school.region_id as string)?.slug as string | undefined) ?? "unassigned",
-    city: (school.city as string | null) ?? "Pending",
-    rollSize: Number(school.roll_size ?? 0),
-    status: ((school.status as string) === "active" ? "active" : "pending_review") as School["status"]
-  }));
+  for (const contact of data.contacts) {
+    const schoolId = contact.school_id as string;
+    const existing = primaryContactBySchoolId.get(schoolId);
+
+    if (!existing || (contact.is_primary && !existing.is_primary)) {
+      primaryContactBySchoolId.set(schoolId, contact);
+    }
+  }
+
+  return data.schools.map((school) => {
+    const contact = primaryContactBySchoolId.get(school.id as string);
+
+    return {
+      id: school.id as string,
+      name: school.name as string,
+      regionSlug: (regionsById.get(school.region_id as string)?.slug as string | undefined) ?? "unassigned",
+      city: (school.city as string | null) ?? "Pending",
+      rollSize: Number(school.roll_size ?? 0),
+      status: ((school.status as string) === "active" ? "active" : "pending_review") as School["status"],
+      contactName: (contact?.full_name as string | null) ?? null,
+      contactEmail: (contact?.email as string | null) ?? null,
+      contactPhone: (contact?.phone as string | null) ?? null,
+      logoUrl: ((school as Record<string, unknown>).logo_url as string | null) ?? null,
+      profileNotes: ((school as Record<string, unknown>).profile_notes as string | null) ?? null
+    };
+  });
 }
 
 // Payments still owed to an ambassador: awaiting invoice, invoiced, or with finance.
@@ -650,7 +708,12 @@ function mapSchoolReviews(data: NonNullable<RawPlatformData>) {
         review.rating === null || review.rating === undefined ? undefined : Number(review.rating),
       createdAt: review.created_at as string,
       isApproved: Boolean(review.is_approved),
-      isPublic: Boolean(review.is_public)
+      isPublic: Boolean(review.is_public),
+      bookingSessionId: (review.booking_session_id as string | null) ?? undefined,
+      details:
+        review.details && typeof review.details === "object"
+          ? (review.details as SchoolFeedbackSummary["details"])
+          : undefined
     } satisfies SchoolFeedbackSummary;
   });
 }
@@ -685,19 +748,33 @@ function mapPayments(data: NonNullable<RawPlatformData>) {
   });
 }
 
-function mapNotificationsForUser(data: NonNullable<RawPlatformData>, userId: string) {
-  return data.notifications
-    .filter((notification) => notification.user_id === userId)
-    .map((notification) => ({
-      id: notification.id as string,
-      title: notification.title as string,
-      body: (notification.body as string | null) ?? "",
-      notificationType: notification.notification_type as string,
-      relatedUrl: (notification.related_url as string | null) ?? undefined,
-      readAt: (notification.read_at as string | null) ?? null,
-      resolvedAt: (notification.resolved_at as string | null) ?? null,
-      createdAt: notification.created_at as string
-    })) satisfies PortalNotification[];
+// Deliberately outside the shared platform-data cache: notifications are
+// per-user, so they get their own small indexed query per request instead of
+// loading the whole table for everyone.
+export async function loadUserNotifications(userId: string): Promise<PortalNotification[]> {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return [];
+  }
+
+  const { data } = await admin
+    .from("notifications")
+    .select("id, title, body, notification_type, related_url, read_at, resolved_at, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  return (data ?? []).map((notification) => ({
+    id: notification.id as string,
+    title: notification.title as string,
+    body: (notification.body as string | null) ?? "",
+    notificationType: notification.notification_type as string,
+    relatedUrl: (notification.related_url as string | null) ?? undefined,
+    readAt: (notification.read_at as string | null) ?? null,
+    resolvedAt: (notification.resolved_at as string | null) ?? null,
+    createdAt: notification.created_at as string
+  })) satisfies PortalNotification[];
 }
 
 function mapActivityLogs(data: NonNullable<RawPlatformData>) {
@@ -926,7 +1003,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
     schoolReviews,
     payments,
     resources,
-    notifications: userId ? mapNotificationsForUser(data, userId) : [],
+    notifications: userId ? await loadUserNotifications(userId) : [],
     activityLogs,
     upcomingSessions,
     settings: data.settings.map((setting) => ({
@@ -1026,7 +1103,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
     presentationsCount: presentations.length,
     regions,
     resources,
-    notifications: userId ? mapNotificationsForUser(data, userId) : [],
+    notifications: userId ? await loadUserNotifications(userId) : [],
     activityLogs,
     reports,
     schoolReviews,
@@ -1051,7 +1128,19 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
   if (!data || !userId) {
     return {
       school: demoSchools[0]
-        ? { id: demoSchools[0].id, name: demoSchools[0].name, city: demoSchools[0].city }
+        ? {
+            id: demoSchools[0].id,
+            name: demoSchools[0].name,
+            city: demoSchools[0].city,
+            address: "",
+            suburb: "",
+            postcode: "",
+            logoUrl: null,
+            profileNotes: null,
+            contactName: "Jordan Smith",
+            contactEmail: "jordan.school@demo.esf.nz",
+            contactPhone: ""
+          }
         : null,
       bookings: demoBookingRequests.filter((booking) => booking.source === "public"),
       resources: demoResources.filter((resource) => resource.audience === "school").map((resource) => ({
@@ -1074,13 +1163,27 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
     .filter((contact) => schoolContactIds.includes(contact.id as string))
     .map((contact) => contact.school_id as string);
   const school = data.schools.find((item) => schoolIds.includes(item.id as string));
+  const primaryContact = school
+    ? data.contacts
+        .filter((contact) => contact.school_id === school.id)
+        .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))[0]
+    : undefined;
 
   return {
     school: school
       ? {
           id: school.id as string,
           name: school.name as string,
-          city: (school.city as string | null) ?? "Pending"
+          city: (school.city as string | null) ?? "Pending",
+          address: ((school as Record<string, unknown>).address as string | null) ?? "",
+          suburb: ((school as Record<string, unknown>).suburb as string | null) ?? "",
+          postcode: ((school as Record<string, unknown>).postcode as string | null) ?? "",
+          logoUrl: ((school as Record<string, unknown>).logo_url as string | null) ?? null,
+          profileNotes:
+            ((school as Record<string, unknown>).profile_notes as string | null) ?? null,
+          contactName: (primaryContact?.full_name as string | null) ?? "",
+          contactEmail: (primaryContact?.email as string | null) ?? "",
+          contactPhone: (primaryContact?.phone as string | null) ?? ""
         }
       : null,
     bookings: mappedBookings.filter((booking) => {

@@ -1,15 +1,17 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath as nextRevalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { buildAuthConfirmUrl, requirePortalAccess } from "@/lib/services/auth";
+import { PLATFORM_DATA_TAG, PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
 import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
 import {
   sendAmbassadorAssignedEmail,
   sendBookingCancelledEmail,
   sendBookingConfirmedEmail,
+  sendFeedbackRequestEmail,
   sendInvoiceToFinanceEmail
 } from "@/lib/services/email-triggers";
 import {
@@ -23,6 +25,14 @@ import { uploadPrivateResourceFile, uploadPublicAsset } from "@/lib/services/sto
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
+
+// Every path revalidation in this module accompanies a data write, so bust the
+// shared platform-data cache (lib/services/portal.ts) at the same time. This
+// keeps the 60s cache from ever serving stale data after a portal action.
+function revalidatePath(path: string) {
+  updateTag(PLATFORM_DATA_TAG);
+  nextRevalidatePath(path);
+}
 
 const inviteSchema = z
   .object({
@@ -53,7 +63,7 @@ const userDeleteSchema = z.object({
 
 const ambassadorReviewSchema = z.object({
   ambassadorProfileId: z.uuid(),
-  status: z.enum(["approved", "declined"]),
+  status: z.enum(["approved", "declined", "inactive"]),
   returnTo: z.string().min(1).default("/staff/ambassadors")
 });
 
@@ -141,10 +151,18 @@ const sessionApplicationSchema = z.object({
 
 const schoolReviewSchema = z.object({
   bookingSessionId: z.uuid(),
-  rating: z.coerce.number().int().min(1).max(5),
-  quote: z.string().min(10),
-  attribution: z.string().min(2),
-  isPublic: z.boolean().optional(),
+  attribution: z.string().trim().min(2),
+  studentsCompeted: z.enum(["yes", "no"]),
+  attendeeFeedback: z.string().trim().min(1),
+  attendanceRating: z.coerce.number().int().min(1).max(5),
+  studentResponseRating: z.coerce.number().int().min(1).max(5),
+  contentRating: z.coerce.number().int().min(1).max(5),
+  presenterEnergyRating: z.coerce.number().int().min(1).max(5),
+  quote: z.string().trim().min(10),
+  hadEsportsClub: z.enum(["yes", "no"]),
+  consideringClub: z.enum(["yes", "no"]),
+  mailingListOptIn: z.enum(["yes", "no"]),
+  isPublic: z.literal(true),
   returnTo: z.string().min(1).default("/school/bookings")
 });
 
@@ -317,7 +335,12 @@ function getAdminClientOrThrow() {
 }
 
 function appendSearchParam(path: string, key: string, value: string) {
-  return `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+  // Keep any #anchor at the end so redirects can land back at the element the
+  // user was working on (e.g. a specific booking card).
+  const [base, hash] = path.split("#");
+  const suffix = hash ? `#${hash}` : "";
+
+  return `${base}${base.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}${suffix}`;
 }
 
 function sanitizeReturnTo(path: string, fallback: string) {
@@ -780,11 +803,14 @@ export async function reviewAmbassadorAction(formData: FormData) {
           approved_at: new Date().toISOString(),
           approved_by: actor.id
         }
-      : {
-          status: "declined",
-          approved_at: null,
-          approved_by: null
-        };
+      : parsed.data.status === "inactive"
+        ? // Temporary restriction keeps the approval record so access can be restored.
+          { status: "inactive" }
+        : {
+            status: "declined",
+            approved_at: null,
+            approved_by: null
+          };
 
   const { error } = await admin
     .from("ambassador_profiles")
@@ -807,7 +833,11 @@ export async function reviewAmbassadorAction(formData: FormData) {
 
   await logAuditEvent(
     actor.id,
-    parsed.data.status === "approved" ? "ambassador.approved" : "ambassador.declined",
+    parsed.data.status === "approved"
+      ? "ambassador.approved"
+      : parsed.data.status === "inactive"
+        ? "ambassador.access_restricted"
+        : "ambassador.declined",
     "ambassador_profile",
     parsed.data.ambassadorProfileId
   );
@@ -1374,20 +1404,86 @@ export async function applyToSessionAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "applied", "1"));
 }
 
+function parseSchoolReviewForm(formData: FormData, fallbackReturnTo: string) {
+  return schoolReviewSchema.safeParse({
+    bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    attribution: String(formData.get("attribution") || ""),
+    studentsCompeted: String(formData.get("studentsCompeted") || ""),
+    attendeeFeedback: String(formData.get("attendeeFeedback") || ""),
+    attendanceRating: formData.get("attendanceRating"),
+    studentResponseRating: formData.get("studentResponseRating"),
+    contentRating: formData.get("contentRating"),
+    presenterEnergyRating: formData.get("presenterEnergyRating"),
+    quote: String(formData.get("quote") || ""),
+    hadEsportsClub: String(formData.get("hadEsportsClub") || ""),
+    consideringClub: String(formData.get("consideringClub") || ""),
+    mailingListOptIn: String(formData.get("mailingListOptIn") || ""),
+    isPublic: formData.get("isPublic") === "on",
+    returnTo: fallbackReturnTo
+  });
+}
+
+// Shared by the portal and public feedback actions: computes the overall
+// rating, inserts the review, and retries without the details column for
+// environments that haven't run migration 0012 yet.
+async function insertSchoolReview(
+  admin: ReturnType<typeof getAdminClientOrThrow>,
+  parsedData: z.infer<typeof schoolReviewSchema>,
+  session: { school_id: unknown; presentation_type_id: unknown }
+) {
+  const overallRating = Math.round(
+    (parsedData.attendanceRating +
+      parsedData.studentResponseRating +
+      parsedData.contentRating +
+      parsedData.presenterEnergyRating) /
+      4
+  );
+  const basePayload = {
+    booking_session_id: parsedData.bookingSessionId,
+    presentation_type_id: session.presentation_type_id,
+    school_id: session.school_id,
+    quote: parsedData.quote,
+    attribution: parsedData.attribution,
+    rating: overallRating,
+    is_public: parsedData.isPublic,
+    is_approved: false
+  };
+  const details = {
+    studentsCompeted: parsedData.studentsCompeted,
+    attendeeFeedback: parsedData.attendeeFeedback,
+    attendanceRating: parsedData.attendanceRating,
+    studentResponseRating: parsedData.studentResponseRating,
+    contentRating: parsedData.contentRating,
+    presenterEnergyRating: parsedData.presenterEnergyRating,
+    hadEsportsClub: parsedData.hadEsportsClub,
+    consideringClub: parsedData.consideringClub,
+    mailingListOptIn: parsedData.mailingListOptIn
+  };
+
+  let insertResult = await admin
+    .from("presentation_reviews")
+    .insert({ ...basePayload, details })
+    .select("id")
+    .single();
+
+  if (insertResult.error?.message?.includes("details")) {
+    insertResult = await admin
+      .from("presentation_reviews")
+      .insert(basePayload)
+      .select("id")
+      .single();
+  }
+
+  return insertResult;
+}
+
 export async function submitSchoolReviewAction(formData: FormData) {
   const actor = await requirePortalAccess("school");
   const fallbackReturnTo = sanitizeReturnTo(
     String(formData.get("returnTo") || "/school/bookings"),
     "/school/bookings"
   );
-  const parsed = schoolReviewSchema.safeParse({
-    bookingSessionId: String(formData.get("bookingSessionId") || ""),
-    rating: formData.get("rating"),
-    quote: String(formData.get("quote") || ""),
-    attribution: String(formData.get("attribution") || ""),
-    isPublic: formData.get("isPublic") === "on",
-    returnTo: fallbackReturnTo
-  });
+  const parsed = parseSchoolReviewForm(formData, fallbackReturnTo);
 
   if (!parsed.success) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-review"));
@@ -1428,22 +1524,10 @@ export async function submitSchoolReviewAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "submitted", "review"));
   }
 
-  const { data: review, error } = await admin
-    .from("presentation_reviews")
-    .insert({
-      booking_session_id: parsed.data.bookingSessionId,
-      presentation_type_id: session.presentation_type_id,
-      school_id: session.school_id,
-      quote: parsed.data.quote,
-      attribution: parsed.data.attribution,
-      rating: parsed.data.rating,
-      is_public: parsed.data.isPublic ?? false,
-      is_approved: false
-    })
-    .select("id")
-    .single();
+  const insertResult = await insertSchoolReview(admin, parsed.data, session);
+  const review = insertResult.data;
 
-  if (error || !review) {
+  if (insertResult.error || !review) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "review-save-failed"));
   }
 
@@ -1459,6 +1543,195 @@ export async function submitSchoolReviewAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(appendSearchParam(parsed.data.returnTo, "submitted", "review"));
+}
+
+// Public variant used by the emailed /feedback/[sessionId] link — no portal
+// login required. The unguessable session UUID acts as the capability token,
+// and the unique index on booking_session_id blocks duplicate submissions.
+export async function submitPublicFeedbackAction(formData: FormData) {
+  const sessionIdRaw = String(formData.get("bookingSessionId") || "");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || `/feedback/${sessionIdRaw}`),
+    "/"
+  );
+  const parsed = parseSchoolReviewForm(formData, fallbackReturnTo);
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-review"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, school_id, presentation_type_id, ends_at")
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  if (!session) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+  }
+
+  // Feedback only opens once the session time has passed.
+  if (new Date(session.ends_at as string).getTime() > Date.now()) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-delivered"));
+  }
+
+  const { data: existingReview } = await admin
+    .from("presentation_reviews")
+    .select("id")
+    .eq("booking_session_id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  if (existingReview) {
+    redirect(appendSearchParam(parsed.data.returnTo, "submitted", "1"));
+  }
+
+  const insertResult = await insertSchoolReview(admin, parsed.data, session);
+  const review = insertResult.data;
+
+  if (insertResult.error || !review) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "review-save-failed"));
+  }
+
+  void notifyStaff({
+    title: "New school review",
+    body: `${parsed.data.attribution} submitted feedback via the public form.`,
+    type: "school_review_submitted",
+    relatedUrl: "/admin/feedback"
+  }).catch(() => {});
+
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "submitted", "1"));
+}
+
+const schoolProfileSchema = z.object({
+  name: z.string().trim().min(2),
+  address: z.string().trim().max(200).optional(),
+  suburb: z.string().trim().max(100).optional(),
+  city: z.string().trim().max(100).optional(),
+  postcode: z.string().trim().max(20).optional(),
+  contactName: z.string().trim().min(2),
+  contactEmail: z.string().email(),
+  contactPhone: z.string().trim().max(40).optional(),
+  profileNotes: z.string().trim().max(2000).optional()
+});
+
+// School-managed profile: details, primary contact info, logo, and notes for
+// the delivery team. Surfaced on the staff/admin Schools tab.
+export async function saveSchoolProfileAction(formData: FormData) {
+  const actor = await requirePortalAccess("school");
+  const returnTo = "/school/profile";
+  const parsed = schoolProfileSchema.safeParse({
+    name: String(formData.get("name") || ""),
+    address: String(formData.get("address") || "") || undefined,
+    suburb: String(formData.get("suburb") || "") || undefined,
+    city: String(formData.get("city") || "") || undefined,
+    postcode: String(formData.get("postcode") || "") || undefined,
+    contactName: String(formData.get("contactName") || ""),
+    contactEmail: String(formData.get("contactEmail") || ""),
+    contactPhone: String(formData.get("contactPhone") || "") || undefined,
+    profileNotes: String(formData.get("profileNotes") || "") || undefined
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-profile"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  // Resolve the school this account belongs to (same ownership chain as the
+  // review action): user -> school_contact_users -> school_contacts -> school.
+  const { data: contactUsers } = await admin
+    .from("school_contact_users")
+    .select("school_contact_id")
+    .eq("user_id", actor.id);
+  const contactIds = (contactUsers ?? []).map((contact) => contact.school_contact_id as string);
+  const { data: contacts } = contactIds.length
+    ? await admin
+        .from("school_contacts")
+        .select("id, school_id, is_primary")
+        .in("id", contactIds)
+    : { data: [] };
+  const schoolId = (contacts ?? [])[0]?.school_id as string | undefined;
+
+  if (!schoolId) {
+    redirect(appendSearchParam(returnTo, "error", "school-not-found"));
+  }
+
+  let logoUrl: string | null = null;
+  const logoFile = formData.get("logo");
+
+  if (logoFile instanceof File && logoFile.size > 0) {
+    try {
+      const upload = await uploadPublicAsset(logoFile, "school-logos");
+      logoUrl = upload.publicUrl;
+    } catch {
+      redirect(appendSearchParam(returnTo, "error", "logo-upload-failed"));
+    }
+  }
+
+  const basePayload = {
+    name: parsed.data.name,
+    address: parsed.data.address ?? null,
+    suburb: parsed.data.suburb ?? null,
+    city: parsed.data.city ?? null,
+    postcode: parsed.data.postcode ?? null
+  };
+  const profileColumns = {
+    profile_notes: parsed.data.profileNotes ?? null,
+    ...(logoUrl ? { logo_url: logoUrl } : {})
+  };
+
+  let updateResult = await admin
+    .from("schools")
+    .update({ ...basePayload, ...profileColumns })
+    .eq("id", schoolId);
+
+  // Environments that haven't run migration 0013 yet miss logo_url and
+  // profile_notes — keep the core details rather than failing the save.
+  if (
+    updateResult.error?.message?.includes("profile_notes") ||
+    updateResult.error?.message?.includes("logo_url")
+  ) {
+    updateResult = await admin.from("schools").update(basePayload).eq("id", schoolId);
+  }
+
+  if (updateResult.error) {
+    redirect(appendSearchParam(returnTo, "error", "profile-save-failed"));
+  }
+
+  // Update the school's primary contact record (falls back to the user's own
+  // linked contact when no primary is flagged). Login email is unaffected.
+  const primaryContactId =
+    ((contacts ?? []).find((contact) => contact.is_primary)?.id as string | undefined) ??
+    ((contacts ?? [])[0]?.id as string | undefined);
+
+  if (primaryContactId) {
+    await admin
+      .from("school_contacts")
+      .update({
+        full_name: parsed.data.contactName,
+        email: parsed.data.contactEmail,
+        phone: parsed.data.contactPhone ?? null
+      })
+      .eq("id", primaryContactId);
+  }
+
+  // Keep the login profile in sync so the sidebar and "Welcome back" greeting
+  // pick up the new name immediately.
+  await admin
+    .from("profiles")
+    .update({
+      full_name: parsed.data.contactName,
+      phone: parsed.data.contactPhone ?? null
+    })
+    .eq("id", actor.id);
+
+  await logAuditEvent(actor.id, "school.profile_updated", "school", schoolId);
+  revalidatePath("/school");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(returnTo, "saved", "profile"));
 }
 
 export async function reviewSchoolFeedbackAction(formData: FormData) {
@@ -1498,6 +1771,7 @@ export async function reviewSchoolFeedbackAction(formData: FormData) {
     "presentation_review",
     parsed.data.reviewId
   );
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
   revalidatePath("/staff");
   revalidatePath("/");
@@ -1758,6 +2032,25 @@ export async function updateBookingStatusAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
   }
 
+  // A booking can't be marked delivered/completed before its sessions have
+  // actually happened.
+  const completionStatuses = ["completed_pending_report", "report_submitted", "paid", "closed"];
+
+  if (completionStatuses.includes(parsed.data.status)) {
+    const { data: lastSession } = await admin
+      .from("booking_sessions")
+      .select("ends_at")
+      .eq("booking_request_id", parsed.data.bookingRequestId)
+      .not("status", "in", "(cancelled,declined)")
+      .order("ends_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastSession && new Date(lastSession.ends_at as string).getTime() > Date.now()) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "cannot-complete-future"));
+    }
+  }
+
   const { error } = await admin
     .from("booking_requests")
     .update({ status: parsed.data.status })
@@ -1801,7 +2094,11 @@ export async function updateBookingStatusAction(formData: FormData) {
     details: { status: parsed.data.status }
   });
 
-  if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
+  if (
+    parsed.data.status === "confirmed" ||
+    parsed.data.status === "cancelled" ||
+    parsed.data.status === "completed_pending_report"
+  ) {
     const { data: firstSession } = await admin
       .from("booking_sessions")
       .select("id, starts_at, presentation_type_id")
@@ -1847,6 +2144,11 @@ export async function updateBookingStatusAction(formData: FormData) {
         existingBooking.status === "cancel_requested"
       ) {
         void sendBookingCancelledEmail(emailPayload).catch(() => {});
+      }
+
+      // Delivered sessions trigger the post-session feedback invitation.
+      if (parsed.data.status === "completed_pending_report") {
+        void sendFeedbackRequestEmail(emailPayload).catch(() => {});
       }
     }
   }
@@ -2004,6 +2306,7 @@ export async function saveResourceAction(formData: FormData) {
     "presentation_resource",
     resourceId
   );
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/staff");
   revalidatePath("/admin");
 
@@ -2102,6 +2405,7 @@ export async function savePresentationAction(formData: FormData) {
     "presentation_type",
     presentationId
   );
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
 
   if (!parsed.data.id && presentationId && parsed.data.returnTo.endsWith("/new")) {
@@ -2153,6 +2457,7 @@ export async function saveHomepageSectionAction(formData: FormData) {
   }
 
   await logAuditEvent(actor.id, "homepage_section.updated", "homepage_section", parsed.data.id);
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
   redirect("/admin/pages-content?saved=section");
 }
@@ -2272,6 +2577,113 @@ export async function markReportReviewedAction(formData: FormData) {
   redirect(appendSearchParam(returnTo, "saved", "report-reviewed"));
 }
 
+const bookingDefaultsSettingSchema = z.object({
+  startHour: z.string().regex(/^\d{2}:\d{2}$/),
+  endHour: z.string().regex(/^\d{2}:\d{2}$/),
+  slotIntervalMinutes: z.coerce.number().int().min(5).max(240)
+});
+
+const brandingSettingSchema = z.object({
+  senderEmail: z.string().email(),
+  primaryDomain: z.string().trim().min(3)
+});
+
+const paymentsSettingSchema = z.object({
+  currency: z.string().trim().toUpperCase().length(3),
+  financeEmail: z.string().email(),
+  defaultAmountDollars: z.coerce.number().min(0),
+  eligibleAttendeeThreshold: z.coerce.number().int().min(0)
+});
+
+export async function savePlatformSettingsAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/settings"),
+    "/staff/settings"
+  );
+  const section = String(formData.get("section") || "");
+  let settingValue: Record<string, unknown> | null = null;
+
+  if (section === "booking_defaults") {
+    const parsed = bookingDefaultsSettingSchema.safeParse({
+      startHour: String(formData.get("startHour") || ""),
+      endHour: String(formData.get("endHour") || ""),
+      slotIntervalMinutes: formData.get("slotIntervalMinutes") || 0
+    });
+
+    if (parsed.success) {
+      settingValue = {
+        ...parsed.data,
+        publicHolidayBlock: formData.get("publicHolidayBlock") === "on"
+      };
+    }
+  } else if (section === "branding") {
+    const parsed = brandingSettingSchema.safeParse({
+      senderEmail: String(formData.get("senderEmail") || ""),
+      primaryDomain: String(formData.get("primaryDomain") || "")
+    });
+
+    if (parsed.success) {
+      settingValue = parsed.data;
+    }
+  } else if (section === "payments") {
+    const parsed = paymentsSettingSchema.safeParse({
+      currency: String(formData.get("currency") || ""),
+      financeEmail: String(formData.get("financeEmail") || ""),
+      defaultAmountDollars: formData.get("defaultAmountDollars") || 0,
+      eligibleAttendeeThreshold: formData.get("eligibleAttendeeThreshold") || 0
+    });
+
+    if (parsed.success) {
+      const { defaultAmountDollars, ...rest } = parsed.data;
+
+      settingValue = {
+        ...rest,
+        defaultAmountCents: Math.round(defaultAmountDollars * 100)
+      };
+    }
+  }
+
+  if (!settingValue) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-settings"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { error } = await admin.from("settings").upsert(
+    {
+      setting_key: section,
+      setting_value: settingValue,
+      updated_by: actor.id,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "setting_key" }
+  );
+
+  if (error) {
+    redirect(appendSearchParam(returnTo, "error", "settings-save-failed"));
+  }
+
+  // The public booking widget reads its hours from availability_rules, so
+  // keep those rows in sync with the saved booking defaults.
+  if (section === "booking_defaults") {
+    await admin
+      .from("availability_rules")
+      .update({
+        start_time: settingValue.startHour,
+        end_time: settingValue.endHour,
+        slot_interval_minutes: settingValue.slotIntervalMinutes
+      })
+      .eq("is_active", true);
+  }
+
+  await logAuditEvent(actor.id, "settings.updated", "setting", section);
+  updateTag(PUBLIC_CONTENT_TAG);
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/");
+  redirect(appendSearchParam(returnTo, "saved", "settings"));
+}
+
 export async function saveRegionAction(formData: FormData) {
   const actor = await requirePortalAccess("super_admin");
   const id = String(formData.get("id") || "");
@@ -2322,6 +2734,7 @@ export async function saveRegionAction(formData: FormData) {
     await logAuditEvent(actor.id, "region.created", "region", created.id);
   }
 
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
   revalidatePath("/staff");
   revalidatePath("/");
@@ -2358,6 +2771,7 @@ export async function deleteRegionAction(formData: FormData) {
   }
 
   await logAuditEvent(actor.id, "region.deleted", "region", id);
+  updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
   revalidatePath("/staff");
   revalidatePath("/");

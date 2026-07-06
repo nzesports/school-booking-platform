@@ -23,10 +23,12 @@ const toneMap: Record<string, string> = {
   not_submitted: "bg-[#f5f7fb] text-[#5a6475]",
   requested: "bg-[#fff3e2] text-[#a85a00]",
   declined: "bg-[#ffecec] text-[#b42318]",
-  closed: "bg-[#ecf7f5] text-[#0f6b58]"
+  closed: "bg-[#ecf7f5] text-[#0f6b58]",
+  restricted: "bg-[#fff3e2] text-[#a85a00]",
+  completed: "bg-[#eaf8ee] text-[#117a2e]"
 };
 
-type StatusValue = BookingStatus | PaymentStatus | ReportStatus;
+type StatusValue = BookingStatus | PaymentStatus | ReportStatus | "restricted" | "completed";
 
 export function StatusBadge({ value }: { value: StatusValue }) {
   return (

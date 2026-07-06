@@ -48,7 +48,8 @@ export function BookingLifecyclePanel({
   ambassadors,
   activeView,
   range,
-  initialQuery
+  initialQuery,
+  initialBookingId
 }: {
   basePath: string;
   bookings: BookingRequestView[];
@@ -58,6 +59,7 @@ export function BookingLifecyclePanel({
   activeView: BookingLifecycleView;
   range: DashboardRange;
   initialQuery?: string;
+  initialBookingId?: string;
 }) {
   const filteredBookings = filterBookingsByLifecycle(bookings, activeView);
   const sessions = bookings.flatMap((booking) => booking.sessions);
@@ -254,6 +256,7 @@ export function BookingLifecyclePanel({
         updateStatusAction={updateBookingStatusAction}
         assignAmbassadorAction={assignAmbassadorAction}
         initialQuery={initialQuery}
+        initialBookingId={initialBookingId}
       />
     </div>
   );
@@ -347,7 +350,8 @@ export function SchoolDeliveryDatabase({
           <SchoolsExplorer
             summaries={summaries.map((summary) => ({
               school: summary.school,
-              contactName: contactBySchoolId.get(summary.school.id) ?? null,
+              contactName:
+                summary.school.contactName ?? contactBySchoolId.get(summary.school.id) ?? null,
               deliveredCount: summary.deliveredCount,
               upcomingCount: summary.upcomingCount,
               presentationsDelivered: summary.presentationsDelivered,
@@ -571,6 +575,35 @@ export function FeedbackWorkspace({
                     ) : null
                   }
                 >
+                  {review.details ? (
+                    <div className="mt-4 grid gap-1.5 rounded-[16px] bg-[#f6f9fd] px-4 py-3 text-xs text-[color:var(--navy)]">
+                      <p className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span>
+                          Attendance <strong>{review.details.attendanceRating ?? "—"}/5</strong>
+                        </span>
+                        <span>
+                          Students <strong>{review.details.studentResponseRating ?? "—"}/5</strong>
+                        </span>
+                        <span>
+                          Content <strong>{review.details.contentRating ?? "—"}/5</strong>
+                        </span>
+                        <span>
+                          Presenter <strong>{review.details.presenterEnergyRating ?? "—"}/5</strong>
+                        </span>
+                      </p>
+                      <p className="flex flex-wrap gap-x-4 gap-y-1 text-[color:var(--text-soft)]">
+                        <span>Students competed: {review.details.studentsCompeted ?? "—"}</span>
+                        <span>Had esports club: {review.details.hadEsportsClub ?? "—"}</span>
+                        <span>Considering club: {review.details.consideringClub ?? "—"}</span>
+                        <span>Mailing list: {review.details.mailingListOptIn ?? "—"}</span>
+                      </p>
+                      {review.details.attendeeFeedback ? (
+                        <p className="text-[color:var(--text-soft)]">
+                          Attendee feedback: {review.details.attendeeFeedback}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <form action={reviewSchoolFeedbackAction} className="mt-4 flex flex-wrap items-center gap-3">
                     <input type="hidden" name="reviewId" value={review.id} />
                     <input type="hidden" name="returnTo" value={returnTo} />

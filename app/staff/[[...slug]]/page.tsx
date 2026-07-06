@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  ArrowLeft,
   Bell,
   CalendarDays,
   CircleDollarSign,
@@ -16,6 +17,7 @@ import {
   markNotificationReadAction,
   markReportReviewedAction,
   reviewAmbassadorAction,
+  savePlatformSettingsAction,
   saveResourceAction
 } from "@/app/portal/actions";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
@@ -31,6 +33,7 @@ import {
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
+import { SettingsWorkspace } from "@/components/dashboard/settings-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
@@ -58,7 +61,6 @@ import {
 const navItems = [
   { href: "/staff", label: "Dashboard", icon: ClipboardCheck },
   { href: "/staff/bookings", label: "Bookings", icon: CalendarDays },
-  { href: "/staff/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/staff/schools", label: "Schools", icon: School2 },
   { href: "/staff/ambassadors", label: "Ambassadors", icon: UsersRound },
   { href: "/staff/reports", label: "Reports", icon: ClipboardCheck },
@@ -149,7 +151,7 @@ export default async function StaffPortalPage({
                         : route.startsWith("resources/")
                           ? "Edit resource content"
                       : route === "settings"
-                        ? "Review operational defaults"
+                        ? "Platform settings"
                         : route === "activity"
                           ? "Unread activity and approval notifications"
                           : "Staff operations workspace";
@@ -171,6 +173,8 @@ export default async function StaffPortalPage({
         activeRange={dashboardRange}
         activityHref="/staff/activity"
         notificationCount={actor.notificationCount}
+        notifications={portal.notifications}
+        markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
@@ -194,8 +198,8 @@ export default async function StaffPortalPage({
             unreadActivityCount={
               portal.notifications.filter((notification) => !notification.readAt).length
             }
-            presentationsHref="/presentations"
-            calendarHref="/staff/calendar"
+            presentationsHref="/#presentations"
+            calendarHref="/staff/bookings"
           />
         ) : null}
 
@@ -209,6 +213,7 @@ export default async function StaffPortalPage({
             activeView={activeBookingView}
             range={dashboardRange}
             initialQuery={readSearchParam(resolvedSearchParams, "q")}
+            initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
           />
         ) : null}
 
@@ -258,7 +263,9 @@ export default async function StaffPortalPage({
                     ? "confirmed"
                     : ambassador.status === "declined"
                       ? "declined"
-                      : "tentative"
+                      : ambassador.status === "inactive"
+                        ? "restricted"
+                        : "tentative"
                 }
               />,
               <ButtonLink
@@ -274,7 +281,18 @@ export default async function StaffPortalPage({
         ) : null}
 
         {selectedAmbassador ? (
-          <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-5">
+            <div>
+              <ButtonLink
+                href="/staff/ambassadors"
+                variant="ghost"
+                className="min-h-[42px] rounded-[14px] px-4 py-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to ambassadors
+              </ButtonLink>
+            </div>
+            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <Card className="rounded-[34px]">
               <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
               <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -311,60 +329,112 @@ export default async function StaffPortalPage({
               </div>
             </Card>
 
-            <Card className="rounded-[34px]">
-              <SectionHeading kicker="Staff decision" title="Approve or decline access" />
-              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                Approving this application unlocks ambassador portal access. Declining keeps the
-                account out of the ambassador portal until staff revisits the application.
-              </p>
-              <div className="mt-6 grid gap-4">
-                <form action={reviewAmbassadorAction}>
-                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                  <input type="hidden" name="status" value="approved" />
-                  <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                  >
-                    Approve ambassador
-                  </button>
-                </form>
-                <form action={reviewAmbassadorAction}>
-                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                  <input type="hidden" name="status" value="declined" />
-                  <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                  >
-                    Decline application
-                  </button>
-                </form>
-              </div>
-            </Card>
+            {selectedAmbassador.status === "approved" || selectedAmbassador.status === "inactive" ? (
+              <Card className="rounded-[34px]">
+                <SectionHeading kicker="Staff decision" title="Manage ambassador access" />
+                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                  {selectedAmbassador.status === "approved"
+                    ? "This ambassador is approved and active. You can temporarily restrict their platform access or remove them from the ambassador programme."
+                    : "This ambassador's access is temporarily restricted. Restore their access when they are ready to present again, or remove them from the programme."}
+                </p>
+                <div className="mt-6 grid gap-4">
+                  {selectedAmbassador.status === "approved" ? (
+                    <form action={reviewAmbassadorAction}>
+                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                      <input type="hidden" name="status" value="inactive" />
+                      <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
+                      >
+                        Temporarily restrict access
+                      </button>
+                    </form>
+                  ) : (
+                    <form action={reviewAmbassadorAction}>
+                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                      <input type="hidden" name="status" value="approved" />
+                      <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                      >
+                        Restore access
+                      </button>
+                    </form>
+                  )}
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="declined" />
+                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                    >
+                      Remove ambassador
+                    </button>
+                  </form>
+                </div>
+              </Card>
+            ) : (
+              <Card className="rounded-[34px]">
+                <SectionHeading kicker="Staff decision" title="Approve or decline access" />
+                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                  Approving this application unlocks ambassador portal access. Declining keeps the
+                  account out of the ambassador portal until staff revisits the application.
+                </p>
+                <div className="mt-6 grid gap-4">
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="approved" />
+                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                    >
+                      Approve ambassador
+                    </button>
+                  </form>
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="declined" />
+                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                    >
+                      Decline application
+                    </button>
+                  </form>
+                </div>
+              </Card>
+            )}
+            </div>
           </div>
         ) : null}
 
         {route === "reports" ? (
           <div className="grid gap-5">
             <ReportsOverview reports={portal.reports} />
-            <DataTable
-              title="Session reports"
-              columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Report"]}
-              rows={portal.reports.map((report) => [
-                report.schoolName,
-                report.presentationTitle,
-                formatDateTime(report.submittedAt),
-                String(report.attendeeCount),
-                <StatusBadge key={`${report.id}-status`} value={report.status} />,
-                <ReportDetailsButton
-                  key={`${report.id}-view`}
-                  report={report}
-                  reviewAction={markReportReviewedAction}
-                  reviewReturnTo="/staff/reports"
-                />
-              ])}
-            />
+            <div id="session-reports" className="scroll-mt-24">
+              <DataTable
+                title="Session reports"
+                columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Report"]}
+                rows={portal.reports.map((report) => [
+                  report.schoolName,
+                  report.presentationTitle,
+                  formatDateTime(report.submittedAt),
+                  String(report.attendeeCount),
+                  <StatusBadge key={`${report.id}-status`} value={report.status} />,
+                  <ReportDetailsButton
+                    key={`${report.id}-view`}
+                    report={report}
+                    reviewAction={markReportReviewedAction}
+                    reviewReturnTo="/staff/reports#session-reports"
+                  />
+                ])}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -654,21 +724,25 @@ export default async function StaffPortalPage({
         ) : null}
 
         {route === "settings" ? (
-          <div className="grid gap-5 xl:grid-cols-2">
-            {portal.settings.map((setting) => (
-              <Card key={setting.key} className="rounded-[32px]">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  {setting.key.replace(/_/g, " ")}
-                </p>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">{setting.value}</p>
-              </Card>
-            ))}
-          </div>
+          <SettingsWorkspace
+            settings={portal.settings}
+            action={savePlatformSettingsAction}
+            returnTo="/staff/settings"
+            notice={
+              readSearchParam(resolvedSearchParams, "saved") === "settings"
+                ? { tone: "success", message: "Settings saved." }
+                : readSearchParam(resolvedSearchParams, "error") === "invalid-settings"
+                  ? { tone: "error", message: "Those settings didn't look right — please check the fields and try again." }
+                  : readSearchParam(resolvedSearchParams, "error") === "settings-save-failed"
+                    ? { tone: "error", message: "Saving failed — please try again." }
+                    : null
+            }
+          />
         ) : null}
 
         {route === "activity" ? (
           <div className="grid gap-4">
-            {portal.notifications.length === 0 ? (
+            {portal.notifications.filter((notification) => !notification.readAt).length === 0 ? (
               <Card className="rounded-[34px]">
                 <div className="flex items-center gap-3">
                   <Bell className="h-5 w-5 text-[color:var(--green)]" />
@@ -683,7 +757,9 @@ export default async function StaffPortalPage({
                 </div>
               </Card>
             ) : (
-              portal.notifications.map((notification) => (
+              portal.notifications
+                .filter((notification) => !notification.readAt)
+                .map((notification) => (
                 <Card key={notification.id} className="rounded-[34px]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>

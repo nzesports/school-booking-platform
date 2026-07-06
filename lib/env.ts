@@ -6,6 +6,7 @@ const env = {
   brevoApiKey: process.env.BREVO_API_KEY,
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || "info@esf.nz",
   brevoSenderName: process.env.BREVO_SENDER_NAME || "NZ Esports",
+  cronSecret: process.env.CRON_SECRET,
   microsoftTenantId: process.env.MICROSOFT_GRAPH_TENANT_ID,
   microsoftClientId: process.env.MICROSOFT_GRAPH_CLIENT_ID,
   microsoftClientSecret: process.env.MICROSOFT_GRAPH_CLIENT_SECRET,

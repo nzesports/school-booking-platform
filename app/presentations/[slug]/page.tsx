@@ -1,5 +1,15 @@
 import type { ReactNode } from "react";
-import { CircleCheck, Clock3, MonitorPlay, Projector, UsersRound } from "lucide-react";
+import {
+  ArrowLeft,
+  CircleCheck,
+  Clock3,
+  ExternalLink,
+  FileDown,
+  MonitorPlay,
+  Projector,
+  UsersRound,
+  Youtube
+} from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
@@ -9,6 +19,7 @@ import { splitYearGroups, yearGroupChipClass } from "@/lib/domain/year-groups";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import {
   getPresentationBySlug,
+  listPublicPresentationResources,
   listPublicPresentations,
   listRegions
 } from "@/lib/services/presentations";
@@ -32,11 +43,21 @@ export default async function PresentationDetailPage({
     notFound();
   }
 
+  const resources = await listPublicPresentationResources(presentation.id);
   const yearGroups = splitYearGroups(presentation.yearLevels);
   const videoEmbedUrl = toYouTubeEmbedUrl(presentation.youtubeUrl);
 
   return (
     <main className="site-shell-wide py-8 md:py-10">
+      <ButtonLink
+        href="/#presentations"
+        variant="secondary"
+        className="mb-5 min-h-[36px] rounded-[13px] px-3.5 py-1.5 text-[13px]"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to presentations
+      </ButtonLink>
+
       <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
         <Card className="rounded-[30px] md:rounded-[38px]">
           <div className="flex flex-wrap gap-2">
@@ -132,6 +153,48 @@ export default async function PresentationDetailPage({
               ) : null}
             </div>
           ) : null}
+
+          {resources.length > 0 ? (
+            <div className="mt-8 rounded-[28px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)] p-6 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]">
+              <h2 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                Downloads &amp; flyers
+              </h2>
+              <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
+                Everything you need to share this presentation with your staff and students.
+              </p>
+              <div className="mt-4 grid gap-3">
+                {resources.map((resource) => (
+                  <a
+                    key={resource.id}
+                    href={resource.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-4 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 transition hover:border-[rgba(24,168,59,0.35)] hover:bg-white"
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#e6f5ec] text-[#117a2e]">
+                        <ResourceTypeIcon type={resource.resourceType} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-[color:var(--navy)]">
+                          {resource.title}
+                        </span>
+                        {resource.description ? (
+                          <span className="block truncate text-xs text-[color:var(--text-soft)]">
+                            {resource.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-[#1e4fae]">
+                      <FileDown className="h-4 w-4" />
+                      Open
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         <div className="grid content-start gap-6">
@@ -155,7 +218,7 @@ export default async function PresentationDetailPage({
               one visit. Use the booking flow to request multiple sessions together.
             </p>
             <ButtonLink
-              href="/presentations"
+              href="/#presentations"
               variant="secondary"
               className="mt-5 w-full justify-center"
             >
@@ -166,6 +229,18 @@ export default async function PresentationDetailPage({
       </div>
     </main>
   );
+}
+
+function ResourceTypeIcon({ type }: { type: string }) {
+  if (type === "video" || type === "youtube") {
+    return <Youtube className="h-4 w-4" />;
+  }
+
+  if (type === "link" || type === "external") {
+    return <ExternalLink className="h-4 w-4" />;
+  }
+
+  return <FileDown className="h-4 w-4" />;
 }
 
 function DetailStat({

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import { Lilita_One, Quicksand, Rozha_One } from "next/font/google";
 
 import { submitBookingRequestAction } from "@/app/actions";
 import {
@@ -15,6 +16,26 @@ import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import { listPublicPresentations, listRegions } from "@/lib/services/presentations";
 
 import "./globals.css";
+
+const quicksand = Quicksand({
+  subsets: ["latin"],
+  variable: "--font-quicksand",
+  display: "swap"
+});
+
+const rozhaOne = Rozha_One({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-rozha-one",
+  display: "swap"
+});
+
+const lilitaOne = Lilita_One({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-lilita-one",
+  display: "swap"
+});
 
 export const metadata: Metadata = {
   title: "NZ Esports School Booking Platform",
@@ -34,7 +55,10 @@ export default async function RootLayout({
   ]);
 
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${quicksand.variable} ${rozhaOne.variable} ${lilitaOne.variable}`}
+    >
       <body className="min-h-screen bg-[var(--page-background)] text-[color:var(--text-dark)] antialiased">
         <DemoModeBanner />
         <AppChrome

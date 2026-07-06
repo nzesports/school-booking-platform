@@ -12,6 +12,8 @@ import {
   Hourglass,
   Info,
   Landmark,
+  Mail,
+  Phone,
   Search,
   UsersRound
 } from "lucide-react";
@@ -68,6 +70,7 @@ export function SchoolsExplorer({
   bookings: BookingRequestView[];
   basePath: string;
 }) {
+  const [scheduleTab, setScheduleTab] = useState<"all" | "upcoming" | "completed">("all");
   const [query, setQuery] = useState("");
   const [regionFilter, setRegionFilter] = useState("all");
   const [presentationFilter, setPresentationFilter] = useState("all");
@@ -87,11 +90,19 @@ export function SchoolsExplorer({
     [summaries]
   );
 
-  const schoolsWithBookings = summaries.filter(
-    (summary) => summary.deliveredCount + summary.upcomingCount > 0
-  ).length;
-  const sessionsDelivered = summaries.reduce((total, summary) => total + summary.deliveredCount, 0);
-  const upcomingSessions = summaries.reduce((total, summary) => total + summary.upcomingCount, 0);
+  const scheduleTabs = [
+    { value: "all" as const, label: "All schools", count: summaries.length },
+    {
+      value: "upcoming" as const,
+      label: "Upcoming",
+      count: summaries.filter((summary) => summary.upcomingCount > 0).length
+    },
+    {
+      value: "completed" as const,
+      label: "Completed",
+      count: summaries.filter((summary) => summary.deliveredCount > 0).length
+    }
+  ];
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -103,12 +114,17 @@ export function SchoolsExplorer({
         summary.school.regionSlug,
         regionName,
         summary.contactName ?? "",
+        summary.school.contactEmail ?? "",
+        summary.school.contactPhone ?? "",
         summary.presentationsDelivered.join(" ")
       ]
         .join(" ")
         .toLowerCase();
 
       return (
+        (scheduleTab === "all" ||
+          (scheduleTab === "upcoming" && summary.upcomingCount > 0) ||
+          (scheduleTab === "completed" && summary.deliveredCount > 0)) &&
         (!normalized || haystack.includes(normalized)) &&
         (regionFilter === "all" || summary.school.regionSlug === regionFilter) &&
         (presentationFilter === "all" ||
@@ -131,7 +147,7 @@ export function SchoolsExplorer({
       );
 
     return [...matches].sort((a, b) => activityStamp(b) - activityStamp(a));
-  }, [summaries, query, regionFilter, presentationFilter, sortBy, regionNameBySlug]);
+  }, [summaries, scheduleTab, query, regionFilter, presentationFilter, sortBy, regionNameBySlug]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -139,26 +155,36 @@ export function SchoolsExplorer({
 
   return (
     <div className="grid gap-5">
-      {/* ------------------------------------------------ stat tiles */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatTile
-          icon={<Landmark className="h-6 w-6" />}
-          iconClassName="bg-[#eef2f8] text-[color:var(--navy)]"
-          label="Schools with bookings"
-          value={String(schoolsWithBookings)}
-        />
-        <StatTile
-          icon={<CircleCheck className="h-6 w-6" />}
-          iconClassName="bg-[#e6f5ec] text-[#117a2e]"
-          label="Sessions delivered"
-          value={String(sessionsDelivered)}
-        />
-        <StatTile
-          icon={<CalendarDays className="h-6 w-6" />}
-          iconClassName="bg-[#fdf3dc] text-[#b7822c]"
-          label="Upcoming school sessions"
-          value={String(upcomingSessions)}
-        />
+      {/* ------------------------------------------------ schedule tabs */}
+      <div className="flex flex-wrap gap-1.5 self-start rounded-[16px] border border-[color:var(--border-soft)] bg-white p-1.5">
+        {scheduleTabs.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => {
+              setScheduleTab(tab.value);
+              setPage(1);
+            }}
+            className={cn(
+              "inline-flex min-h-[40px] items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition",
+              tab.value === scheduleTab
+                ? "border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
+                : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+            )}
+          >
+            {tab.label}
+            <span
+              className={cn(
+                "inline-flex min-w-[24px] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold",
+                tab.value === scheduleTab
+                  ? "bg-white text-[#117a2e]"
+                  : "bg-[#eef2f8] text-[color:var(--text-soft)]"
+              )}
+            >
+              {tab.count}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* ------------------------------------------------ toolbar */}
@@ -216,11 +242,12 @@ export function SchoolsExplorer({
 
       {/* ------------------------------------------------ table */}
       <div className="overflow-x-auto rounded-[20px] border border-[color:var(--border-soft)] bg-white">
-        <table className="min-w-[980px] border-separate border-spacing-0 lg:min-w-full">
+        <table className="min-w-[1120px] border-separate border-spacing-0 xl:min-w-full">
           <thead>
             <tr>
               {[
                 "School",
+                "Contact",
                 "Region",
                 "Delivered",
                 "Presentations",
@@ -246,9 +273,18 @@ export function SchoolsExplorer({
                 <tr key={summary.school.id} className="align-middle">
                   <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
                     <span className="flex items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f8] text-[color:var(--navy)]">
-                        <Landmark className="h-4 w-4" />
-                      </span>
+                      {summary.school.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={summary.school.logoUrl}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full border border-[color:var(--border-soft)] bg-white object-contain p-0.5"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef2f8] text-[color:var(--navy)]">
+                          <Landmark className="h-4 w-4" />
+                        </span>
+                      )}
                       <span className="min-w-0">
                         <span className="block truncate font-semibold text-[color:var(--navy)]">
                           {summary.school.name}
@@ -258,6 +294,34 @@ export function SchoolsExplorer({
                         </span>
                       </span>
                     </span>
+                  </td>
+                  <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                    {summary.school.contactEmail || summary.school.contactPhone ? (
+                      <span className="grid gap-1">
+                        {summary.school.contactEmail ? (
+                          <a
+                            href={`mailto:${summary.school.contactEmail}`}
+                            className="flex max-w-[220px] items-center gap-1.5 text-sm font-medium text-[#1e4fae] hover:underline"
+                          >
+                            <Mail className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{summary.school.contactEmail}</span>
+                          </a>
+                        ) : null}
+                        {summary.school.contactPhone ? (
+                          <a
+                            href={`tel:${summary.school.contactPhone}`}
+                            className="flex items-center gap-1.5 text-xs text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+                          >
+                            <Phone className="h-3.5 w-3.5 shrink-0" />
+                            {summary.school.contactPhone}
+                          </a>
+                        ) : null}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-[color:var(--text-soft)]">
+                        No contact on record
+                      </span>
+                    )}
                   </td>
                   <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
                     {regionNameBySlug.get(summary.school.regionSlug) ??
@@ -452,6 +516,17 @@ function SchoolBookingsDialog({
       compact
     >
       <div className="mt-5 grid gap-3">
+        {school.profileNotes ? (
+          <div className="rounded-[16px] border border-[#f0d8a8] bg-[#fffaf0] px-4 py-3.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9a5a00]">
+              Notes from the school
+            </p>
+            <p className="mt-1.5 whitespace-pre-line text-sm leading-6 text-[color:var(--navy)]">
+              {school.profileNotes}
+            </p>
+          </div>
+        ) : null}
+
         {sorted.length === 0 ? (
           <p className="rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white/80 px-4 py-6 text-sm text-[color:var(--text-soft)]">
             No bookings on record for this school yet.
@@ -512,32 +587,6 @@ function SchoolBookingsDialog({
         </Link>
       </div>
     </BookingDialogShell>
-  );
-}
-
-function StatTile({
-  icon,
-  iconClassName,
-  label,
-  value
-}: {
-  icon: ReactNode;
-  iconClassName: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-      <span className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-full", iconClassName)}>
-        {icon}
-      </span>
-      <span>
-        <span className="block text-sm text-[color:var(--text-soft)]">{label}</span>
-        <span className="block text-3xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-          {value}
-        </span>
-      </span>
-    </div>
   );
 }
 

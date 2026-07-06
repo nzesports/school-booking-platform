@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  ArrowLeft,
   Bell,
   CalendarDays,
   CircleDollarSign,
@@ -8,7 +9,6 @@ import {
   FileText,
   FolderKanban,
   Info,
-  LayoutTemplate,
   Layers3,
   Lock,
   MapPinned,
@@ -102,7 +102,6 @@ const navItems = [
   { href: "/admin/regions", label: "Regions", icon: MapPinned },
   { href: "/admin/feedback", label: "Feedback", icon: Bell },
   { href: "/admin/resources", label: "Resources", icon: FolderKanban },
-  { href: "/admin/pages-content", label: "Pages & Content", icon: LayoutTemplate },
   { href: "/admin/email-templates", label: "Email templates", icon: FileText },
   { href: "/admin/audit-logs", label: "Audit logs", icon: ShieldCheck }
 ];
@@ -220,9 +219,9 @@ export default async function AdminPortalPage({
     route === ""
       ? `Good morning, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
-        ? "Review booking lifecycle and delivery status"
+        ? "School Bookings"
         : route === "schools"
-          ? "Track school delivery history and coverage gaps"
+          ? "School Information"
           : route === "ambassadors"
             ? "Review ambassador applications and payment status"
             : route.startsWith("ambassadors/")
@@ -267,7 +266,6 @@ export default async function AdminPortalPage({
         navItems={navItems}
         currentPath={`/admin${route ? `/${route}` : ""}`}
         headline={headline}
-        subheadline="Control users, roles, content, resources, templates, and approval workflows from one secure operations surface."
         dateLabel={dashboardRangeLabel(dashboardRange)}
         rangeOptions={dashboardRangeOptions.map((option) => ({
           ...option,
@@ -276,6 +274,8 @@ export default async function AdminPortalPage({
         activeRange={dashboardRange}
         activityHref="/admin/activity"
         notificationCount={actor.notificationCount}
+        notifications={portal.notifications}
+        markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
@@ -319,6 +319,7 @@ export default async function AdminPortalPage({
             activeView={activeBookingView}
             range={dashboardRange}
             initialQuery={readSearchParam(resolvedSearchParams, "q")}
+            initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
           />
         ) : null}
 
@@ -353,7 +354,9 @@ export default async function AdminPortalPage({
                     ? "confirmed"
                     : ambassador.status === "declined"
                       ? "declined"
-                      : "tentative"
+                      : ambassador.status === "inactive"
+                        ? "restricted"
+                        : "tentative"
                 }
               />,
               <ButtonLink
@@ -369,7 +372,18 @@ export default async function AdminPortalPage({
         ) : null}
 
         {selectedAmbassador ? (
-          <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-5">
+            <div>
+              <ButtonLink
+                href="/admin/ambassadors"
+                variant="ghost"
+                className="min-h-[42px] rounded-[14px] px-4 py-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to ambassadors
+              </ButtonLink>
+            </div>
+            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <Card className="rounded-[34px]">
               <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
               <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -406,69 +420,121 @@ export default async function AdminPortalPage({
               </div>
             </Card>
 
-            <Card className="rounded-[34px]">
-              <SectionHeading kicker="Admin decision" title="Approve or decline access" />
-              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                Approving this application unlocks ambassador portal access. Declining keeps the
-                account out of the ambassador portal until the application is revisited.
-              </p>
-              <div className="mt-6 grid gap-4">
-                <form action={reviewAmbassadorAction}>
-                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                  <input type="hidden" name="status" value="approved" />
-                  <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                  >
-                    Approve ambassador
-                  </button>
-                </form>
-                <form action={reviewAmbassadorAction}>
-                  <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                  <input type="hidden" name="status" value="declined" />
-                  <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                  >
-                    Decline application
-                  </button>
-                </form>
-              </div>
-            </Card>
+            {selectedAmbassador.status === "approved" || selectedAmbassador.status === "inactive" ? (
+              <Card className="rounded-[34px]">
+                <SectionHeading kicker="Admin decision" title="Manage ambassador access" />
+                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                  {selectedAmbassador.status === "approved"
+                    ? "This ambassador is approved and active. You can temporarily restrict their platform access or remove them from the ambassador programme."
+                    : "This ambassador's access is temporarily restricted. Restore their access when they are ready to present again, or remove them from the programme."}
+                </p>
+                <div className="mt-6 grid gap-4">
+                  {selectedAmbassador.status === "approved" ? (
+                    <form action={reviewAmbassadorAction}>
+                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                      <input type="hidden" name="status" value="inactive" />
+                      <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
+                      >
+                        Temporarily restrict access
+                      </button>
+                    </form>
+                  ) : (
+                    <form action={reviewAmbassadorAction}>
+                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                      <input type="hidden" name="status" value="approved" />
+                      <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                      >
+                        Restore access
+                      </button>
+                    </form>
+                  )}
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="declined" />
+                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                    >
+                      Remove ambassador
+                    </button>
+                  </form>
+                </div>
+              </Card>
+            ) : (
+              <Card className="rounded-[34px]">
+                <SectionHeading kicker="Admin decision" title="Approve or decline access" />
+                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
+                  Approving this application unlocks ambassador portal access. Declining keeps the
+                  account out of the ambassador portal until the application is revisited.
+                </p>
+                <div className="mt-6 grid gap-4">
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="approved" />
+                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                    >
+                      Approve ambassador
+                    </button>
+                  </form>
+                  <form action={reviewAmbassadorAction}>
+                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
+                    <input type="hidden" name="status" value="declined" />
+                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                    >
+                      Decline application
+                    </button>
+                  </form>
+                </div>
+              </Card>
+            )}
+            </div>
           </div>
         ) : null}
 
         {route === "reports" ? (
           <div className="grid gap-5">
             <ReportsOverview reports={portal.reports} />
-            <DataTable
-              title="Session reports"
-              columns={[
-                "School",
-                "Presentation",
-                "Submitted",
-                "Attendees",
-                "Ambassador",
-                "Status",
-                "Report"
-              ]}
-              rows={portal.reports.map((report) => [
-                report.schoolName,
-                report.presentationTitle,
-                formatDateTime(report.submittedAt),
-                String(report.attendeeCount),
-                report.ambassadorName ?? "Unassigned",
-                <StatusBadge key={`${report.id}-status`} value={report.status} />,
-                <ReportDetailsButton
-                  key={`${report.id}-view`}
-                  report={report}
-                  reviewAction={markReportReviewedAction}
-                  reviewReturnTo="/admin/reports"
-                />
-              ])}
-            />
+            <div id="session-reports" className="scroll-mt-24">
+              <DataTable
+                title="Session reports"
+                columns={[
+                  "School",
+                  "Presentation",
+                  "Submitted",
+                  "Attendees",
+                  "Ambassador",
+                  "Status",
+                  "Report"
+                ]}
+                rows={portal.reports.map((report) => [
+                  report.schoolName,
+                  report.presentationTitle,
+                  formatDateTime(report.submittedAt),
+                  String(report.attendeeCount),
+                  report.ambassadorName ?? "Unassigned",
+                  <StatusBadge key={`${report.id}-status`} value={report.status} />,
+                  <ReportDetailsButton
+                    key={`${report.id}-view`}
+                    report={report}
+                    reviewAction={markReportReviewedAction}
+                    reviewReturnTo="/admin/reports#session-reports"
+                  />
+                ])}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -1707,7 +1773,7 @@ export default async function AdminPortalPage({
 
         {route === "activity" ? (
           <div className="grid gap-4">
-            {portal.notifications.length === 0 ? (
+            {portal.notifications.filter((notification) => !notification.readAt).length === 0 ? (
               <Card className="rounded-[34px]">
                 <div className="flex items-center gap-3">
                   <Bell className="h-5 w-5 text-[color:var(--green)]" />
@@ -1722,7 +1788,9 @@ export default async function AdminPortalPage({
                 </div>
               </Card>
             ) : (
-              portal.notifications.map((notification) => (
+              portal.notifications
+                .filter((notification) => !notification.readAt)
+                .map((notification) => (
                 <Card key={notification.id} className="rounded-[34px]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -1745,7 +1813,9 @@ export default async function AdminPortalPage({
                   </div>
                   <div className="mt-5 flex flex-wrap gap-3">
                     {notification.relatedUrl ? (
-                      <ButtonLink href={notification.relatedUrl}>Open review</ButtonLink>
+                      <ButtonLink href={notification.relatedUrl.replace(/^\/staff\//, "/admin/")}>
+                        Open review
+                      </ButtonLink>
                     ) : null}
                     {!notification.readAt ? (
                       <form action={markNotificationReadAction}>

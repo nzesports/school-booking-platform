@@ -28,7 +28,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-[18px] border px-5 py-2.5 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] disabled:cursor-not-allowed disabled:opacity-60",
         variants[variant],
         className
       )}
@@ -53,7 +53,7 @@ export function ButtonLink({
   return (
     <Link
       className={cn(
-        "inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-[18px] border px-5 py-2.5 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)]",
+        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)]",
         variants[variant],
         className
       )}

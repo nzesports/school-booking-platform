@@ -1,7 +1,7 @@
 -- ============================================================================
 -- CATCH-UP MIGRATIONS — paste this whole file into the Supabase SQL editor
 -- and run it once. Your live database is missing several migrations from the
--- repo (0004, 0006/0007 pieces, 0009, 0010, 0011). Everything below is
+-- repo (0004, 0006/0007 pieces, 0009, 0010, 0011, 0012, 0013). Everything below is
 -- idempotent, so running it twice is safe.
 -- ============================================================================
 
@@ -221,3 +221,14 @@ begin
   return new;
 end;
 $$;
+
+-- ---------------------------------------------------------------- from 0012
+-- Structured answers from the school post-session feedback form.
+alter table public.presentation_reviews
+  add column if not exists details jsonb;
+
+-- ---------------------------------------------------------------- from 0013
+-- School-managed profile: logo + notes for the delivery team.
+alter table public.schools
+  add column if not exists logo_url text,
+  add column if not exists profile_notes text;

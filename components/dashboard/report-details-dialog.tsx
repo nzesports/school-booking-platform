@@ -60,11 +60,13 @@ function yesNo(value?: boolean) {
 export function ReportDetailsButton({
   report,
   className,
+  label = "View submission",
   reviewAction,
   reviewReturnTo
 }: {
   report: ReportSummary;
   className?: string;
+  label?: string;
   reviewAction?: (formData: FormData) => void | Promise<void>;
   reviewReturnTo?: string;
 }) {
@@ -81,7 +83,7 @@ export function ReportDetailsButton({
         className={className ?? "min-h-[36px] rounded-[14px] px-3 py-1.5 text-xs"}
       >
         <Eye className="h-3.5 w-3.5" />
-        View submission
+        {label}
       </Button>
 
       {/* Portalled to <body> so glassy card ancestors (backdrop-filter) can't

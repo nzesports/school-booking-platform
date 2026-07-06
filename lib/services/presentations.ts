@@ -5,8 +5,19 @@ import {
 } from "@/lib/domain/demo-data";
 import { regionDisplayName } from "@/lib/domain/regions";
 import type { HomepageSectionRecord, PresentationType, Region, Testimonial } from "@/lib/domain/types";
+import { unstable_cache } from "next/cache";
+
+import { PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
+import { createSignedResourceUrl } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+
+// Public reference data (presentations, regions, homepage copy, testimonials)
+// changes rarely but was being re-read from the database on every page render
+// — the root layout alone queries three of these per request. Each loader is
+// cached for 5 minutes and busted via PUBLIC_CONTENT_TAG whenever staff save
+// content. They read with the admin client (public data, server-only module)
+// so no cookie access happens inside the cache scope.
+const publicCacheOptions = { revalidate: 300, tags: [PUBLIC_CONTENT_TAG] };
 
 export function splitContentLines(value: unknown): string[] {
   if (typeof value !== "string") {
@@ -39,8 +50,14 @@ function mapPresentationRecord(record: Record<string, unknown>): PresentationTyp
   };
 }
 
-export async function listPublicPresentations() {
-  const supabase = await createClient();
+export const listPublicPresentations = unstable_cache(
+  listPublicPresentationsUncached,
+  ["public-presentations"],
+  publicCacheOptions
+);
+
+async function listPublicPresentationsUncached() {
+  const supabase = createAdminClient();
 
   if (!supabase) {
     return demoPresentations.filter((presentation) => presentation.active && presentation.public);
@@ -62,8 +79,81 @@ export async function listPublicPresentations() {
   return data.map((record) => mapPresentationRecord(record as Record<string, unknown>));
 }
 
-export async function listRegions() {
-  const supabase = await createClient();
+export type PublicPresentationResource = {
+  id: string;
+  title: string;
+  description: string;
+  resourceType: string;
+  url: string;
+};
+
+// School-facing flyers, links, and downloads shown on the public presentation
+// detail page. Storage-backed files get a signed URL at render time because
+// public visitors can't use the authenticated portal download route.
+// Cached for 5 minutes — well inside the 60-minute signed-URL expiry.
+export const listPublicPresentationResources = unstable_cache(
+  listPublicPresentationResourcesUncached,
+  ["public-presentation-resources"],
+  publicCacheOptions
+);
+
+async function listPublicPresentationResourcesUncached(
+  presentationTypeId: string
+): Promise<PublicPresentationResource[]> {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return [];
+  }
+
+  // Select * so environments still on the legacy single-audience column load.
+  const { data, error } = await admin
+    .from("presentation_resources")
+    .select("*")
+    .eq("presentation_type_id", presentationTypeId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    return [];
+  }
+
+  const schoolResources = data.filter((resource) => {
+    const audiences =
+      Array.isArray(resource.audiences) && resource.audiences.length > 0
+        ? (resource.audiences as string[])
+        : [((resource as Record<string, unknown>).audience as string | undefined) ?? "staff"];
+
+    return audiences.includes("school");
+  });
+
+  const mapped = await Promise.all(
+    schoolResources.map(async (resource) => {
+      const url =
+        (resource.public_url as string | null) ??
+        (await createSignedResourceUrl(resource.storage_path as string | null, 60 * 60));
+
+      if (!url) {
+        return null;
+      }
+
+      return {
+        id: resource.id as string,
+        title: resource.title as string,
+        description: (resource.description as string | null) ?? "",
+        resourceType: (resource.resource_type as string | null) ?? "document",
+        url
+      };
+    })
+  );
+
+  return mapped.filter((resource): resource is PublicPresentationResource => resource !== null);
+}
+
+export const listRegions = unstable_cache(listRegionsUncached, ["public-regions"], publicCacheOptions);
+
+async function listRegionsUncached() {
+  const supabase = createAdminClient();
 
   if (!supabase) {
     return demoRegions.filter((region) => region.isActive);
@@ -93,8 +183,14 @@ export async function listRegions() {
   );
 }
 
-export async function getPresentationBySlug(slug: string) {
-  const supabase = await createClient();
+export const getPresentationBySlug = unstable_cache(
+  getPresentationBySlugUncached,
+  ["public-presentation-by-slug"],
+  publicCacheOptions
+);
+
+async function getPresentationBySlugUncached(slug: string) {
+  const supabase = createAdminClient();
 
   if (!supabase) {
     return demoPresentations.find((presentation) => presentation.slug === slug) ?? null;
@@ -113,8 +209,14 @@ export async function getPresentationBySlug(slug: string) {
   return mapPresentationRecord(data as Record<string, unknown>);
 }
 
-export async function listHomepageSections() {
-  const supabase = await createClient();
+export const listHomepageSections = unstable_cache(
+  listHomepageSectionsUncached,
+  ["public-homepage-sections"],
+  publicCacheOptions
+);
+
+async function listHomepageSectionsUncached() {
+  const supabase = createAdminClient();
 
   if (!supabase) {
     return [] as HomepageSectionRecord[];
@@ -145,7 +247,13 @@ export async function listHomepageSections() {
   );
 }
 
-export async function listPublicTestimonials(limit = 6): Promise<Testimonial[]> {
+export const listPublicTestimonials = unstable_cache(
+  listPublicTestimonialsUncached,
+  ["public-testimonials"],
+  publicCacheOptions
+);
+
+async function listPublicTestimonialsUncached(limit = 6): Promise<Testimonial[]> {
   const admin = createAdminClient();
 
   if (!admin) {

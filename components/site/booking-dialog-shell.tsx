@@ -44,6 +44,17 @@ export function BookingDialogShell({
       }}
       role="presentation"
     >
+      {/* Stays pinned to the viewport so mobile users can always close, even
+          after scrolling a long form. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close dialog"
+        className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-[rgba(4,15,75,0.6)] text-white shadow-[0_10px_24px_rgba(4,15,75,0.3)] lg:hidden"
+      >
+        <X className="h-4 w-4" />
+      </button>
+
       <div
         role="dialog"
         aria-modal="true"

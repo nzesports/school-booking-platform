@@ -1,7 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { CalendarDays, Clock3, MapPin, MonitorPlay, Plus, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+
+import beroccaLogo from "@/public/media/berocca-logo.png";
 
 import { BookingDatePicker, BookingTimeCombobox } from "@/components/site/booking-field-pickers";
 import { useBookingModal } from "@/components/site/booking-modal-provider";
@@ -18,6 +21,7 @@ import {
   nextBookableDates
 } from "@/lib/services/availability";
 import { resolveTypedTimeInWindow } from "@/lib/services/time-slots";
+import { cn } from "@/lib/utils";
 
 export function HeroBookingWidget({
   presentations,
@@ -67,7 +71,7 @@ export function HeroBookingWidget({
       ? "rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-5 shadow-[0_28px_62px_rgba(11,24,77,0.12)] backdrop-blur-2xl md:p-6 lg:p-7"
       : mode === "compact"
         ? "rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5"
-        : "mt-12 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(255,255,255,0.76))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5 lg:p-6";
+        : "mt-8 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(255,255,255,0.76))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5 lg:p-6";
 
   const kickerText = mode === "compact" ? "Book this presentation" : "Plan your visit";
   const helperText = useMemo(
@@ -79,8 +83,14 @@ export function HeroBookingWidget({
           : "Book your school presentation",
     [mode]
   );
+  // Date and Time always share a row below the wide four-column layout;
+  // Presentation and Region take the full row there.
   const fieldsGridClassName =
-    mode === "compact" ? "grid gap-3" : "grid gap-3 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]";
+    mode === "compact"
+      ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+      : "grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]";
+  const fullRowFieldClassName =
+    mode === "compact" ? "sm:col-span-2" : "sm:col-span-2 xl:col-span-1";
   const footerClassName =
     mode === "compact"
       ? "mt-5 flex flex-col gap-4"
@@ -101,7 +111,7 @@ export function HeroBookingWidget({
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
           {kickerText}
         </p>
-        <p className="text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
+        <p className="text-2xl font-bold tracking-[-0.03em] text-[color:var(--navy)] md:text-[1.7rem]">
           {helperText}
         </p>
         {mode === "page" ? (
@@ -150,7 +160,11 @@ export function HeroBookingWidget({
               </div>
 
               <div className={fieldsGridClassName}>
-                <Field icon={<MonitorPlay className="h-4 w-4" />} label="Presentation">
+                <Field
+                  icon={<MonitorPlay className="h-4 w-4" />}
+                  label="Presentation"
+                  className={fullRowFieldClassName}
+                >
                   <Select
                     value={session.presentationSlug}
                     onChange={(event) =>
@@ -219,7 +233,11 @@ export function HeroBookingWidget({
                   </div>
                 </Field>
 
-                <Field icon={<MapPin className="h-4 w-4" />} label="Region">
+                <Field
+                  icon={<MapPin className="h-4 w-4" />}
+                  label="Region"
+                  className={fullRowFieldClassName}
+                >
                   <div>
                     <Select
                       value={session.regionSlug}
@@ -274,9 +292,7 @@ export function HeroBookingWidget({
       <div className={footerClassName}>
         <div className="inline-flex items-center gap-3 rounded-full border border-white/70 bg-white/70 px-4 py-2.5 text-sm text-[color:var(--text-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.45)]">
           <span>Proudly supported by</span>
-          <span className="rounded-full bg-[linear-gradient(135deg,#198d3d,#0c5f2b)] px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-white">
-            Berocca
-          </span>
+          <Image src={beroccaLogo} alt="Berocca" className="h-7 w-auto object-contain" />
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -343,14 +359,21 @@ export function HeroBookingWidget({
 function Field({
   label,
   icon,
-  children
+  children,
+  className
 }: {
   label: string;
   icon: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-[20px] border border-white/75 bg-white/66 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.52)] backdrop-blur-xl">
+    <div
+      className={cn(
+        "rounded-[20px] border border-white/75 bg-white/66 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.52)] backdrop-blur-xl",
+        className
+      )}
+    >
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold tracking-[0.02em] text-[color:var(--navy)]">
         {icon}
         {label}
@@ -386,7 +409,8 @@ function createDraftSession({
     regionSlug,
     customRegion,
     yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
-    expectedStudentCount: 120
+    // 0 renders as an empty required field, so schools must enter their own count.
+    expectedStudentCount: 0
   };
 }
 

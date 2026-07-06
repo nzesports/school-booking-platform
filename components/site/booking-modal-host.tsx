@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowRight,
@@ -16,6 +17,7 @@ import {
   UsersRound
 } from "lucide-react";
 
+import beroccaLogo from "@/public/media/berocca-logo.png";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { BookingDatePicker, BookingTimeCombobox } from "@/components/site/booking-field-pickers";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
@@ -24,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { isOtherRegionSlug, regionDisplayName } from "@/lib/domain/regions";
+import { cn } from "@/lib/utils";
 import type { PresentationType, Region } from "@/lib/domain/types";
 import {
   BOOKING_WINDOW_DAYS,
@@ -267,10 +270,11 @@ function BookingModalFlow({
                     ) : null}
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.15fr_0.95fr_1fr_1fr]">
                     <PlannerField
                       icon={<MonitorPlay className="h-4 w-4" />}
                       label="Presentation"
+                      className="sm:col-span-2 xl:col-span-1"
                     >
                       <Select
                         className="h-[56px] text-base"
@@ -359,7 +363,11 @@ function BookingModalFlow({
                       </div>
                     </PlannerField>
 
-                    <PlannerField icon={<MapPin className="h-4 w-4" />} label="Region">
+                    <PlannerField
+                      icon={<MapPin className="h-4 w-4" />}
+                      label="Region"
+                      className="sm:col-span-2 xl:col-span-1"
+                    >
                       <div>
                         <Select
                           className="h-[56px] text-base"
@@ -477,9 +485,7 @@ function BookingModalFlow({
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <span>Proudly supported by</span>
-                <span className="rounded-full bg-[linear-gradient(135deg,#198d3d,#0c5f2b)] px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-white">
-                  Berocca
-                </span>
+                <Image src={beroccaLogo} alt="Berocca" className="h-7 w-auto object-contain" />
               </div>
 
               <div className="text-sm text-[color:var(--text-soft)] lg:text-right">
@@ -562,7 +568,7 @@ function BookingModalFlow({
                       </div>
                     </div>
 
-                    <div className="mt-5 grid gap-0 divide-y divide-[rgba(4,15,75,0.1)] md:grid-cols-4 md:divide-x md:divide-y-0">
+                    <div className="mt-5 grid grid-cols-2 gap-x-4 md:grid-cols-4 md:gap-x-0 md:divide-x md:divide-[rgba(4,15,75,0.1)]">
                       <SummaryItem
                         icon={<CalendarDays className="h-5 w-5" />}
                         label="Date"
@@ -590,7 +596,12 @@ function BookingModalFlow({
                                 name={`session-${index}-expectedStudentCount`}
                                 type="number"
                                 min={1}
-                                defaultValue={session.expectedStudentCount}
+                                defaultValue={
+                                  session.expectedStudentCount > 0
+                                    ? session.expectedStudentCount
+                                    : ""
+                                }
+                                placeholder="e.g. 120"
                                 required
                                 className="h-11 max-w-[128px] rounded-[14px] px-3 py-2"
                               />
@@ -782,14 +793,21 @@ function BookingStepProgress({ currentStep }: { currentStep: 1 | 2 }) {
 function PlannerField({
   label,
   icon,
-  children
+  children,
+  className
 }: {
   label: string;
   icon: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-[20px] border border-[rgba(164,202,227,0.34)] bg-white/82 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-xl">
+    <div
+      className={cn(
+        "rounded-[20px] border border-[rgba(164,202,227,0.34)] bg-white/82 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-xl",
+        className
+      )}
+    >
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold tracking-[0.02em] text-[color:var(--navy)]">
         {icon}
         {label}
@@ -864,7 +882,8 @@ function createDraftSession({
     regionSlug,
     customRegion,
     yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
-    expectedStudentCount: 120
+    // 0 renders as an empty required field, so schools must enter their own count.
+    expectedStudentCount: 0
   };
 }
 
@@ -908,7 +927,7 @@ function hydrateInitialSessions({
       expectedStudentCount:
         session.expectedStudentCount && session.expectedStudentCount > 0
           ? session.expectedStudentCount
-          : 120
+          : 0
     };
   });
 }

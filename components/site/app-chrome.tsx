@@ -48,12 +48,21 @@ export function AppChrome({
   return (
     <div
       className={cn(
-        "relative flex min-h-screen flex-col overflow-hidden",
+        "relative flex min-h-screen flex-col overflow-x-clip",
         isPortalRoute ? "portal-surface" : "marketing-surface"
       )}
     >
       {isPortalRoute ? (
-        <div className="relative z-10 flex-1">{children}</div>
+        // Portals skip the marketing chrome but keep the booking modal, so
+        // in-portal "Book a presentation" buttons open it without leaving.
+        <BookingModalProvider
+          presentations={presentations}
+          regions={regions}
+          availabilityConfig={availabilityConfig}
+          action={bookingAction}
+        >
+          <div className="relative z-10 flex-1">{children}</div>
+        </BookingModalProvider>
       ) : (
         <AuthModalProvider
           regions={regions}
