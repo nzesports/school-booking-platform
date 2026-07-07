@@ -34,6 +34,7 @@ const bookingSchema = z.object({
 
 const footerSubscribeSchema = z.object({
   email: z.string().trim().email(),
+  startedAt: z.coerce.number().int().positive(),
   returnTo: z.string().min(1).default("/#contact")
 });
 
@@ -111,11 +112,16 @@ export async function subscribeFooterAction(formData: FormData) {
 
   const parsed = footerSubscribeSchema.safeParse({
     email: String(formData.get("email") || ""),
+    startedAt: String(formData.get("startedAt") || ""),
     returnTo
   });
 
   if (!parsed.success) {
     redirect(appendSearchParam(returnTo, "error", "invalid-email"));
+  }
+
+  if (Date.now() - parsed.data.startedAt < 800) {
+    redirect(appendSearchParam(returnTo, "error", "subscribe-too-fast"));
   }
 
   const result = await addContactToTeachersList({

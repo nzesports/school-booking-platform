@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 
 import type { SignupFormState } from "@/app/auth/actions";
@@ -14,6 +15,40 @@ import { cn } from "@/lib/utils";
 
 const portalPrefixes = ["/school", "/ambassador", "/staff", "/admin"];
 const authPrefixes = ["/signup", "/login", "/forgot-password", "/reset-password"];
+
+type SubscribeFeedback = "success" | "invalid" | "failed" | "blocked" | undefined;
+
+function subscribeToUrlChange(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  window.addEventListener("hashchange", onChange);
+
+  return () => {
+    window.removeEventListener("popstate", onChange);
+    window.removeEventListener("hashchange", onChange);
+  };
+}
+
+function subscribeFeedbackFromSearch(search: string): SubscribeFeedback {
+  const searchParams = new URLSearchParams(search);
+
+  if (searchParams.get("subscribed") === "1") {
+    return "success";
+  }
+
+  if (searchParams.get("error") === "invalid-email") {
+    return "invalid";
+  }
+
+  if (searchParams.get("error") === "subscribe-failed") {
+    return "failed";
+  }
+
+  if (searchParams.get("error") === "subscribe-too-fast") {
+    return "blocked";
+  }
+
+  return undefined;
+}
 
 export function AppChrome({
   children,
@@ -44,9 +79,15 @@ export function AppChrome({
   authEnabled: boolean;
 }) {
   const pathname = usePathname();
+  const currentSearch = useSyncExternalStore(
+    subscribeToUrlChange,
+    () => window.location.search,
+    () => ""
+  );
   const isPortalRoute = portalPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isAuthRoute = authPrefixes.some((prefix) => pathname.startsWith(prefix));
   const footerReturnTo = `${pathname || "/"}#contact`;
+  const subscribeFeedback = subscribeFeedbackFromSearch(currentSearch);
 
   return (
     <div
@@ -87,6 +128,7 @@ export function AppChrome({
               compact={isAuthRoute}
               subscribeAction={subscribeAction}
               returnTo={footerReturnTo}
+              subscribeFeedback={subscribeFeedback}
             />
           </BookingModalProvider>
         </AuthModalProvider>

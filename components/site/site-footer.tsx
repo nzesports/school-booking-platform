@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, Instagram, Linkedin, Mail, Youtube } from "lucide-react";
+import { useRef } from "react";
 
 import { BrandLockup } from "@/components/site/brand-lockup";
 import { Button } from "@/components/ui/button";
@@ -8,12 +11,15 @@ import { cn } from "@/lib/utils";
 export function SiteFooter({
   compact = false,
   subscribeAction,
-  returnTo = "/#contact"
+  returnTo = "/#contact",
+  subscribeFeedback
 }: {
   compact?: boolean;
   subscribeAction: (formData: FormData) => void | Promise<void>;
   returnTo?: string;
+  subscribeFeedback?: "success" | "invalid" | "failed" | "blocked";
 }) {
+  const formStartedAtRef = useRef<HTMLInputElement>(null);
   const socialLinks = [
     {
       href: "https://instagram.com/esports_nz",
@@ -36,6 +42,26 @@ export function SiteFooter({
       icon: Mail
     }
   ];
+  const subscribeMessage =
+    subscribeFeedback === "success"
+      ? "Thanks, you're on the list."
+      : subscribeFeedback === "invalid"
+        ? "Please enter a valid email address."
+        : subscribeFeedback === "blocked"
+          ? "Please wait a moment, then try again."
+          : subscribeFeedback === "failed"
+            ? "Sorry, we couldn't add that email. Please try again."
+            : null;
+  const subscribeMessageClass =
+    subscribeFeedback === "success" ? "text-[#117a2e]" : "text-[#b3372e]";
+
+  function markFormStarted() {
+    const field = formStartedAtRef.current;
+
+    if (field && !field.value) {
+      field.value = Date.now().toString();
+    }
+  }
 
   return (
     <footer
@@ -123,9 +149,12 @@ export function SiteFooter({
           </p>
           <form
             action={subscribeAction}
+            onFocusCapture={markFormStarted}
+            onPointerEnter={markFormStarted}
             className="mt-5 flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/82 p-2"
           >
             <input type="hidden" name="returnTo" value={returnTo} />
+            <input ref={formStartedAtRef} type="hidden" name="startedAt" />
             <input
               className="hidden"
               name="website2"
@@ -145,6 +174,15 @@ export function SiteFooter({
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
+          {subscribeMessage ? (
+            <p
+              className={cn("mt-3 text-sm font-semibold", subscribeMessageClass)}
+              role="status"
+              aria-live="polite"
+            >
+              {subscribeMessage}
+            </p>
+          ) : null}
         </div>
       </div>
 
