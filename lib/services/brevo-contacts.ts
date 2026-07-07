@@ -30,6 +30,7 @@ export async function addContactToTeachersList(opts: {
   email: string;
   name?: string;
   schoolName?: string;
+  source?: string;
 }) {
   if (!config.isBrevoConfigured || !opts.email) {
     return { status: "skipped" as const };
@@ -51,7 +52,7 @@ export async function addContactToTeachersList(opts: {
       attributes: {
         ...(firstName ? { FIRSTNAME: firstName } : {}),
         ...(rest.length > 0 ? { LASTNAME: rest.join(" ") } : {}),
-        SOURCE: "Booking platform",
+        SOURCE: opts.source ?? "Booking platform",
         ...(opts.schoolName ? { SCHOOL: opts.schoolName } : {})
       }
     })

@@ -21,6 +21,7 @@ export function AppChrome({
   regions,
   availabilityConfig,
   bookingAction,
+  subscribeAction,
   loginAction,
   registerSchoolAction,
   registerAmbassadorAction,
@@ -32,6 +33,7 @@ export function AppChrome({
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
   bookingAction: (formData: FormData) => void | Promise<void>;
+  subscribeAction: (formData: FormData) => void | Promise<void>;
   loginAction: (formData: FormData) => void | Promise<void>;
   registerSchoolAction: (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;
   registerAmbassadorAction: (
@@ -44,6 +46,7 @@ export function AppChrome({
   const pathname = usePathname();
   const isPortalRoute = portalPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isAuthRoute = authPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const footerReturnTo = `${pathname || "/"}#contact`;
 
   return (
     <div
@@ -80,7 +83,11 @@ export function AppChrome({
           >
             <SiteHeader />
             <div className="relative z-10">{children}</div>
-            <SiteFooter compact={isAuthRoute} />
+            <SiteFooter
+              compact={isAuthRoute}
+              subscribeAction={subscribeAction}
+              returnTo={footerReturnTo}
+            />
           </BookingModalProvider>
         </AuthModalProvider>
       )}

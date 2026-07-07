@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
+import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { submitBookingRequest } from "@/lib/services/bookings";
 
 const bookingSchema = z.object({
@@ -30,6 +31,24 @@ const bookingSchema = z.object({
     .min(1)
     .max(5)
 });
+
+const footerSubscribeSchema = z.object({
+  email: z.string().trim().email(),
+  returnTo: z.string().min(1).default("/#contact")
+});
+
+function appendSearchParam(path: string, key: string, value: string) {
+  const [base, hash] = path.split("#");
+  const suffix = hash ? `#${hash}` : "";
+
+  return `${base}${base.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}${suffix}`;
+}
+
+function sanitizeReturnTo(path: string) {
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")
+    ? path
+    : "/#contact";
+}
 
 export async function submitBookingRequestAction(formData: FormData) {
   if (String(formData.get("website2") || "").trim()) {
@@ -81,4 +100,32 @@ export async function submitBookingRequestAction(formData: FormData) {
   updateTag(PLATFORM_DATA_TAG);
   revalidatePath("/staff");
   redirect(`/booking/confirmation/${booking.id}`);
+}
+
+export async function subscribeFooterAction(formData: FormData) {
+  const returnTo = sanitizeReturnTo(String(formData.get("returnTo") || "/#contact"));
+
+  if (String(formData.get("website2") || "").trim()) {
+    redirect(returnTo);
+  }
+
+  const parsed = footerSubscribeSchema.safeParse({
+    email: String(formData.get("email") || ""),
+    returnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-email"));
+  }
+
+  const result = await addContactToTeachersList({
+    email: parsed.data.email,
+    source: "Footer subscribe"
+  });
+
+  if (result.status === "failed") {
+    redirect(appendSearchParam(returnTo, "error", "subscribe-failed"));
+  }
+
+  redirect(appendSearchParam(parsed.data.returnTo, "subscribed", "1"));
 }

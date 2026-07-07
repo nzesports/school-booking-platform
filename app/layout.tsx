@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Lilita_One, Quicksand, Rozha_One } from "next/font/google";
 
-import { submitBookingRequestAction } from "@/app/actions";
+import { submitBookingRequestAction, subscribeFooterAction } from "@/app/actions";
 import {
   forgotPasswordAction,
   loginWithPasswordAction,
@@ -66,6 +66,7 @@ export default async function RootLayout({
           regions={regions}
           availabilityConfig={availabilityConfig}
           bookingAction={submitBookingRequestAction}
+          subscribeAction={subscribeFooterAction}
           loginAction={loginWithPasswordAction}
           registerSchoolAction={registerSchoolAccountAction}
           registerAmbassadorAction={registerAmbassadorAccountAction}

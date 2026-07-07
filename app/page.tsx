@@ -300,7 +300,7 @@ export default async function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </BookPresentationButton>
               <ButtonLink
-                href="/#contact"
+                href="mailto:schools@esf.nz"
                 variant="secondary"
                 className="min-h-[46px] rounded-[16px] border-[rgba(20,146,56,0.4)] bg-transparent px-5 py-2.5 text-[#117a2e] shadow-none hover:bg-[rgba(24,168,59,0.06)]"
               >

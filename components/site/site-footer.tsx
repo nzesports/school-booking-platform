@@ -5,7 +5,15 @@ import { BrandLockup } from "@/components/site/brand-lockup";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export function SiteFooter({ compact = false }: { compact?: boolean }) {
+export function SiteFooter({
+  compact = false,
+  subscribeAction,
+  returnTo = "/#contact"
+}: {
+  compact?: boolean;
+  subscribeAction: (formData: FormData) => void | Promise<void>;
+  returnTo?: string;
+}) {
   const socialLinks = [
     {
       href: "https://instagram.com/esports_nz",
@@ -90,7 +98,7 @@ export function SiteFooter({ compact = false }: { compact?: boolean }) {
             <Link href="/#how-it-works">How It Works</Link>
             <Link href="/#regions">Regions</Link>
             <Link href="/#about">About Us</Link>
-            <Link href="/#contact">Contact</Link>
+            <a href="mailto:schools@esf.nz">Contact</a>
           </div>
         </div>
 
@@ -113,16 +121,30 @@ export function SiteFooter({ compact = false }: { compact?: boolean }) {
           <p className="mt-4 text-sm leading-7 text-[color:var(--text-soft)]">
             Get updates, resources, and esports news straight to your inbox.
           </p>
-          <div className="mt-5 flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/82 p-2">
+          <form
+            action={subscribeAction}
+            className="mt-5 flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/82 p-2"
+          >
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input
+              className="hidden"
+              name="website2"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+            />
+            <input
+              name="email"
               type="email"
               placeholder="Enter your email"
+              required
+              autoComplete="email"
               className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-[color:var(--text-soft)]"
             />
-            <Button type="button" className="h-11 min-h-[44px] w-11 rounded-[14px] px-0 py-0">
+            <Button type="submit" className="h-11 min-h-[44px] w-11 rounded-[14px] px-0 py-0">
               <ArrowRight className="h-4 w-4" />
             </Button>
-          </div>
+          </form>
         </div>
       </div>
 
