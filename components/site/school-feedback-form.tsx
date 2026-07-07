@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   CalendarDays,
+  Check,
   MessageSquare,
   MessageSquarePlus,
   Send,
@@ -240,16 +241,17 @@ function FeedbackSection({
 
 function YesNoField({ name }: { name: string }) {
   return (
-    <div className="grid max-w-[430px] grid-cols-2 overflow-hidden rounded-[13px] border border-[color:var(--border-soft)] bg-white/92 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)]">
+    <div className="grid max-w-[520px] grid-cols-2 gap-1 rounded-[18px] border border-[color:var(--border-soft)] bg-[#f8fbff] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7)]">
       {["yes", "no"].map((value, index) => (
         <label key={value} className="cursor-pointer">
           <input type="radio" name={name} value={value} required className="peer sr-only" />
           <span
             className={cn(
-              "flex min-h-[44px] items-center justify-center text-sm font-semibold text-[color:var(--navy)] transition peer-checked:bg-[rgba(24,168,59,0.09)] peer-checked:text-[color:var(--green)]",
-              index === 0 ? "border-r border-[color:var(--border-soft)]" : ""
+              "flex min-h-[54px] items-center justify-center gap-2 rounded-[14px] text-sm font-semibold text-[color:var(--navy)] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[rgba(24,168,59,0.16)] peer-checked:bg-[rgba(24,168,59,0.12)] peer-checked:text-[color:var(--green)] peer-checked:shadow-[inset_0_0_0_1px_rgba(24,168,59,0.24),0_8px_20px_rgba(24,168,59,0.08)] peer-checked:[&_.yes-no-check]:opacity-100",
+              index === 0 ? "border-r border-transparent" : ""
             )}
           >
+            <Check className="yes-no-check h-4 w-4 opacity-0 transition" />
             {value === "yes" ? "Yes" : "No"}
           </span>
         </label>

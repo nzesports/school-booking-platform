@@ -8,9 +8,12 @@ import { buildAuthConfirmUrl, requirePortalAccess } from "@/lib/services/auth";
 import { PLATFORM_DATA_TAG, PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
 import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
 import {
+  sendAmbassadorApprovedEmail,
   sendAmbassadorAssignedEmail,
+  sendAmbassadorWithdrawalResolvedEmail,
   sendBookingCancelledEmail,
   sendBookingConfirmedEmail,
+  sendBookingRescheduledEmail,
   sendFeedbackRequestEmail,
   sendInvoiceToFinanceEmail
 } from "@/lib/services/email-triggers";
@@ -19,8 +22,11 @@ import {
   generateInvoiceNumber,
   loadInvoiceDetails
 } from "@/lib/services/invoices";
+import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
+import { sendTransactionalEmail } from "@/lib/services/email";
+import { substituteSampleValues } from "@/lib/services/email-samples";
 import { notifyStaff, notifyUser } from "@/lib/services/notifications";
-import { sanitizeRichText } from "@/lib/services/sanitize";
+import { sanitizeEmailHtml, sanitizeRichText } from "@/lib/services/sanitize";
 import { uploadPrivateResourceFile, uploadPublicAsset } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -149,6 +155,25 @@ const sessionApplicationSchema = z.object({
   returnTo: z.string().min(1).default("/ambassador/open-bookings")
 });
 
+const applicationWithdrawSchema = z.object({
+  bookingSessionId: z.uuid(),
+  reason: z.string().trim().min(5).max(2000),
+  returnTo: z.string().min(1).default("/ambassador/open-bookings")
+});
+
+const sessionWithdrawalRequestSchema = z.object({
+  bookingSessionId: z.uuid(),
+  reason: z.string().trim().min(5).max(2000),
+  returnTo: z.string().min(1).default("/ambassador/upcoming")
+});
+
+const sessionWithdrawalResolveSchema = z.object({
+  bookingSessionId: z.uuid(),
+  decision: z.enum(["approve", "decline"]),
+  note: z.string().trim().max(2000).optional(),
+  returnTo: z.string().min(1).default("/staff/bookings")
+});
+
 const schoolReviewSchema = z.object({
   bookingSessionId: z.uuid(),
   attribution: z.string().trim().min(2),
@@ -207,6 +232,12 @@ const updateBookingStatusSchema = z.object({
   returnTo: z.string().min(1)
 });
 
+const removeBookingInternalNoteSchema = z.object({
+  bookingRequestId: z.uuid(),
+  noteIndex: z.coerce.number().int().nonnegative(),
+  returnTo: z.string().min(1)
+});
+
 const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] }>> = {
   confirmed: {
     to: "confirmed",
@@ -235,6 +266,7 @@ const resourceSchema = z.object({
   audiences: z.array(z.enum(["school", "ambassador", "staff"])).min(1),
   tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   resourceType: z.string().min(1),
+  category: z.enum(["resource", "training", "presentation_material"]).default("resource"),
   presentationTypeId: z.string().optional(),
   versionLabel: z.string().optional(),
   youtubeUrl: z.string().optional(),
@@ -831,6 +863,29 @@ export async function reviewAmbassadorAction(formData: FormData) {
     .eq("related_url", `/staff/ambassadors/${parsed.data.ambassadorProfileId}`)
     .is("resolved_at", null);
 
+  // Let the ambassador know their portal access is unlocked.
+  if (parsed.data.status === "approved") {
+    const { data: approvedProfile } = await admin
+      .from("ambassador_profiles")
+      .select("user_id")
+      .eq("id", parsed.data.ambassadorProfileId)
+      .maybeSingle();
+    const { data: approvedUser } = approvedProfile?.user_id
+      ? await admin
+          .from("profiles")
+          .select("email, full_name")
+          .eq("id", approvedProfile.user_id)
+          .maybeSingle()
+      : { data: null };
+
+    if (approvedUser?.email) {
+      void sendAmbassadorApprovedEmail({
+        ambassadorEmail: approvedUser.email as string,
+        ambassadorName: (approvedUser.full_name as string | null) ?? "there"
+      }).catch(() => {});
+    }
+  }
+
   await logAuditEvent(
     actor.id,
     parsed.data.status === "approved"
@@ -1364,21 +1419,32 @@ export async function applyToSessionAction(formData: FormData) {
 
   const { data: existing } = await admin
     .from("booking_session_applications")
-    .select("id")
+    .select("id, status")
     .eq("booking_session_id", parsed.data.bookingSessionId)
     .eq("ambassador_profile_id", ambassadorProfile.id)
     .maybeSingle();
 
-  if (existing) {
+  if (existing && existing.status !== "withdrawn") {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "already-applied"));
   }
 
-  const { error } = await admin.from("booking_session_applications").insert({
-    booking_session_id: parsed.data.bookingSessionId,
-    ambassador_profile_id: ambassadorProfile.id,
-    status: "applied",
-    message: parsed.data.message || null
-  });
+  const { error } = existing
+    ? await admin
+        .from("booking_session_applications")
+        .update({
+          status: "applied",
+          message: parsed.data.message || null,
+          applied_at: new Date().toISOString(),
+          reviewed_at: null,
+          reviewed_by: null
+        })
+        .eq("id", existing.id)
+    : await admin.from("booking_session_applications").insert({
+        booking_session_id: parsed.data.bookingSessionId,
+        ambassador_profile_id: ambassadorProfile.id,
+        status: "applied",
+        message: parsed.data.message || null
+      });
 
   if (error) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "application-failed"));
@@ -1402,6 +1468,253 @@ export async function applyToSessionAction(formData: FormData) {
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   redirect(appendSearchParam(parsed.data.returnTo, "applied", "1"));
+}
+
+export async function withdrawApplicationAction(formData: FormData) {
+  const actor = await requirePortalAccess("ambassador");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/ambassador/open-bookings"),
+    "/ambassador/open-bookings"
+  );
+  const parsed = applicationWithdrawSchema.safeParse({
+    bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    reason: String(formData.get("reason") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-withdrawal"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassadorProfile } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("user_id", actor.id)
+    .maybeSingle();
+
+  if (!ambassadorProfile) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const { data: application, error: applicationError } = await admin
+    .from("booking_session_applications")
+    .update({
+      status: "withdrawn",
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: actor.id
+    })
+    .eq("booking_session_id", parsed.data.bookingSessionId)
+    .eq("ambassador_profile_id", ambassadorProfile.id)
+    .eq("status", "applied")
+    .select("id")
+    .maybeSingle();
+
+  if (applicationError || !application) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "application-not-found"));
+  }
+
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, booking_request_id, status, school_id, presentation_type_id, assigned_ambassador_id")
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  const { count: remainingApplications } = await admin
+    .from("booking_session_applications")
+    .select("id", { count: "exact", head: true })
+    .eq("booking_session_id", parsed.data.bookingSessionId)
+    .eq("status", "applied");
+
+  if (
+    session &&
+    !session.assigned_ambassador_id &&
+    (remainingApplications ?? 0) === 0 &&
+    ["ambassador_applied", "confirmed", "tentative"].includes(session.status as string)
+  ) {
+    const { data: reopenedSession } = await admin
+      .from("booking_sessions")
+      .update({ status: "ambassador_needed" })
+      .eq("id", parsed.data.bookingSessionId)
+      .in("status", ["ambassador_applied", "confirmed", "tentative"])
+      .select("id")
+      .maybeSingle();
+
+    if (reopenedSession) {
+      await admin.from("booking_status_history").insert({
+        booking_request_id: session.booking_request_id,
+        booking_session_id: parsed.data.bookingSessionId,
+        old_status: session.status,
+        new_status: "ambassador_needed",
+        changed_by: actor.id,
+        reason: "Last ambassador application was withdrawn"
+      });
+    }
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session?.booking_request_id ?? null,
+    booking_session_id: parsed.data.bookingSessionId,
+    action: "session.application_withdrawn",
+    actor_id: actor.id,
+    actor_type: "ambassador",
+    details: {
+      ambassador_profile_id: ambassadorProfile.id,
+      reason: parsed.data.reason,
+      remaining_applications: remainingApplications ?? 0
+    }
+  });
+
+  const [{ data: school }, { data: presentation }] = await Promise.all([
+    session?.school_id
+      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    session?.presentation_type_id
+      ? admin
+          .from("presentation_types")
+          .select("title")
+          .eq("id", session.presentation_type_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
+
+  void notifyStaff({
+    title: `${actor.fullName} withdrew an application`,
+    body: `${actor.fullName} withdrew from ${(presentation?.title as string | null) ?? "a session"} at ${(school?.name as string | null) ?? "a school"}. Reason: ${parsed.data.reason}`,
+    type: "session_application_withdrawn",
+    relatedUrl: session?.booking_request_id
+      ? `/staff/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`
+      : "/staff/bookings"
+  }).catch(() => {});
+
+  await logAuditEvent(actor.id, "session.application_withdrawn", "booking_session", parsed.data.bookingSessionId);
+  revalidatePath("/ambassador");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/school");
+  redirect(appendSearchParam(parsed.data.returnTo, "withdrawn", "application"));
+}
+
+export async function requestSessionWithdrawalAction(formData: FormData) {
+  const actor = await requirePortalAccess("ambassador");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/ambassador/upcoming"),
+    "/ambassador/upcoming"
+  );
+  const parsed = sessionWithdrawalRequestSchema.safeParse({
+    bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    reason: String(formData.get("reason") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-withdrawal"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassadorProfile } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("user_id", actor.id)
+    .maybeSingle();
+
+  if (!ambassadorProfile) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select(
+      "id, booking_request_id, assigned_ambassador_id, status, starts_at, school_id, presentation_type_id, withdrawal_requested_at"
+    )
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  if (!session || session.assigned_ambassador_id !== ambassadorProfile.id) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "not-your-session"));
+  }
+
+  if (new Date(session.starts_at as string).getTime() <= Date.now()) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-already-started"));
+  }
+
+  if (session.status === "withdrawal_requested" || session.withdrawal_requested_at) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-already-requested"));
+  }
+
+  if (!["ambassador_assigned", "confirmed"].includes(session.status as string)) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-not-allowed"));
+  }
+
+  const requestedAt = new Date().toISOString();
+  const priorStatus = session.status as string;
+  const { data: updatedSession, error } = await admin
+    .from("booking_sessions")
+    .update({
+      status: "withdrawal_requested",
+      withdrawal_reason: parsed.data.reason,
+      withdrawal_requested_at: requestedAt
+    })
+    .eq("id", parsed.data.bookingSessionId)
+    .eq("assigned_ambassador_id", ambassadorProfile.id)
+    .in("status", ["ambassador_assigned", "confirmed"])
+    .select("id")
+    .maybeSingle();
+
+  if (error || !updatedSession) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-not-allowed"));
+  }
+
+  await admin.from("booking_status_history").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.bookingSessionId,
+    old_status: priorStatus,
+    new_status: "withdrawal_requested",
+    changed_by: actor.id,
+    reason: parsed.data.reason
+  });
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.bookingSessionId,
+    action: "session.withdrawal_requested",
+    actor_id: actor.id,
+    actor_type: "ambassador",
+    details: {
+      reason: parsed.data.reason,
+      prior_status: priorStatus,
+      ambassador_profile_id: ambassadorProfile.id
+    }
+  });
+
+  const [{ data: school }, { data: presentation }] = await Promise.all([
+    session.school_id
+      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    session.presentation_type_id
+      ? admin
+          .from("presentation_types")
+          .select("title")
+          .eq("id", session.presentation_type_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
+
+  void notifyStaff({
+    title: `${actor.fullName} asked to withdraw`,
+    body: `${(presentation?.title as string | null) ?? "Session"} at ${(school?.name as string | null) ?? "a school"}: ${parsed.data.reason}`,
+    type: "session_withdrawal_requested",
+    relatedUrl: session.booking_request_id
+      ? `/staff/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`
+      : "/staff/bookings"
+  }).catch(() => {});
+
+  await logAuditEvent(actor.id, "session.withdrawal_requested", "booking_session", parsed.data.bookingSessionId);
+  revalidatePath("/ambassador");
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/school");
+  redirect(appendSearchParam(parsed.data.returnTo, "requested", "withdrawal"));
 }
 
 function parseSchoolReviewForm(formData: FormData, fallbackReturnTo: string) {
@@ -1431,13 +1744,16 @@ async function insertSchoolReview(
   parsedData: z.infer<typeof schoolReviewSchema>,
   session: { school_id: unknown; presentation_type_id: unknown }
 ) {
-  const overallRating = Math.round(
-    (parsedData.attendanceRating +
-      parsedData.studentResponseRating +
-      parsedData.contentRating +
-      parsedData.presenterEnergyRating) /
-      4
-  );
+  // One-decimal precision: 5,4,5,4 stores as 4.5, not a rounded-up 5.
+  const overallRating =
+    Math.round(
+      ((parsedData.attendanceRating +
+        parsedData.studentResponseRating +
+        parsedData.contentRating +
+        parsedData.presenterEnergyRating) /
+        4) *
+        10
+    ) / 10;
   const basePayload = {
     booking_session_id: parsedData.bookingSessionId,
     presentation_type_id: session.presentation_type_id,
@@ -1538,6 +1854,20 @@ export async function submitSchoolReviewAction(formData: FormData) {
     relatedUrl: "/admin/feedback"
   }).catch(() => {});
 
+  if (parsed.data.mailingListOptIn === "yes") {
+    const { data: reviewSchool } = await admin
+      .from("schools")
+      .select("name")
+      .eq("id", session.school_id)
+      .maybeSingle();
+
+    void addContactToTeachersList({
+      email: actor.email,
+      name: actor.fullName,
+      schoolName: (reviewSchool?.name as string | null) ?? undefined
+    }).catch(() => {});
+  }
+
   await logAuditEvent(actor.id, "review.submitted", "presentation_review", review.id);
   revalidatePath("/school");
   revalidatePath("/staff");
@@ -1600,6 +1930,30 @@ export async function submitPublicFeedbackAction(formData: FormData) {
     relatedUrl: "/admin/feedback"
   }).catch(() => {});
 
+  // Public form has no login — the opt-in goes to the school's primary contact
+  // (the teacher the feedback email was sent to).
+  if (parsed.data.mailingListOptIn === "yes") {
+    const [{ data: reviewSchool }, { data: primaryContact }] = await Promise.all([
+      admin.from("schools").select("name").eq("id", session.school_id).maybeSingle(),
+      admin
+        .from("school_contacts")
+        .select("full_name, email")
+        .eq("school_id", session.school_id)
+        .order("is_primary", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ]);
+
+    if (primaryContact?.email) {
+      void addContactToTeachersList({
+        email: primaryContact.email as string,
+        name:
+          (primaryContact.full_name as string | null) ?? parsed.data.attribution,
+        schoolName: (reviewSchool?.name as string | null) ?? undefined
+      }).catch(() => {});
+    }
+  }
+
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(appendSearchParam(parsed.data.returnTo, "submitted", "1"));
@@ -1616,6 +1970,62 @@ const schoolProfileSchema = z.object({
   contactPhone: z.string().trim().max(40).optional(),
   profileNotes: z.string().trim().max(2000).optional()
 });
+
+const portalProfileSchema = z.object({
+  fullName: z.string().trim().min(2),
+  phone: z.string().trim().max(40).optional(),
+  returnTo: z.string().min(1).default("/staff/profile")
+});
+
+export async function savePortalProfileAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || (actor.role === "super_admin" ? "/admin/profile" : "/staff/profile")),
+    actor.role === "super_admin" ? "/admin/profile" : "/staff/profile"
+  );
+  const parsed = portalProfileSchema.safeParse({
+    fullName: String(formData.get("fullName") || ""),
+    phone: String(formData.get("phone") || "") || undefined,
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-profile"));
+  }
+
+  const avatarFile = formData.get("avatar");
+  let avatarUrl: string | null = null;
+
+  if (avatarFile instanceof File && avatarFile.size > 0) {
+    try {
+      const upload = await uploadPublicAsset(avatarFile, "avatars");
+      avatarUrl = upload.publicUrl;
+    } catch {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "avatar-upload-failed"));
+    }
+  }
+
+  const payload: Record<string, unknown> = {
+    full_name: parsed.data.fullName,
+    phone: parsed.data.phone ?? null
+  };
+
+  if (avatarUrl) {
+    payload.avatar_url = avatarUrl;
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { error } = await admin.from("profiles").update(payload).eq("id", actor.id);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "profile-save-failed"));
+  }
+
+  await logAuditEvent(actor.id, "profile.updated", "profile", actor.id);
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "saved", "profile"));
+}
 
 // School-managed profile: details, primary contact info, logo, and notes for
 // the delivery team. Surfaced on the staff/admin Schools tab.
@@ -1882,6 +2292,171 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "requested", parsed.data.intent));
 }
 
+export async function resolveSessionWithdrawalAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/bookings"),
+    "/staff/bookings"
+  );
+  const parsed = sessionWithdrawalResolveSchema.safeParse({
+    bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    decision: String(formData.get("decision") || ""),
+    note: String(formData.get("note") || "") || undefined,
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-withdrawal-resolution"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select(
+      "id, booking_request_id, assigned_ambassador_id, status, starts_at, school_id, presentation_type_id, withdrawal_reason"
+    )
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  if (!session || session.status !== "withdrawal_requested") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "no-withdrawal-pending"));
+  }
+
+  const { data: latestWithdrawalHistory } = await admin
+    .from("booking_status_history")
+    .select("old_status")
+    .eq("booking_session_id", parsed.data.bookingSessionId)
+    .eq("new_status", "withdrawal_requested")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const priorStatus =
+    typeof latestWithdrawalHistory?.old_status === "string" &&
+    ["ambassador_assigned", "confirmed"].includes(latestWithdrawalHistory.old_status)
+      ? latestWithdrawalHistory.old_status
+      : "ambassador_assigned";
+  const assignedAmbassadorId = session.assigned_ambassador_id as string | null;
+  const [{ data: ambassadorProfile }, { data: school }, { data: presentation }] = await Promise.all([
+    assignedAmbassadorId
+      ? admin
+          .from("ambassador_profiles")
+          .select("id, user_id")
+          .eq("id", assignedAmbassadorId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    session.school_id
+      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    session.presentation_type_id
+      ? admin
+          .from("presentation_types")
+          .select("title")
+          .eq("id", session.presentation_type_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
+  const { data: ambassadorUser } = ambassadorProfile?.user_id
+    ? await admin
+        .from("profiles")
+        .select("email, full_name")
+        .eq("id", ambassadorProfile.user_id)
+        .maybeSingle()
+    : { data: null };
+
+  const approved = parsed.data.decision === "approve";
+  const nextStatus = approved ? "ambassador_needed" : priorStatus;
+  const { data: updatedSession, error: updateError } = await admin
+    .from("booking_sessions")
+    .update({
+      status: nextStatus,
+      assigned_ambassador_id: approved ? null : assignedAmbassadorId,
+      withdrawal_reason: null,
+      withdrawal_requested_at: null
+    })
+    .eq("id", parsed.data.bookingSessionId)
+    .eq("status", "withdrawal_requested")
+    .select("id")
+    .maybeSingle();
+
+  if (updateError || !updatedSession) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "no-withdrawal-pending"));
+  }
+
+  if (approved && assignedAmbassadorId) {
+    await admin
+      .from("booking_session_applications")
+      .update({
+        status: "withdrawn",
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: actor.id
+      })
+      .eq("booking_session_id", parsed.data.bookingSessionId)
+      .eq("ambassador_profile_id", assignedAmbassadorId);
+  }
+
+  await admin.from("booking_status_history").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.bookingSessionId,
+    old_status: "withdrawal_requested",
+    new_status: nextStatus,
+    changed_by: actor.id,
+    reason:
+      parsed.data.note ||
+      (approved ? "Withdrawal approved by staff" : "Withdrawal declined by staff")
+  });
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.bookingSessionId,
+    action: approved ? "session.withdrawal_approved" : "session.withdrawal_declined",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: {
+      ambassador_profile_id: assignedAmbassadorId,
+      original_reason: session.withdrawal_reason,
+      note: parsed.data.note ?? null,
+      restored_status: approved ? null : priorStatus
+    }
+  });
+
+  if (ambassadorProfile?.user_id) {
+    void notifyUser(ambassadorProfile.user_id as string, {
+      title: approved ? "Withdrawal approved" : "Withdrawal declined",
+      body: approved
+        ? `${(presentation?.title as string | null) ?? "Your session"} has been reopened for another ambassador.`
+        : `You remain assigned to ${(presentation?.title as string | null) ?? "the session"}.${parsed.data.note ? ` Note from staff: ${parsed.data.note}` : ""}`,
+      type: approved ? "session_withdrawal_approved" : "session_withdrawal_declined",
+      relatedUrl: approved ? "/ambassador/open-bookings" : "/ambassador/upcoming"
+    }).catch(() => {});
+  }
+
+  if (ambassadorUser?.email) {
+    void sendAmbassadorWithdrawalResolvedEmail({
+      ambassadorEmail: ambassadorUser.email as string,
+      ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
+      schoolName: (school?.name as string | null) ?? "School",
+      sessionDate: formatDateTime(session.starts_at as string),
+      presentationTitle: (presentation?.title as string | null) ?? "Presentation",
+      decision: approved ? "approved" : "declined",
+      staffNote: parsed.data.note,
+      bookingSessionId: parsed.data.bookingSessionId
+    }).catch(() => {});
+  }
+
+  await logAuditEvent(
+    actor.id,
+    approved ? "session.withdrawal_approved" : "session.withdrawal_declined",
+    "booking_session",
+    parsed.data.bookingSessionId
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/ambassador");
+  revalidatePath("/school");
+  redirect(appendSearchParam(parsed.data.returnTo, "withdrawal", approved ? "approved" : "declined"));
+}
+
 export async function assignAmbassadorAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -1899,15 +2474,62 @@ export async function assignAmbassadorAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { error } = await admin
+  const { data: currentSession } = await admin
+    .from("booking_sessions")
+    .select(
+      "id, booking_request_id, status, assigned_ambassador_id, starts_at, ends_at, school_id, presentation_type_id"
+    )
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
+
+  if (!currentSession) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+  }
+
+  const previousAmbassadorId = (currentSession.assigned_ambassador_id as string | null) ?? null;
+  const replacingPendingWithdrawal =
+    currentSession.status === "withdrawal_requested" &&
+    previousAmbassadorId &&
+    previousAmbassadorId !== parsed.data.ambassadorProfileId;
+  const { data: appliedApplications } = await admin
+    .from("booking_session_applications")
+    .select("ambassador_profile_id")
+    .eq("booking_session_id", parsed.data.bookingSessionId)
+    .eq("status", "applied")
+    .neq("ambassador_profile_id", parsed.data.ambassadorProfileId);
+  const declinedApplicantIds = [
+    ...new Set((appliedApplications ?? []).map((application) => application.ambassador_profile_id as string))
+  ];
+  const { data: declinedApplicantProfiles } = declinedApplicantIds.length
+    ? await admin
+        .from("ambassador_profiles")
+        .select("id, user_id")
+        .in("id", declinedApplicantIds)
+    : { data: [] };
+
+  const assignableStatuses = [
+    "tentative",
+    "ambassador_needed",
+    "ambassador_applied",
+    "ambassador_assigned",
+    "confirmed",
+    "withdrawal_requested",
+    "reschedule_requested"
+  ];
+  const { data: assignedSession, error } = await admin
     .from("booking_sessions")
     .update({
       assigned_ambassador_id: parsed.data.ambassadorProfileId,
-      status: "ambassador_assigned"
+      status: "ambassador_assigned",
+      withdrawal_reason: null,
+      withdrawal_requested_at: null
     })
-    .eq("id", parsed.data.bookingSessionId);
+    .eq("id", parsed.data.bookingSessionId)
+    .in("status", assignableStatuses)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  if (error || !assignedSession) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "assign-failed"));
   }
 
@@ -1929,10 +2551,25 @@ export async function assignAmbassadorAction(formData: FormData) {
       reviewed_by: actor.id
     })
     .eq("booking_session_id", parsed.data.bookingSessionId)
+    .eq("status", "applied")
     .neq("ambassador_profile_id", parsed.data.ambassadorProfileId);
 
+  if (replacingPendingWithdrawal && previousAmbassadorId) {
+    await admin
+      .from("booking_session_applications")
+      .update({
+        status: "withdrawn",
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: actor.id
+      })
+      .eq("booking_session_id", parsed.data.bookingSessionId)
+      .eq("ambassador_profile_id", previousAmbassadorId);
+  }
+
   await admin.from("booking_status_history").insert({
+    booking_request_id: currentSession.booking_request_id,
     booking_session_id: parsed.data.bookingSessionId,
+    old_status: currentSession.status,
     new_status: "ambassador_assigned",
     changed_by: actor.id,
     reason: "Ambassador manually assigned by staff"
@@ -1943,7 +2580,10 @@ export async function assignAmbassadorAction(formData: FormData) {
     action: "session.ambassador_assigned",
     actor_id: actor.id,
     actor_type: "staff",
-    details: { ambassador_profile_id: parsed.data.ambassadorProfileId }
+    details: {
+      ambassador_profile_id: parsed.data.ambassadorProfileId,
+      previous_ambassador_profile_id: previousAmbassadorId
+    }
   });
 
   const { data: session } = await admin
@@ -1969,6 +2609,13 @@ export async function assignAmbassadorAction(formData: FormData) {
         .eq("id", ambassadorProfile.user_id)
         .maybeSingle()
     : { data: null };
+  const { data: previousAmbassadorProfile } = replacingPendingWithdrawal && previousAmbassadorId
+    ? await admin
+        .from("ambassador_profiles")
+        .select("user_id")
+        .eq("id", previousAmbassadorId)
+        .maybeSingle()
+    : { data: null };
 
   if (session && school && presentation && ambassadorUser?.email) {
     void sendAmbassadorAssignedEmail({
@@ -1989,6 +2636,39 @@ export async function assignAmbassadorAction(formData: FormData) {
       schoolName: (school.name as string | null) ?? "School",
       schoolAddress: (school.address as string | null) ?? "",
       ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador"
+    }).catch(() => {});
+  }
+
+  if (ambassadorProfile?.user_id) {
+    void notifyUser(ambassadorProfile.user_id as string, {
+      title: `You've been assigned: ${(presentation?.title as string | null) ?? "Presentation"}`,
+      body: `${(school?.name as string | null) ?? "A school"} on ${session?.starts_at ? formatDateTime(session.starts_at as string) : "the scheduled date"}.`,
+      type: "session_assigned",
+      relatedUrl: "/ambassador/upcoming"
+    }).catch(() => {});
+  }
+
+  for (const declinedProfile of declinedApplicantProfiles ?? []) {
+    const userId = declinedProfile.user_id as string | null;
+
+    if (!userId) {
+      continue;
+    }
+
+    void notifyUser(userId, {
+      title: "Session filled",
+      body: `${(presentation?.title as string | null) ?? "This session"} at ${(school?.name as string | null) ?? "a school"} has been assigned to another ambassador.`,
+      type: "session_application_declined",
+      relatedUrl: "/ambassador/open-bookings"
+    }).catch(() => {});
+  }
+
+  if (previousAmbassadorProfile?.user_id) {
+    void notifyUser(previousAmbassadorProfile.user_id as string, {
+      title: "Withdrawal approved through reassignment",
+      body: `${(presentation?.title as string | null) ?? "Your session"} has been assigned to another ambassador.`,
+      type: "session_withdrawal_approved",
+      relatedUrl: "/ambassador/open-bookings"
     }).catch(() => {});
   }
 
@@ -2013,7 +2693,7 @@ export async function updateBookingStatusAction(formData: FormData) {
   const parsed = updateBookingStatusSchema.safeParse({
     bookingRequestId: String(formData.get("bookingRequestId") || ""),
     status: String(formData.get("status") || ""),
-    reason: String(formData.get("reason") || "") || undefined,
+    reason: String(formData.get("reason") || "").trim() || undefined,
     returnTo: fallbackReturnTo
   });
 
@@ -2024,7 +2704,7 @@ export async function updateBookingStatusAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: existingBooking } = await admin
     .from("booking_requests")
-    .select("id, status, school_id, primary_contact_id")
+    .select("id, status, school_id, primary_contact_id, internal_notes")
     .eq("id", parsed.data.bookingRequestId)
     .maybeSingle();
 
@@ -2051,9 +2731,18 @@ export async function updateBookingStatusAction(formData: FormData) {
     }
   }
 
+  const bookingUpdate: Record<string, string> = { status: parsed.data.status };
+
+  if (parsed.data.reason) {
+    const existingInternalNotes = String(existingBooking.internal_notes || "").trim();
+    bookingUpdate.internal_notes = existingInternalNotes
+      ? `${existingInternalNotes}\n${parsed.data.reason}`
+      : parsed.data.reason;
+  }
+
   const { error } = await admin
     .from("booking_requests")
-    .update({ status: parsed.data.status })
+    .update(bookingUpdate)
     .eq("id", parsed.data.bookingRequestId);
 
   if (error) {
@@ -2101,7 +2790,7 @@ export async function updateBookingStatusAction(formData: FormData) {
   ) {
     const { data: firstSession } = await admin
       .from("booking_sessions")
-      .select("id, starts_at, presentation_type_id")
+      .select("id, starts_at, ends_at, presentation_type_id")
       .eq("booking_request_id", parsed.data.bookingRequestId)
       .order("starts_at", { ascending: true })
       .limit(1)
@@ -2132,11 +2821,19 @@ export async function updateBookingStatusAction(formData: FormData) {
         sessionDate: formatDateTime(firstSession.starts_at as string),
         presentationTitle: (presentation?.title as string | null) ?? "your presentation",
         bookingId: parsed.data.bookingRequestId,
-        bookingSessionId: firstSession.id as string
+        bookingSessionId: firstSession.id as string,
+        // Raw timestamps feed the add-to-calendar links in confirm/reschedule emails.
+        sessionStartsAt: firstSession.starts_at as string,
+        sessionEndsAt: (firstSession.ends_at as string | null) ?? undefined
       };
 
       if (parsed.data.status === "confirmed") {
-        void sendBookingConfirmedEmail(emailPayload).catch(() => {});
+        // Re-confirming after a reschedule request gets its own wording.
+        if (existingBooking.status === "reschedule_requested") {
+          void sendBookingRescheduledEmail(emailPayload).catch(() => {});
+        } else {
+          void sendBookingConfirmedEmail(emailPayload).catch(() => {});
+        }
       }
 
       if (
@@ -2163,6 +2860,72 @@ export async function updateBookingStatusAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/school");
   redirect(appendSearchParam(parsed.data.returnTo, "updated", "status"));
+}
+
+export async function removeBookingInternalNoteAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/bookings"),
+    "/staff/bookings"
+  );
+  const parsed = removeBookingInternalNoteSchema.safeParse({
+    bookingRequestId: String(formData.get("bookingRequestId") || ""),
+    noteIndex: String(formData.get("noteIndex") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-note"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: booking } = await admin
+    .from("booking_requests")
+    .select("id, internal_notes")
+    .eq("id", parsed.data.bookingRequestId)
+    .maybeSingle();
+
+  if (!booking) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
+  }
+
+  const notes = String(booking.internal_notes || "")
+    .split(/\r?\n/)
+    .map((note) => note.trim())
+    .filter(Boolean);
+
+  if (parsed.data.noteIndex >= notes.length) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "note-not-found"));
+  }
+
+  notes.splice(parsed.data.noteIndex, 1);
+
+  const { error } = await admin
+    .from("booking_requests")
+    .update({ internal_notes: notes.length ? notes.join("\n") : null })
+    .eq("id", parsed.data.bookingRequestId);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "note-remove-failed"));
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: parsed.data.bookingRequestId,
+    action: "booking.internal_note_removed",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { noteIndex: parsed.data.noteIndex }
+  });
+
+  await logAuditEvent(
+    actor.id,
+    "booking.internal_note_removed",
+    "booking_request",
+    parsed.data.bookingRequestId
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "removed", "note"));
 }
 
 export async function markTrainingCompleteAction(formData: FormData) {
@@ -2236,6 +2999,7 @@ export async function saveResourceAction(formData: FormData) {
     audiences: formData.getAll("audiences").map(String),
     tags: splitCommaList(String(formData.get("tags") || "")),
     resourceType: String(formData.get("resourceType") || ""),
+    category: String(formData.get("category") || "resource"),
     presentationTypeId: String(formData.get("presentationTypeId") || "") || undefined,
     versionLabel: String(formData.get("versionLabel") || "") || undefined,
     youtubeUrl: String(formData.get("youtubeUrl") || "") || undefined,
@@ -2268,6 +3032,7 @@ export async function saveResourceAction(formData: FormData) {
     audiences: parsed.data.audiences,
     tags: parsed.data.tags,
     resource_type: parsed.data.resourceType,
+    category: parsed.data.category,
     presentation_type_id: parsed.data.presentationTypeId || null,
     version_label: parsed.data.versionLabel || null,
     youtube_url: parsed.data.youtubeUrl || null,
@@ -2284,16 +3049,25 @@ export async function saveResourceAction(formData: FormData) {
     payload.created_by = actor.id;
   }
 
-  const query = parsed.data.id
-    ? admin
-        .from("presentation_resources")
-        .update(payload)
-        .eq("id", parsed.data.id)
-        .select("id")
-        .single()
-    : admin.from("presentation_resources").insert(payload).select("id").single();
+  const runSave = (savePayload: Record<string, unknown>) =>
+    parsed.data.id
+      ? admin
+          .from("presentation_resources")
+          .update(savePayload)
+          .eq("id", parsed.data.id)
+          .select("id")
+          .single()
+      : admin.from("presentation_resources").insert(savePayload).select("id").single();
 
-  const { data, error } = await query;
+  let { data, error } = await runSave(payload);
+
+  // Environments that haven't run migration 0015 yet lack the category
+  // column — retry without it rather than failing the whole save.
+  if (error?.message?.includes("category")) {
+    const legacyPayload = { ...payload };
+    delete legacyPayload.category;
+    ({ data, error } = await runSave(legacyPayload));
+  }
 
   if (error) {
     redirect(`${parsed.data.returnTo}?error=resource-save-failed`);
@@ -2481,7 +3255,9 @@ export async function saveEmailTemplateAction(formData: FormData) {
     .from("email_templates")
     .update({
       subject: parsed.data.subject,
-      body_html: sanitizeRichText(parsed.data.bodyHtml),
+      // Email-specific sanitizer: keeps button/colour inline styles and hosted
+      // images (capped at 560px wide) while stripping anything unsafe.
+      body_html: sanitizeEmailHtml(parsed.data.bodyHtml),
       body_text: parsed.data.bodyText || null,
       is_active: parsed.data.isActive ?? false,
       updated_by: actor.id
@@ -2495,6 +3271,106 @@ export async function saveEmailTemplateAction(formData: FormData) {
   await logAuditEvent(actor.id, "email_template.updated", "email_template", parsed.data.id);
   revalidatePath("/admin");
   redirect("/admin/email-templates?saved=template");
+}
+
+const createEmailTemplateSchema = z.object({
+  name: z.string().trim().min(3).max(80),
+  subject: z.string().trim().min(3),
+  bodyHtml: z.string().min(3),
+  isActive: z.boolean().optional()
+});
+
+export async function createEmailTemplateAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const returnTo = "/admin/email-templates";
+  const parsed = createEmailTemplateSchema.safeParse({
+    name: String(formData.get("name") || ""),
+    subject: String(formData.get("subject") || ""),
+    bodyHtml: String(formData.get("bodyHtml") || ""),
+    isActive: formData.get("isActive") === "on"
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-template"));
+  }
+
+  const templateKey = slugify(parsed.data.name).replaceAll("-", "_");
+  const admin = getAdminClientOrThrow();
+  const { data: existing } = await admin
+    .from("email_templates")
+    .select("id")
+    .eq("template_key", templateKey)
+    .maybeSingle();
+
+  if (existing) {
+    redirect(appendSearchParam(returnTo, "error", "template-key-exists"));
+  }
+
+  const { data: created, error } = await admin
+    .from("email_templates")
+    .insert({
+      template_key: templateKey,
+      name: parsed.data.name,
+      subject: parsed.data.subject,
+      body_html: sanitizeEmailHtml(parsed.data.bodyHtml),
+      is_active: parsed.data.isActive ?? false,
+      updated_by: actor.id
+    })
+    .select("id")
+    .single();
+
+  if (error || !created) {
+    redirect(appendSearchParam(returnTo, "error", "template-save-failed"));
+  }
+
+  await logAuditEvent(actor.id, "email_template.created", "email_template", created.id);
+  revalidatePath("/admin");
+  redirect(appendSearchParam(returnTo, "saved", "template-created"));
+}
+
+// Sends the selected template to the logged-in super admin with sample values,
+// through the normal Brevo pipeline — so it exercises the branded layout,
+// delivery, and email_logs exactly like a real send.
+export async function sendTestEmailAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const templateKey = String(formData.get("templateKey") || "");
+  const returnTo = "/admin/email-templates";
+
+  if (!templateKey) {
+    redirect(appendSearchParam(returnTo, "error", "template-not-found"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: template } = await admin
+    .from("email_templates")
+    .select("subject, body_html")
+    .eq("template_key", templateKey)
+    .maybeSingle();
+
+  if (!template) {
+    redirect(appendSearchParam(returnTo, "error", "template-not-found"));
+  }
+
+  const result = await sendTransactionalEmail({
+    templateKey: `${templateKey}_test`,
+    recipientEmail: actor.email,
+    subject: `[Test] ${substituteSampleValues(template.subject as string)}`,
+    html: substituteSampleValues((template.body_html as string | null) ?? "<p>(empty template)</p>")
+  });
+
+  await logAuditEvent(actor.id, "email_template.test_sent", "email_template", templateKey);
+
+  if (result.status === "sent") {
+    redirect(appendSearchParam(returnTo, "saved", "test-sent"));
+  }
+
+  redirect(
+    appendSearchParam(
+      returnTo,
+      "error",
+      result.status === "skipped_unconfigured" ? "brevo-not-configured" : "test-failed"
+    )
+  );
 }
 
 export async function saveAmbassadorPaymentDetailsAction(formData: FormData) {
@@ -2822,12 +3698,33 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
     preferredTimes: String(formData.get("preferredTimes") || "").trim(),
     weeklyAvailability,
     unavailableDates: splitCommaList(String(formData.get("unavailableDates") || "")),
-    availabilityNote: String(formData.get("availabilityNote") || "").trim()
+      availabilityNote: String(formData.get("availabilityNote") || "").trim()
   };
+
+  const avatarFile = formData.get("avatar");
+  let avatarUrl: string | null = null;
+
+  if (avatarFile instanceof File && avatarFile.size > 0) {
+    try {
+      const upload = await uploadPublicAsset(avatarFile, "avatars");
+      avatarUrl = upload.publicUrl;
+    } catch {
+      redirect(appendSearchParam(returnTo, "error", "avatar-upload-failed"));
+    }
+  }
+
+  const profilePayload: Record<string, unknown> = {
+    full_name: fullName,
+    phone: phone || null
+  };
+
+  if (avatarUrl) {
+    profilePayload.avatar_url = avatarUrl;
+  }
 
   const { error: profileError } = await admin
     .from("profiles")
-    .update({ full_name: fullName, phone: phone || null })
+    .update(profilePayload)
     .eq("id", actor.id);
 
   if (profileError) {

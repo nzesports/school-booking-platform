@@ -8,7 +8,6 @@ import {
   Clock3,
   Globe,
   GraduationCap,
-  Star,
   UsersRound
 } from "lucide-react";
 
@@ -17,6 +16,7 @@ import { BookPresentationButton } from "@/components/site/book-presentation-butt
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
 import { ButtonLink } from "@/components/ui/button";
+import { StarRating } from "@/components/ui/star-rating";
 import { config } from "@/lib/env";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import {
@@ -236,11 +236,11 @@ export default async function HomePage() {
                     </p>
                   </div>
 
-                  <div className="flex gap-1 text-[#ffb938]">
-                    {Array.from({ length: testimonial.rating ?? 5 }, (_, index) => (
-                      <Star key={`${testimonial.id}-${index}`} className="h-4 w-4 fill-current" />
-                    ))}
-                  </div>
+                  <StarRating
+                    rating={testimonial.rating ?? 5}
+                    fillClassName="text-[#ffb938]"
+                    className="mt-0.5"
+                  />
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold text-[color:var(--navy)]">

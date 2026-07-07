@@ -27,7 +27,10 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  // getClaims still refreshes an expired session (and persists the new
+  // cookies), but verifies a live JWT locally when the project has asymmetric
+  // signing keys — getUser paid a Supabase Auth round-trip on every request.
+  await supabase.auth.getClaims();
 
   return response;
 }

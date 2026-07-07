@@ -232,3 +232,119 @@ alter table public.presentation_reviews
 alter table public.schools
   add column if not exists logo_url text,
   add column if not exists profile_notes text;
+
+-- ---------------------------------------------------------------- from 0014
+-- Overall review ratings with one-decimal precision (4.5 instead of 5).
+alter table public.presentation_reviews
+  alter column rating type numeric(3,1) using rating::numeric(3,1);
+
+update public.presentation_reviews
+set rating = round((
+    (details->>'attendanceRating')::numeric +
+    (details->>'studentResponseRating')::numeric +
+    (details->>'contentRating')::numeric +
+    (details->>'presenterEnergyRating')::numeric
+  ) / 4, 1)
+where details ? 'attendanceRating'
+  and details ? 'studentResponseRating'
+  and details ? 'contentRating'
+  and details ? 'presenterEnergyRating';
+
+-- ---------------------------------------------------------------- from 0015
+-- Resource category: general resource, training content, or presentation
+-- material (decks surfaced on the ambassador Materials tab).
+alter table public.presentation_resources
+  add column if not exists category text not null default 'resource'
+  check (category in ('resource', 'training', 'presentation_material'));
+
+update public.presentation_resources
+set category = 'presentation_material'
+where resource_type in ('slide_deck', 'ppt', 'pptx')
+  and category = 'resource';
+
+-- Ambassador prep content (scripts, walkthrough videos, delivery checklists)
+-- belongs on the Training tab. School-facing flyers and checklists stay as
+-- general resources — the school portal ignores categories entirely.
+update public.presentation_resources
+set category = 'training'
+where category = 'resource'
+  and 'ambassador' = any(audiences);
+
+-- ---------------------------------------------------------------- from 0016
+-- Keep the platform from ever losing its final active super admin.
+create or replace function public.active_super_admin_count()
+returns integer
+language sql
+stable
+as $$
+  select count(*)::int
+  from public.profiles
+  where role = 'super_admin'
+    and status = 'active'
+$$;
+
+create or replace function public.prevent_removing_last_super_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  still_active_super_admins integer;
+begin
+  if tg_op = 'DELETE'
+    and old.role = 'super_admin'
+    and old.status = 'active' then
+    perform pg_advisory_xact_lock(hashtext('public.profiles.active_super_admin_guard')::bigint);
+
+    select count(*)::int
+    into still_active_super_admins
+    from public.profiles
+    where role = 'super_admin'
+      and status = 'active'
+      and id <> old.id;
+
+    if still_active_super_admins = 0 then
+      raise exception 'At least one active super admin is required.';
+    end if;
+
+    return old;
+  end if;
+
+  if tg_op = 'UPDATE'
+    and old.role = 'super_admin'
+    and old.status = 'active'
+    and (
+      new.role is distinct from 'super_admin'
+      or new.status is distinct from 'active'
+    ) then
+    perform pg_advisory_xact_lock(hashtext('public.profiles.active_super_admin_guard')::bigint);
+
+    select count(*)::int
+    into still_active_super_admins
+    from public.profiles
+    where role = 'super_admin'
+      and status = 'active'
+      and id <> old.id;
+
+    if still_active_super_admins = 0 then
+      raise exception 'At least one active super admin is required.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_removing_last_super_admin on public.profiles;
+
+create trigger prevent_removing_last_super_admin
+before update or delete on public.profiles
+for each row execute function public.prevent_removing_last_super_admin();
+
+-- ---------------------------------------------------------------- from 0017
+-- Ambassador withdrawal requests: reason + timestamp live on the session so
+-- staff can review pending requests without loading booking_status_history.
+alter table public.booking_sessions
+  add column if not exists withdrawal_reason text,
+  add column if not exists withdrawal_requested_at timestamptz;

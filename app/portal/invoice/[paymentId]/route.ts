@@ -64,7 +64,7 @@ export async function GET(
   return new NextResponse(Buffer.from(pdfBytes), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${details.invoiceNumber}.pdf"`
+      "Content-Disposition": `inline; filename="${details.invoiceNumber}.pdf"`
     }
   });
 }

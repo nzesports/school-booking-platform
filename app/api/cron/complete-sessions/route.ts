@@ -3,9 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { config } from "@/lib/env";
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
-import { sendFeedbackRequestEmail } from "@/lib/services/email-triggers";
+import {
+  sendFeedbackRequestEmail,
+  sendSessionReminderEmail
+} from "@/lib/services/email-triggers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
+
+// How far ahead the upcoming-session reminder goes out.
+const REMINDER_WINDOW_HOURS = 48;
 
 // Hourly sweep (Vercel Cron — see vercel.json): marks sessions whose end time
 // has passed as delivered and emails the school a feedback invitation. Safe to
@@ -21,6 +27,7 @@ const ACTIVE_SESSION_STATUSES = [
   "ambassador_applied",
   "ambassador_assigned",
   "confirmed",
+  "withdrawal_requested",
   "reschedule_requested"
 ];
 
@@ -158,11 +165,75 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ---------------------------------------------------------------- reminders
+  // Upcoming confirmed sessions inside the reminder window get a heads-up
+  // email to the school; email_logs guarantees one reminder per session.
+  let remindersSent = 0;
+  const reminderWindowEnd = new Date(
+    Date.now() + REMINDER_WINDOW_HOURS * 60 * 60 * 1000
+  ).toISOString();
+  const { data: upcomingSessions } = await admin
+    .from("booking_sessions")
+    .select("id, booking_request_id, school_id, presentation_type_id, starts_at")
+    .in("status", DELIVERABLE_STATUSES)
+    .gt("starts_at", now)
+    .lte("starts_at", reminderWindowEnd);
+
+  for (const session of upcomingSessions ?? []) {
+    const { data: alreadyReminded } = await admin
+      .from("email_logs")
+      .select("id")
+      .eq("template_key", "school_session_reminder")
+      .eq("related_booking_session_id", session.id)
+      .limit(1);
+
+    if (alreadyReminded?.length) {
+      continue;
+    }
+
+    const [{ data: booking }, { data: school }, { data: presentation }] = await Promise.all([
+      admin
+        .from("booking_requests")
+        .select("id, primary_contact_id")
+        .eq("id", session.booking_request_id)
+        .maybeSingle(),
+      admin.from("schools").select("name").eq("id", session.school_id).maybeSingle(),
+      admin
+        .from("presentation_types")
+        .select("title")
+        .eq("id", session.presentation_type_id)
+        .maybeSingle()
+    ]);
+    const { data: contact } = booking?.primary_contact_id
+      ? await admin
+          .from("school_contacts")
+          .select("full_name, email")
+          .eq("id", booking.primary_contact_id)
+          .maybeSingle()
+      : { data: null };
+
+    if (contact?.email) {
+      const result = await sendSessionReminderEmail({
+        contactEmail: contact.email as string,
+        contactName: (contact.full_name as string | null) ?? "there",
+        schoolName: (school?.name as string | null) ?? "your school",
+        sessionDate: formatDateTime(session.starts_at as string),
+        presentationTitle: (presentation?.title as string | null) ?? "your presentation",
+        bookingId: session.booking_request_id as string,
+        bookingSessionId: session.id as string
+      }).catch(() => null);
+
+      if (result?.status === "sent") {
+        remindersSent += 1;
+      }
+    }
+  }
+
   if (completedSessions > 0) {
     // Route handlers can't use updateTag (server-action only); "max" expires
     // the tagged entries so the next portal render refetches.
     revalidateTag(PLATFORM_DATA_TAG, "max");
   }
 
-  return NextResponse.json({ completedSessions, emailsSent });
+  return NextResponse.json({ completedSessions, emailsSent, remindersSent });
 }

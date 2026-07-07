@@ -16,14 +16,21 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
+  Eye,
+  Globe2,
   LayoutList,
+  Leaf,
   Mail,
   MapPin,
   Search,
-  UserRound
+  School2,
+  Trash2,
+  UserRound,
+  X
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
@@ -61,6 +68,7 @@ const statusPillStyles: Record<string, string> = {
   ambassador_needed: "bg-[#fff5df] text-[#9a5a00]",
   ambassador_applied: "bg-[#e8f1fd] text-[#1e4fae]",
   ambassador_assigned: "bg-[#e8f1fd] text-[#1e4fae]",
+  withdrawal_requested: "bg-[#fff5df] text-[#9a5a00]",
   confirmed: "bg-[#eaf8ee] text-[#117a2e]",
   completed_pending_report: "bg-[#e8f1fd] text-[#1e4fae]",
   report_submitted: "bg-[#eaf8ee] text-[#117a2e]",
@@ -97,7 +105,9 @@ function calendarTone(status: string): CalendarTone {
     return "red";
   }
 
-  if (["tentative", "ambassador_needed", "reschedule_requested", "requested"].includes(status)) {
+  if (
+    ["tentative", "ambassador_needed", "reschedule_requested", "withdrawal_requested", "requested"].includes(status)
+  ) {
     return "amber";
   }
 
@@ -112,7 +122,7 @@ export function StatusPill({ value }: { value: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
+        "inline-flex whitespace-nowrap items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
         statusPillStyles[value] ?? "bg-[#f1f5f9] text-[#64748b]"
       )}
     >
@@ -132,7 +142,9 @@ export function BookingsExplorer({
   ambassadors,
   presentationTitles,
   updateStatusAction,
+  removeInternalNoteAction,
   assignAmbassadorAction,
+  resolveWithdrawalAction,
   initialQuery,
   initialBookingId
 }: {
@@ -145,7 +157,9 @@ export function BookingsExplorer({
   ambassadors: Array<{ id: string; name: string }>;
   presentationTitles: string[];
   updateStatusAction: (formData: FormData) => void | Promise<void>;
+  removeInternalNoteAction: (formData: FormData) => void | Promise<void>;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
+  resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   initialQuery?: string;
   initialBookingId?: string;
 }) {
@@ -353,6 +367,7 @@ export function BookingsExplorer({
         <BookingsCalendar
           entries={calendarSessions}
           updateStatusAction={updateStatusAction}
+          resolveWithdrawalAction={resolveWithdrawalAction}
           returnTo={`${returnTo}#bookings-panel`}
         />
       ) : (
@@ -382,52 +397,74 @@ export function BookingsExplorer({
                 !COMPLETION_STATUSES.has(value) ||
                 value === booking.status
             );
+            const internalNotes = (booking.internalNotes ?? "")
+              .split(/\r?\n/)
+              .map((note) => note.trim())
+              .filter(Boolean);
 
             return (
               <section
                 key={booking.id}
                 id={`booking-${booking.id}`}
-                className="surface-panel scroll-mt-24 rounded-[26px] p-5 md:p-6"
+                className="grid scroll-mt-24 gap-0"
               >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <span className="inline-flex rounded-full bg-[color:var(--green-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#117a2e]">
-                      {titleCase(booking.source)} request
-                    </span>
-                    <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                      {booking.schoolName}
-                    </h3>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]">
-                      <span className="inline-flex items-center gap-1.5">
-                        <UserRound className="h-4 w-4" />
-                        {booking.primaryContactName}
+                <div
+                  className={cn(
+                    "surface-panel rounded-[18px] px-4 py-3.5 md:px-5",
+                    open && "rounded-b-none"
+                  )}
+                >
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[color:var(--green-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#117a2e]">
+                        <Globe2 className="h-3 w-3" />
+                        {titleCase(booking.source)} request
                       </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Mail className="h-4 w-4" />
-                        {booking.primaryContactEmail}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="h-4 w-4" />
-                        {titleCase(booking.regionSlug)}
-                      </span>
+                      <div className="mt-2.5 flex min-w-0 items-center gap-3">
+                        <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e8f1fd] text-[#2563eb] sm:flex">
+                          <School2 className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
+                            {booking.schoolName}
+                          </h3>
+                          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--text-soft)]">
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <UserRound className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{booking.primaryContactName}</span>
+                            </span>
+                            <span className="hidden h-4 w-px bg-[color:var(--border-soft)] sm:inline-block" />
+                            <span className="inline-flex min-w-0 items-center gap-1">
+                              <Mail className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{booking.primaryContactEmail}</span>
+                            </span>
+                            <span className="hidden h-4 w-px bg-[color:var(--border-soft)] sm:inline-block" />
+                            <span className="inline-flex items-center gap-1">
+                              <MapPin className="h-3.5 w-3.5 shrink-0" />
+                              {titleCase(booking.regionSlug)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-start gap-3">
-                    <div className="grid justify-items-end gap-1">
-                      <StatusPill value={booking.status} />
-                      <p className="text-xs text-[color:var(--text-soft)]">
-                        Requested {formatShortDate(booking.createdAt)}
-                      </p>
+                    <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap lg:justify-end">
+                      <div className="grid justify-items-start gap-1.5 lg:justify-items-end">
+                        <StatusPill value={booking.status} />
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[color:var(--text-soft)]">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          Requested {formatShortDate(booking.createdAt)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
+                        aria-label={open ? "Collapse booking" : "Expand booking"}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]"
+                      >
+                        {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
-                      aria-label={open ? "Collapse booking" : "Expand booking"}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]"
-                    >
-                      {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
                   </div>
                 </div>
 
@@ -435,50 +472,91 @@ export function BookingsExplorer({
                   <>
                     <form
                       action={updateStatusAction}
-                      className="mt-5 grid items-end gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,220px)_minmax(0,1.2fr)_auto]"
+                      className="surface-panel grid items-center gap-3 rounded-none border-t-0 px-4 py-3 md:px-5 lg:grid-cols-[minmax(180px,0.9fr)_minmax(190px,1fr)_minmax(240px,1.6fr)_auto]"
                     >
                       <input type="hidden" name="bookingRequestId" value={booking.id} />
                       <input type="hidden" name="returnTo" value={cardReturnTo} />
-                      <div>
-                        <p className="text-sm font-semibold text-[color:var(--navy)]">Booking status</p>
-                        <p className="text-xs text-[color:var(--text-soft)]">
-                          Update the overall status for this booking request.
-                        </p>
+                      <div className="flex items-center gap-3 border-b border-[color:var(--border-soft)] pb-3 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e8f1fd] text-[#2563eb]">
+                          <ClipboardList className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold text-[color:var(--navy)]">Booking status</p>
+                          <p className="text-[11px] leading-4 text-[color:var(--text-soft)]">
+                            Update the overall status for this booking request.
+                          </p>
+                        </div>
                       </div>
-                      <select
-                        name="status"
-                        defaultValue={booking.status}
-                        className="min-h-[46px] rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
-                      >
-                        {statusOptions.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
                       <label className="grid gap-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                          Booking status
+                        </span>
+                        <select
+                          name="status"
+                          defaultValue={booking.status}
+                          className="min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none"
+                        >
+                          {statusOptions.map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
                           Internal note (optional)
                         </span>
                         <input
                           name="reason"
                           placeholder="Add an internal note..."
-                          className="min-h-[46px] rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none"
+                          className="min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs text-[color:var(--navy)] outline-none"
                         />
                       </label>
                       <button
                         type="submit"
-                        className="inline-flex min-h-[46px] items-center justify-center rounded-[14px] border border-[#2563eb] bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:bg-[#1d4fd7]"
+                        className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-[10px] border border-[#2563eb] bg-[#2563eb] px-4 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(37,99,235,0.2)] transition hover:bg-[#1d4fd7]"
                       >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
                         Update status
                       </button>
+                      {internalNotes.length ? (
+                        <div className="rounded-[10px] border border-[color:var(--border-soft)] bg-[#f8fbff] px-3 py-2 text-[11px] leading-4 text-[color:var(--text-soft)] lg:col-start-3 lg:col-end-5">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--navy)]">
+                            Saved internal notes
+                          </p>
+                          <div className="mt-1.5 grid gap-1.5">
+                            {internalNotes.map((note, index) => (
+                              <div
+                                key={`${booking.id}-internal-note-${index}`}
+                                className="flex items-start gap-2 rounded-[8px] bg-white px-2.5 py-1.5 text-[color:var(--navy)]"
+                              >
+                                <p className="min-w-0 flex-1">{note}</p>
+                                <button
+                                  type="submit"
+                                  formAction={removeInternalNoteAction}
+                                  name="noteIndex"
+                                  value={String(index)}
+                                  aria-label="Remove internal note"
+                                  title="Remove note"
+                                  className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#b3372e] transition hover:bg-[#fdecec]"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </form>
 
-                    <p className="mt-5 text-sm font-semibold text-[color:var(--navy)]">
-                      Requested sessions
-                    </p>
-                    <div className="mt-2 overflow-x-auto rounded-[18px] border border-[color:var(--border-soft)] bg-white">
-                      <table className="min-w-full border-separate border-spacing-0">
+                    <div className="surface-panel rounded-t-none rounded-b-[18px] border-t-0 p-4">
+                      <p className="flex items-center gap-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                        <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
+                        Requested sessions
+                      </p>
+                    <div className="mt-3 overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white">
+                      <table className="min-w-[980px] border-separate border-spacing-0">
                         <thead>
                           <tr>
                             {[
@@ -492,7 +570,7 @@ export function BookingsExplorer({
                             ].map((heading) => (
                               <th
                                 key={heading}
-                                className="border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
+                                className="border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
                               >
                                 {heading}
                               </th>
@@ -501,28 +579,36 @@ export function BookingsExplorer({
                         </thead>
                         <tbody>
                           {booking.sessions.map((session) => (
-                            <tr key={session.id} className="align-middle">
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
-                                <span className="flex items-center gap-2 text-sm text-[color:var(--navy)]">
-                                  <CalendarDays className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+                            <Fragment key={session.id}>
+                            <tr className="align-middle">
+                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
+                                <span className="flex items-center gap-2.5 text-xs font-semibold text-[color:var(--navy)]">
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#e8f1fd] text-[#2563eb]">
+                                    <CalendarDays className="h-4 w-4" />
+                                  </span>
                                   <span>
                                     {formatShortDate(session.startsAt)}
-                                    <span className="block text-xs text-[color:var(--text-soft)]">
+                                    <span className="block text-xs font-medium text-[color:var(--text-soft)]">
                                       {formatTime(session.startsAt)}
                                     </span>
                                   </span>
                                 </span>
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm font-semibold text-[color:var(--green)]">
-                                {session.presentationTitle}
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
+                                <span className="flex items-center gap-2.5 text-xs font-semibold text-[color:var(--green)]">
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--green-soft)] text-[#117a2e]">
+                                    <Leaf className="h-4 w-4" />
+                                  </span>
+                                  {session.presentationTitle}
+                                </span>
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--text-soft)]">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-xs leading-5 text-[color:var(--text-soft)]">
                                 {session.yearLevels}
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <form
                                   action={assignAmbassadorAction}
-                                  className="flex min-w-[250px] items-center gap-2"
+                                  className="flex min-w-[260px] items-start gap-2"
                                 >
                                   <input type="hidden" name="bookingSessionId" value={session.id} />
                                   <input type="hidden" name="returnTo" value={cardReturnTo} />
@@ -533,30 +619,52 @@ export function BookingsExplorer({
                                   />
                                   <button
                                     type="submit"
-                                    className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] px-3.5 text-sm font-semibold text-[#117a2e] transition hover:bg-[#dff2e5]"
+                                    className="inline-flex min-h-[34px] items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] shadow-[0_6px_14px_rgba(37,99,235,0.08)] transition hover:bg-[#f4f8ff]"
                                   >
                                     Assign
                                   </button>
                                 </form>
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
-                                {session.actualStudentCount ?? session.expectedStudentCount}
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-xs font-semibold text-[color:var(--navy)]">
+                                <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-[9px] bg-[#e8f1fd] px-2.5 text-[#2563eb]">
+                                  {session.actualStudentCount ?? session.expectedStudentCount}
+                                </span>
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <StatusPill value={session.status} />
                               </td>
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <SessionDetailsButton
                                   session={session}
-                                  className="min-h-[36px] rounded-[12px] px-3 py-1.5 text-xs"
+                                  className="min-h-[34px] rounded-[9px] border-[#dbe6f5] px-3.5 py-1 text-xs text-[#2563eb]"
+                                  label={
+                                    <>
+                                      <Eye className="h-3.5 w-3.5" />
+                                      Details
+                                    </>
+                                  }
                                   updateStatusAction={updateStatusAction}
+                                  resolveWithdrawalAction={resolveWithdrawalAction}
                                   returnTo={cardReturnTo}
                                 />
                               </td>
                             </tr>
+                            {session.status === "withdrawal_requested" ? (
+                              <tr>
+                                <td colSpan={7} className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                                  <WithdrawalReviewPanel
+                                    session={session}
+                                    action={resolveWithdrawalAction}
+                                    returnTo={cardReturnTo}
+                                  />
+                                </td>
+                              </tr>
+                            ) : null}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
+                    </div>
                     </div>
                   </>
                 ) : null}
@@ -611,6 +719,65 @@ export function BookingsExplorer({
   );
 }
 
+function WithdrawalReviewPanel({
+  session,
+  action,
+  returnTo
+}: {
+  session: BookingSessionView;
+  action: (formData: FormData) => void | Promise<void>;
+  returnTo: string;
+}) {
+  return (
+    <div className="rounded-[20px] border border-[#f2ddb0] bg-[#fff8e8] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#9a5a00]">
+            {session.assignedAmbassadorName ?? "Ambassador"} asked to withdraw
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[#8f680f]">
+            {session.withdrawalReason ? `"${session.withdrawalReason}"` : "No reason provided."}
+          </p>
+          {session.withdrawalRequestedAt ? (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+              Requested {formatShortDate(session.withdrawalRequestedAt)}
+            </p>
+          ) : null}
+        </div>
+        <div className="grid gap-3 sm:min-w-[380px]">
+          <form action={action}>
+            <input type="hidden" name="bookingSessionId" value={session.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <input type="hidden" name="decision" value="approve" />
+            <button
+              type="submit"
+              className="inline-flex min-h-[42px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]"
+            >
+              Approve withdrawal - reopen session
+            </button>
+          </form>
+          <form action={action} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <input type="hidden" name="bookingSessionId" value={session.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <input type="hidden" name="decision" value="decline" />
+            <input
+              name="note"
+              placeholder="Reply to the ambassador..."
+              className="min-h-[42px] rounded-[14px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+            />
+            <button
+              type="submit"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
+            >
+              Decline - keep assigned
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Calendar view                                                       */
 /* ------------------------------------------------------------------ */
@@ -618,10 +785,12 @@ export function BookingsExplorer({
 function BookingsCalendar({
   entries,
   updateStatusAction,
+  resolveWithdrawalAction,
   returnTo
 }: {
   entries: Array<{ session: BookingSessionView; schoolName: string }>;
   updateStatusAction: (formData: FormData) => void | Promise<void>;
+  resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   returnTo: string;
 }) {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
@@ -742,6 +911,7 @@ function BookingsCalendar({
                         session={session}
                         unstyled
                         updateStatusAction={updateStatusAction}
+                        resolveWithdrawalAction={resolveWithdrawalAction}
                         returnTo={returnTo}
                         className={cn(
                           "w-full truncate rounded-[8px] border px-1.5 py-1 text-left text-[11px] font-semibold leading-4 transition",
@@ -785,7 +955,7 @@ function AmbassadorSearchSelect({
 }) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(assignedName ?? "");
   const [selectedId, setSelectedId] = useState("");
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
@@ -867,7 +1037,7 @@ function AmbassadorSearchSelect({
   return (
     <div ref={anchorRef} className="relative min-w-0 flex-1">
       <input type="hidden" name="ambassadorProfileId" value={selectedId} />
-      <div className="flex items-center gap-1.5 rounded-[12px] border border-[color:var(--border-soft)] bg-white px-2.5">
+      <div className="flex items-center gap-1.5 rounded-[9px] border border-[color:var(--border-soft)] bg-white px-2.5">
         <Search className="h-3.5 w-3.5 shrink-0 text-[color:var(--text-soft)]" />
         <input
           value={text}
@@ -882,9 +1052,45 @@ function AmbassadorSearchSelect({
             }
           }}
           placeholder={assignedName ?? "Search ambassadors..."}
-          className="min-h-[38px] min-w-0 flex-1 bg-transparent text-sm text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+          className="min-h-[32px] min-w-0 flex-1 bg-transparent text-xs text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
         />
+        {text ? (
+          <button
+            type="button"
+            onClick={() => {
+              setText("");
+              setSelectedId("");
+            }}
+            aria-label="Clear ambassador"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[color:var(--text-soft)] transition hover:bg-[#f1f5f9] hover:text-[color:var(--navy)]"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        ) : null}
       </div>
+
+      {assignedName || applicants.length > 0 ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {assignedName ? (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-[#c4dbfb] bg-[#e8f1fd] px-2 py-0.5 text-[10px] font-semibold text-[#1e4fae]">
+              <UserRound className="h-3 w-3 shrink-0" />
+              <span className="shrink-0">Assigned:</span>
+              <span className="truncate">{assignedName}</span>
+            </span>
+          ) : null}
+          {applicants.map((applicant) => (
+            <button
+              key={applicant.id}
+              type="button"
+              onClick={() => select(applicant)}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-[rgba(24,168,59,0.24)] bg-[color:var(--green-soft)] px-2 py-0.5 text-[10px] font-semibold text-[#117a2e] transition hover:bg-[#dff2e5]"
+            >
+              <CheckCircle2 className="h-3 w-3 shrink-0" />
+              <span className="truncate">{applicant.name}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {open && position
         ? createPortal(

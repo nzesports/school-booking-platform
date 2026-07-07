@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   ArrowUpDown,
   CheckCircle2,
   Circle,
@@ -137,59 +136,15 @@ export function TrainingWorkspace({
   markCompleteAction: (formData: FormData) => void | Promise<void>;
   returnTo: string;
 }) {
-  const [query, setQuery] = useState("");
-  const [activeBucket, setActiveBucket] = useState<"all" | ResourceBucket>("all");
-  const [versionFilter, setVersionFilter] = useState<"current" | "all">("current");
-  const [sortBy, setSortBy] = useState<"newest" | "title">("newest");
-
-  const availableBuckets = useMemo(() => {
-    const present = new Set(resources.map((resource) => bucketOf(resource.type)));
-    return (Object.keys(bucketMeta) as ResourceBucket[]).filter((bucket) => present.has(bucket));
-  }, [resources]);
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleResources = useMemo(() => {
-    const filtered = resources.filter((resource) => {
-      const haystack = [
-        resource.title,
-        resource.description,
-        resource.presentationTitle ?? "",
-        resource.tags.join(" ")
-      ]
-        .join(" ")
-        .toLowerCase();
-      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
-      const matchesBucket = activeBucket === "all" || bucketOf(resource.type) === activeBucket;
-      const matchesVersion = versionFilter === "all" || resource.isCurrent;
-
-      return matchesQuery && matchesBucket && matchesVersion;
-    });
-
-    if (sortBy === "title") {
-      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
-    }
-
-    return filtered;
-  }, [resources, normalizedQuery, activeBucket, versionFilter, sortBy]);
-
   return (
     <div className="grid gap-5">
       {/* ------------------------------------------------ training progress */}
       <section className="surface-panel rounded-[28px] p-5 md:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-            Your training progress
-          </h2>
-          <a
-            href="#modules"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#2563eb] hover:underline"
-          >
-            View all modules
-            <ArrowRight className="h-3.5 w-3.5" />
-          </a>
-        </div>
+        <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+          Your training progress
+        </h2>
 
-        <div id="modules" className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {modules.length === 0 ? (
             <p className="text-sm leading-7 text-[color:var(--text-soft)]">
               No training modules have been published yet.
@@ -267,7 +222,60 @@ export function TrainingWorkspace({
         </div>
       </section>
 
-      {/* ------------------------------------------------ resource library */}
+      {resources.length > 0 ? (
+        <ResourceLibraryWorkspace resources={resources} heading="Training resources" />
+      ) : null}
+    </div>
+  );
+}
+
+// Standalone filterable library — used by the ambassador Materials, Resources
+// and Training tabs, each fed a different resource category.
+export function ResourceLibraryWorkspace({
+  resources,
+  heading = "Resource library",
+  note = "New resources are added regularly. Check back often or filter by type to find what you need."
+}: {
+  resources: ResourceRecord[];
+  heading?: string;
+  note?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [activeBucket, setActiveBucket] = useState<"all" | ResourceBucket>("all");
+  const [versionFilter, setVersionFilter] = useState<"current" | "all">("current");
+  const [sortBy, setSortBy] = useState<"newest" | "title">("newest");
+
+  const availableBuckets = useMemo(() => {
+    const present = new Set(resources.map((resource) => bucketOf(resource.type)));
+    return (Object.keys(bucketMeta) as ResourceBucket[]).filter((bucket) => present.has(bucket));
+  }, [resources]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleResources = useMemo(() => {
+    const filtered = resources.filter((resource) => {
+      const haystack = [
+        resource.title,
+        resource.description,
+        resource.presentationTitle ?? "",
+        resource.tags.join(" ")
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesBucket = activeBucket === "all" || bucketOf(resource.type) === activeBucket;
+      const matchesVersion = versionFilter === "all" || resource.isCurrent;
+
+      return matchesQuery && matchesBucket && matchesVersion;
+    });
+
+    if (sortBy === "title") {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+    }
+
+    return filtered;
+  }, [resources, normalizedQuery, activeBucket, versionFilter, sortBy]);
+
+  return (
       <section className="surface-panel rounded-[28px] p-5 md:p-6">
         <div className="flex flex-wrap items-center gap-2.5">
           <label className="flex min-h-[46px] min-w-[220px] flex-1 items-center gap-2.5 rounded-full border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
@@ -323,8 +331,8 @@ export function TrainingWorkspace({
         </div>
 
         <div className="mt-6 flex items-center gap-3">
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-            Resource library
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+            {heading}
           </h2>
           <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#64748b]">
             {visibleResources.length} resource{visibleResources.length === 1 ? "" : "s"}
@@ -428,11 +436,9 @@ export function TrainingWorkspace({
 
         <p className="mt-5 flex items-center gap-2.5 rounded-[14px] bg-[#eef4fd] px-4 py-3 text-sm text-[#1e4fae]">
           <Info className="h-4 w-4 shrink-0" />
-          New resources are added regularly. Check back often or filter by type to find what you
-          need.
+          {note}
         </p>
       </section>
-    </div>
   );
 }
 

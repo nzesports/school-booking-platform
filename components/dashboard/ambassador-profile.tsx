@@ -5,7 +5,6 @@ import {
   Banknote,
   CalendarX2,
   Clock3,
-  CircleDollarSign,
   CreditCard,
   ExternalLink,
   FileText,
@@ -26,13 +25,14 @@ import {
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
+import { SchoolLogoUploader } from "@/components/dashboard/school-logo-uploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TagMultiSelect } from "@/components/ui/tag-multi-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { AmbassadorProfile, Region } from "@/lib/domain/types";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
 
 const WEEKDAYS = [
   { key: "mon", label: "Mon" },
@@ -53,7 +53,8 @@ const BOOKING_TYPE_OPTIONS = [
 
 export type AmbassadorProfileStats = {
   schoolVisits: number;
-  nextPayoutCents: number;
+  invoicesSubmittedCount: number;
+  latestInvoiceSubmittedAt?: string;
   ratingAverage: number | null;
   ratingCount: number;
 };
@@ -134,12 +135,21 @@ export function AmbassadorProfileWorkspace({
       <section className="surface-panel rounded-[28px] p-6 md:p-7">
         <div className="grid items-center gap-7 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,2fr)]">
           <div className="flex items-center gap-4">
-            <div
-              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white"
-              style={{ background: "linear-gradient(135deg, #071448, #10265f)" }}
-            >
-              {initials || "A"}
-            </div>
+            {ambassador.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={ambassador.imageUrl}
+                alt={`${ambassador.name} profile image`}
+                className="h-16 w-16 shrink-0 rounded-full border border-[color:var(--border-soft)] bg-white object-cover"
+              />
+            ) : (
+              <div
+                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white"
+                style={{ background: "linear-gradient(135deg, #071448, #10265f)" }}
+              >
+                {initials || "A"}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="truncate text-[1.35rem] font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                 {ambassador.name}
@@ -197,11 +207,15 @@ export function AmbassadorProfileWorkspace({
               hint="Delivered sessions"
             />
             <HeaderStat
-              icon={<CircleDollarSign className="h-5 w-5" />}
+              icon={<FileText className="h-5 w-5" />}
               iconClassName="bg-[color:var(--green-soft)] text-[color:var(--green)]"
-              label="Next payout"
-              value={formatCurrency(stats.nextPayoutCents)}
-              hint="Pending payments"
+              label="Invoices"
+              value={String(stats.invoicesSubmittedCount)}
+              hint={
+                stats.latestInvoiceSubmittedAt
+                  ? `Latest ${formatShortDate(stats.latestInvoiceSubmittedAt)}`
+                  : "None submitted yet"
+              }
             />
             <HeaderStat
               icon={<Star className="h-5 w-5" />}
@@ -215,6 +229,29 @@ export function AmbassadorProfileWorkspace({
               }
             />
           </div>
+        </div>
+      </section>
+
+      <section className="surface-panel rounded-[28px] p-6 md:p-7">
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+          Profile image
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+          Update your portal photo
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-7 text-[color:var(--text-soft)]">
+          Upload a square profile image. You can scale and reposition it before saving.
+        </p>
+        <div className="mt-5">
+          <SchoolLogoUploader
+            currentLogoUrl={ambassador.imageUrl}
+            schoolName={ambassador.name}
+            inputName="avatar"
+            uploadLabel="Upload profile image"
+            chooseLabel="Choose profile image"
+            emptyLabel={initials || "A"}
+            helperText="Square image used across your dashboard profile."
+          />
         </div>
       </section>
 

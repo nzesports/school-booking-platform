@@ -19,7 +19,6 @@ import {
   MapPinned,
   School2,
   ShieldCheck,
-  Star,
   UserCheck,
   UsersRound
 } from "lucide-react";
@@ -27,6 +26,7 @@ import {
 import { markPaymentPaidAction } from "@/app/portal/actions";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { StarRating } from "@/components/ui/star-rating";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type {
   AmbassadorProfile,
@@ -476,25 +476,31 @@ export function OperationsAnalytics({
             </p>
           </ImpactCard>
 
-          <ImpactCard title="Feedback summary">
-            <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-              {feedback.rating.toFixed(1)}
-              <span className="ml-1 text-xl font-medium text-[color:var(--text-soft)]">/5</span>
-            </p>
-            <div className="mt-2 flex items-center gap-1 text-[#f5b319]">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Star
-                  key={index}
-                  className={cn(
-                    "h-5 w-5",
-                    index < Math.round(feedback.rating) ? "fill-current" : "fill-transparent"
-                  )}
-                />
-              ))}
+          <ImpactCard title="How we're performing">
+            <div className="mt-3 grid gap-4">
+              <Link href={`${basePath}/feedback`} className="group grid gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
+                  School feedback
+                </p>
+                <RatingStars rating={feedback.schoolRating} />
+                <p className="text-sm text-[color:var(--text-soft)]">
+                  {feedback.schoolCount > 0
+                    ? `${feedback.schoolRating.toFixed(1)}/5 from ${feedback.schoolCount} ${feedback.schoolCount === 1 ? "review" : "reviews"}`
+                    : "No school reviews yet"}
+                </p>
+              </Link>
+              <Link href={`${basePath}/reports`} className="group grid gap-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
+                  Ambassador sessions
+                </p>
+                <RatingStars rating={feedback.ambassadorRating} />
+                <p className="text-sm text-[color:var(--text-soft)]">
+                  {feedback.ambassadorCount > 0
+                    ? `${feedback.ambassadorRating.toFixed(1)}/5 from ${feedback.ambassadorCount} ${feedback.ambassadorCount === 1 ? "report" : "reports"}`
+                    : "No session reports yet"}
+                </p>
+              </Link>
             </div>
-            <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-              From {feedback.reviewCount} submitted {feedback.reviewCount === 1 ? "review" : "reviews"}
-            </p>
           </ImpactCard>
 
           <ImpactCard title="Year groups reached">
@@ -1275,22 +1281,49 @@ function buildMonthlyImpact(reports: ReportSummary[], sessions: BookingSessionVi
 }
 
 function buildFeedbackSummary(reports: ReportSummary[], reviews: SchoolFeedbackSummary[]) {
-  const ratings = [
-    ...reports
-      .map((report) => report.teacherResponseRating)
-      .filter((rating): rating is number => typeof rating === "number" && Number.isFinite(rating)),
-    ...reviews
-      .map((review) => review.rating)
-      .filter((rating): rating is number => typeof rating === "number" && Number.isFinite(rating))
-  ];
+  // School side: the overall rating each school gave in its feedback form.
+  const schoolRatings = reviews
+    .map((review) => review.rating)
+    .filter((rating): rating is number => typeof rating === "number" && Number.isFinite(rating));
+  // Ambassador side: the mean of each report's category ratings.
+  const ambassadorRatings = reports
+    .map((report) => {
+      const values = [
+        report.attendanceRating,
+        report.studentEngagementRating,
+        report.teacherResponseRating,
+        report.presentationEnergyRating
+      ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+      return values.length > 0
+        ? values.reduce((total, value) => total + value, 0) / values.length
+        : null;
+    })
+    .filter((value): value is number => value !== null);
+  const average = (values: number[]) =>
+    values.length > 0
+      ? Math.round((values.reduce((total, value) => total + value, 0) / values.length) * 10) / 10
+      : 0;
+  const allRatings = [...schoolRatings, ...ambassadorRatings];
 
   return {
-    rating:
-      ratings.length > 0
-        ? Math.round((ratings.reduce((total, rating) => total + rating, 0) / ratings.length) * 10) / 10
-        : 0,
-    reviewCount: ratings.length
+    rating: average(allRatings),
+    reviewCount: allRatings.length,
+    schoolRating: average(schoolRatings),
+    schoolCount: schoolRatings.length,
+    ambassadorRating: average(ambassadorRatings),
+    ambassadorCount: ambassadorRatings.length
   };
+}
+
+function RatingStars({ rating }: { rating: number }) {
+  return (
+    <StarRating
+      rating={rating}
+      starClassName="h-5 w-5"
+      fillClassName="text-[#f5b319]"
+    />
+  );
 }
 
 function formatSignedDelta(delta: number) {

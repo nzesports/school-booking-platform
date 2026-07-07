@@ -7,6 +7,8 @@ import { useState } from "react";
 import { AuthModalButton } from "@/components/auth/auth-modal-trigger";
 import { BrandLockup } from "@/components/site/brand-lockup";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
+import { usePortalSession } from "@/components/site/use-portal-session";
+import { ButtonLink } from "@/components/ui/button";
 
 const navItems = [
   { href: "/#presentations", label: "Presentations" },
@@ -18,6 +20,9 @@ const navItems = [
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Set when the visitor already has a portal session — the header then
+  // offers a way back to their dashboard instead of login/signup buttons.
+  const portalPath = usePortalSession();
 
   return (
     <div className="site-navbar sticky top-0 z-50">
@@ -37,21 +42,33 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <AuthModalButton
-            mode="signup"
-            role="school"
-            variant="ghost"
-            className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm lg:inline-flex"
-          >
-            Sign up
-          </AuthModalButton>
-          <AuthModalButton
-            mode="login"
-            variant="secondary"
-            className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm sm:inline-flex"
-          >
-            Log in
-          </AuthModalButton>
+          {portalPath ? (
+            <ButtonLink
+              href={portalPath}
+              variant="secondary"
+              className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm sm:inline-flex"
+            >
+              My portal
+            </ButtonLink>
+          ) : (
+            <>
+              <AuthModalButton
+                mode="signup"
+                role="school"
+                variant="ghost"
+                className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm lg:inline-flex"
+              >
+                Sign up
+              </AuthModalButton>
+              <AuthModalButton
+                mode="login"
+                variant="secondary"
+                className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm sm:inline-flex"
+              >
+                Log in
+              </AuthModalButton>
+            </>
+          )}
           <BookPresentationButton className="hidden min-h-[40px] rounded-[13px] px-5 py-2 text-sm xl:inline-flex">
             Book a Presentation
           </BookPresentationButton>
@@ -86,23 +103,33 @@ export function SiteHeader() {
               <BookPresentationButton className="min-h-[42px] w-full rounded-[13px] px-4 py-1.5 text-[13px]">
                 Book a Presentation
               </BookPresentationButton>
-              <div className="grid grid-cols-2 gap-2">
-                <AuthModalButton
-                  mode="signup"
-                  role="school"
+              {portalPath ? (
+                <ButtonLink
+                  href={portalPath}
                   variant="secondary"
                   className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
                 >
-                  Sign up
-                </AuthModalButton>
-                <AuthModalButton
-                  mode="login"
-                  variant="secondary"
-                  className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
-                >
-                  Log in
-                </AuthModalButton>
-              </div>
+                  My portal
+                </ButtonLink>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <AuthModalButton
+                    mode="signup"
+                    role="school"
+                    variant="secondary"
+                    className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
+                  >
+                    Sign up
+                  </AuthModalButton>
+                  <AuthModalButton
+                    mode="login"
+                    variant="secondary"
+                    className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
+                  >
+                    Log in
+                  </AuthModalButton>
+                </div>
+              )}
             </div>
           </nav>
         </div>

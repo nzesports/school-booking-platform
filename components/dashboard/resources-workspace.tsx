@@ -716,6 +716,21 @@ function ResourceEditorDialog({
           </label>
         </div>
 
+        <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+          Shows under
+          <select
+            name="category"
+            defaultValue={resource?.category ?? "resource"}
+            className={inputClassName}
+          >
+            <option value="resource">Resources — general reference material</option>
+            <option value="training">Training — appears alongside training modules</option>
+            <option value="presentation_material">
+              Presentation material — quick-download Materials tab for ambassadors
+            </option>
+          </select>
+        </label>
+
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
             Tags

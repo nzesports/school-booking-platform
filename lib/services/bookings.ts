@@ -9,6 +9,7 @@ import {
 } from "@/lib/services/portal";
 import type { BookingRequestInput } from "@/lib/domain/types";
 import { sendBookingRequestReceivedEmail } from "@/lib/services/email-triggers";
+import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
 import { nzDateTimeToIso, slugify } from "@/lib/utils";
 
@@ -140,6 +141,14 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     type: "booking_request_submitted",
     relatedUrl: `/staff/bookings?status=all&range=all&booking=${bookingRequest.id}#booking-${bookingRequest.id}`
   }).catch(() => {});
+
+  if (input.marketingConsent) {
+    void addContactToTeachersList({
+      email: input.contactEmail,
+      name: input.contactName,
+      schoolName: input.schoolName
+    }).catch(() => {});
+  }
 
   return {
     id: bookingRequest.id as string,

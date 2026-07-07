@@ -10,6 +10,7 @@ const toneMap: Record<string, string> = {
   ambassador_needed: "bg-[#fff6d7] text-[#8a6a00]",
   ambassador_applied: "bg-[#eef7fc] text-[#2a5f84]",
   ambassador_assigned: "bg-[#eef7fc] text-[#2a5f84]",
+  withdrawal_requested: "bg-[#fff3e2] text-[#a85a00]",
   cancelled: "bg-[#ffecec] text-[#b42318]",
   cancel_requested: "bg-[#ffecec] text-[#b42318]",
   reschedule_requested: "bg-[#fff3e2] text-[#a85a00]",

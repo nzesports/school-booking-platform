@@ -1,6 +1,8 @@
+import { cache } from "react";
+
 import { redirect } from "next/navigation";
 
-import type { PortalNotification, ProfileStatus, Role } from "@/lib/domain/types";
+import type { ProfileStatus, Role } from "@/lib/domain/types";
 import { config } from "@/lib/env";
 
 const getCreateClient = async () => (await import("@/lib/supabase/server")).createClient();
@@ -11,9 +13,10 @@ export type AuthenticatedPortalUser = {
   id: string;
   email: string;
   fullName: string;
+  phone?: string | null;
   role: Role;
   status: ProfileStatus;
-  notificationCount: number;
+  avatarUrl?: string | null;
   ambassadorStatus?: string | null;
 };
 
@@ -131,7 +134,11 @@ export function buildPublicAuthPath(
   return nextQuery ? `${pathname}?${nextQuery}` : pathname;
 }
 
-export async function getAuthenticatedPortalUser() {
+// cache() dedupes this within a single render pass, so a page plus the server
+// actions it triggers verify the session once instead of once each. getClaims
+// verifies the JWT locally (no Supabase Auth round-trip on projects with
+// asymmetric signing keys) while still refreshing expired sessions.
+export const getAuthenticatedPortalUser = cache(async () => {
   if (!config.isSupabaseConfigured) {
     return null;
   }
@@ -142,59 +149,49 @@ export async function getAuthenticatedPortalUser() {
     return null;
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
 
-  if (!user) {
+  if (!claims?.sub) {
     return null;
   }
 
+  const claimsEmail = (claims.email as string | undefined) ?? "";
+
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, email, full_name, role, status")
-    .eq("id", user.id)
+    .select("id, email, full_name, phone, role, status, avatar_url")
+    .eq("id", claims.sub)
     .maybeSingle();
 
   if (!profile) {
     return null;
   }
 
-  const notificationCountPromise = supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .is("read_at", null)
-    .is("resolved_at", null);
-
   // The approval check must not depend on the user's own RLS visibility, so
   // read it with the service-role client when available.
-  const ambassadorStatusPromise =
+  const ambassadorResult =
     profile.role === "ambassador"
-      ? getCreateAdminClient().then((adminClient) =>
+      ? await getCreateAdminClient().then((adminClient) =>
           (adminClient ?? supabase)
             .from("ambassador_profiles")
             .select("status")
-            .eq("user_id", user.id)
+            .eq("user_id", claims.sub)
             .maybeSingle()
         )
-      : Promise.resolve({ data: null, error: null });
-
-  const [{ count }, ambassadorResult] = await Promise.all([
-    notificationCountPromise,
-    ambassadorStatusPromise
-  ]);
+      : { data: null, error: null };
 
   return {
     id: profile.id as string,
-    email: (profile.email as string) ?? user.email ?? "",
-    fullName: (profile.full_name as string) ?? user.email ?? "Portal user",
+    email: (profile.email as string) ?? claimsEmail,
+    fullName: (profile.full_name as string) ?? claimsEmail ?? "Portal user",
+    phone: (profile.phone as string | null) ?? null,
     role: profile.role as Role,
     status: profile.status as ProfileStatus,
-    ambassadorStatus: (ambassadorResult.data?.status as string | undefined) ?? null,
-    notificationCount: count ?? 0
+    avatarUrl: (profile.avatar_url as string | null) ?? null,
+    ambassadorStatus: (ambassadorResult.data?.status as string | undefined) ?? null
   } satisfies AuthenticatedPortalUser;
-}
+});
 
 function isPortalScopeAllowed(user: AuthenticatedPortalUser, scope: PortalScope) {
   if (scope === "school") {
@@ -218,10 +215,11 @@ export async function requirePortalAccess(scope: PortalScope) {
       id: `demo-${scope}`,
       email: "demo@example.com",
       fullName: scope === "super_admin" ? "Jordan Lee" : "Jordan Lee",
+      phone: null,
       role: scope === "super_admin" ? "super_admin" : scope,
       status: "active" as const,
-      ambassadorStatus: scope === "ambassador" ? "approved" : null,
-      notificationCount: 3
+      avatarUrl: null,
+      ambassadorStatus: scope === "ambassador" ? "approved" : null
     };
   }
 
@@ -246,40 +244,3 @@ export async function requirePortalAccess(scope: PortalScope) {
   return user;
 }
 
-export async function listMyNotifications(limit = 20): Promise<PortalNotification[]> {
-  if (!config.isSupabaseConfigured) {
-    return [];
-  }
-
-  const supabase = await getCreateClient();
-
-  if (!supabase) {
-    return [];
-  }
-
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return [];
-  }
-
-  const { data } = await supabase
-    .from("notifications")
-    .select("id, title, body, notification_type, related_url, read_at, resolved_at, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  return (data ?? []).map((notification) => ({
-    id: notification.id as string,
-    title: notification.title as string,
-    body: (notification.body as string | null) ?? "",
-    notificationType: notification.notification_type as string,
-    relatedUrl: (notification.related_url as string | null) ?? undefined,
-    readAt: (notification.read_at as string | null) ?? null,
-    resolvedAt: (notification.resolved_at as string | null) ?? null,
-    createdAt: notification.created_at as string
-  }));
-}

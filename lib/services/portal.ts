@@ -39,11 +39,14 @@ import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
+export type ResourceCategory = "resource" | "training" | "presentation_material";
+
 export type ResourceRecord = {
   id: string;
   title: string;
   description: string;
   type: string;
+  category: ResourceCategory;
   audience: "school" | "ambassador" | "staff";
   audiences: Array<"school" | "ambassador" | "staff">;
   tags: string[];
@@ -173,6 +176,9 @@ async function loadPlatformDataUncached() {
   const bookingWindowStart = new Date();
   bookingWindowStart.setMonth(bookingWindowStart.getMonth() - 24);
   const bookingWindowIso = bookingWindowStart.toISOString();
+  const bookingSessionSelectBase =
+    "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador";
+  const bookingSessionSelectWithWithdrawals = `${bookingSessionSelectBase}, withdrawal_reason, withdrawal_requested_at`;
 
   const [
     profilesResult,
@@ -202,7 +208,7 @@ async function loadPlatformDataUncached() {
     trainingLessonsResult,
     trainingProgressResult
   ] = await Promise.all([
-    admin.from("profiles").select("id, email, full_name, phone, role, status, created_at"),
+    admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
     admin
       .from("regions")
       .select("id, name, slug, is_active, sort_order")
@@ -221,9 +227,7 @@ async function loadPlatformDataUncached() {
       .order("created_at", { ascending: false }),
     admin
       .from("booking_sessions")
-      .select(
-        "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador"
-      )
+      .select(bookingSessionSelectWithWithdrawals)
       .gte("starts_at", bookingWindowIso)
       .order("starts_at", { ascending: true }),
     admin.from("presentation_types").select("*"),
@@ -284,6 +288,16 @@ async function loadPlatformDataUncached() {
       .from("training_progress")
       .select("id, ambassador_profile_id, training_module_id, training_lesson_id, status, completed_at")
   ]);
+  const shouldRetrySessionsWithoutWithdrawals =
+    sessionsResult.error?.message?.includes("withdrawal_reason") ||
+    sessionsResult.error?.message?.includes("withdrawal_requested_at");
+  const fallbackSessionsResult = shouldRetrySessionsWithoutWithdrawals
+    ? await admin
+        .from("booking_sessions")
+        .select(bookingSessionSelectBase)
+        .gte("starts_at", bookingWindowIso)
+        .order("starts_at", { ascending: true })
+    : null;
 
   return {
     profiles: profilesResult.data ?? [],
@@ -292,7 +306,7 @@ async function loadPlatformDataUncached() {
     contacts: contactsResult.data ?? [],
     schoolContactUsers: schoolContactUsersResult.data ?? [],
     bookingRequests: requestsResult.data ?? [],
-    bookingSessions: sessionsResult.data ?? [],
+    bookingSessions: fallbackSessionsResult?.data ?? sessionsResult.data ?? [],
     presentations: presentationsResult.data ?? [],
     ambassadorProfiles: ambassadorProfilesResult.data ?? [],
     ambassadorTravelRegions: ambassadorTravelRegionsResult.data ?? [],
@@ -357,6 +371,8 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
         title: resource.title as string,
         description: (resource.description as string | null) ?? "",
         type: resource.resource_type as string,
+        // Environments without migration 0015 have no category column yet.
+        category: (resource.category as ResourceCategory | null | undefined) ?? "resource",
         audience: audiences[0] ?? "staff",
         audiences,
         tags: Array.isArray(resource.tags) ? (resource.tags as string[]) : [],
@@ -404,7 +420,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       ? data.profiles.find((profile) => profile.id === ambassadorProfile.user_id)
       : null;
 
-    if (!ambassadorProfile) {
+    if (!ambassadorProfile || application.status !== "applied") {
       continue;
     }
 
@@ -461,6 +477,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       sessionEnded && (rawStatus === "confirmed" || rawStatus === "ambassador_assigned")
         ? ("completed_pending_report" as BookingSessionView["status"])
         : rawStatus;
+    const withdrawalFields = session as Record<string, unknown>;
 
     const mappedSession: BookingSessionView = {
       id: session.id as string,
@@ -485,12 +502,16 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
         : undefined,
       status: effectiveStatus,
       assignedAmbassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
+      assignedAmbassadorEmail: (ambassadorUser?.email as string | undefined) ?? undefined,
+      assignedAmbassadorPhone: (ambassadorUser?.phone as string | undefined) ?? undefined,
       reportStatus: session.report_status as BookingSessionView["reportStatus"],
       paymentStatus: session.payment_status as BookingSessionView["paymentStatus"],
       applicants: applicantsBySessionId.get(session.id as string) ?? [],
       bookingRequestId: bookingId,
       bookingStatus:
-        (requestStatusById.get(bookingId) as BookingSessionView["bookingStatus"]) ?? undefined
+        (requestStatusById.get(bookingId) as BookingSessionView["bookingStatus"]) ?? undefined,
+      withdrawalReason: (withdrawalFields.withdrawal_reason as string | null) ?? undefined,
+      withdrawalRequestedAt: (withdrawalFields.withdrawal_requested_at as string | null) ?? undefined
     };
 
     sessionsByBookingId.set(bookingId, [...(sessionsByBookingId.get(bookingId) ?? []), mappedSession]);
@@ -582,6 +603,7 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       name: (user?.full_name as string | undefined) ?? "Ambassador",
       email: (user?.email as string | undefined) ?? "",
       phone: (user?.phone as string | undefined) ?? undefined,
+      imageUrl: (user?.avatar_url as string | null) ?? null,
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
       regionName: (region?.name as string | undefined) ?? undefined,
       status: profile.status as AmbassadorProfile["status"],
@@ -847,6 +869,7 @@ function mapUsers(data: NonNullable<RawPlatformData>) {
       role: profile.role as Role,
       status: profile.status as UserSummary["status"],
       phone: (profile.phone as string | null) ?? undefined,
+      avatarUrl: (profile.avatar_url as string | null) ?? null,
       createdAt: (profile.created_at as string | null) ?? undefined,
       ambassadorProfileId: (ambassadorProfile?.id as string | undefined) ?? undefined,
       ambassadorStatus: (ambassadorProfile?.status as UserSummary["ambassadorStatus"]) ?? undefined
@@ -935,6 +958,17 @@ const demoSchoolReviews = demoTestimonials.map((testimonial) => ({
   isPublic: true
 })) satisfies SchoolFeedbackSummary[];
 
+// Demo data predates the category column — infer it the same way migration
+// 0015 backfills real rows: slide decks are presentation materials, other
+// ambassador prep content is training, school-facing items stay resources.
+function demoResourceCategory(type: string, audience: string): ResourceCategory {
+  if (["slide_deck", "ppt", "pptx"].includes(type)) {
+    return "presentation_material";
+  }
+
+  return audience === "ambassador" ? "training" : "resource";
+}
+
 export async function getStaffPortalData(userId?: string): Promise<StaffPortalData> {
   const data = await loadPlatformData();
 
@@ -951,6 +985,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
       resources: demoResources.map((resource) => ({
         ...resource,
         type: resource.type,
+        category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
         tags: [],
         isActive: true,
@@ -1054,6 +1089,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
       resources: demoResources.map((resource) => ({
         ...resource,
         type: resource.type,
+        category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
         tags: [],
         isActive: true
@@ -1146,6 +1182,7 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
       resources: demoResources.filter((resource) => resource.audience === "school").map((resource) => ({
         ...resource,
         type: resource.type,
+        category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
         tags: [],
         isActive: true
@@ -1215,6 +1252,7 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
       resources: demoResources.filter((resource) => resource.audience === "ambassador").map((resource) => ({
         ...resource,
         type: resource.type,
+        category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
         tags: [],
         isActive: true

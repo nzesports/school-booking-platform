@@ -46,6 +46,7 @@ const actionStatuses = new Set<BookingStatus>([
   "requested",
   "tentative",
   "ambassador_needed",
+  "withdrawal_requested",
   "reschedule_requested",
   "cancel_requested",
   "completed_pending_report",

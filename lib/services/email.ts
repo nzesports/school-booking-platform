@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { config } from "@/lib/env";
+import { renderBrandedEmail } from "@/lib/services/email-layout";
 
 type EmailEventInput = {
   templateKey: string;
@@ -37,7 +38,12 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
       },
       to: [{ email: event.recipientEmail }],
       subject: event.subject,
-      htmlContent: event.html,
+      // Every email ships inside the branded shell (logo header, footer with
+      // website/platform links and the unsubscribe option).
+      htmlContent: renderBrandedEmail(event.html),
+      headers: {
+        "List-Unsubscribe": `<mailto:${config.brevoSenderEmail}?subject=Unsubscribe>`
+      },
       // Brevo rejects empty arrays for these keys, so only include them when populated.
       ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
       ...(attachments && attachments.length > 0

@@ -1,6 +1,7 @@
 import { config } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { buildCalendarLinksEmailHtml } from "./calendar-links";
 import { sendTransactionalEmail } from "./email";
 
 type EmailResult = Awaited<ReturnType<typeof sendTransactionalEmail>>;
@@ -38,7 +39,13 @@ async function logEmail(result: EmailResult, related?: {
   });
 }
 
-async function renderTemplate(key: string, vars: Record<string, string>) {
+// htmlVars are substituted without escaping — only for server-built HTML
+// blocks (never user input), e.g. the add-to-calendar links.
+async function renderTemplate(
+  key: string,
+  vars: Record<string, string>,
+  htmlVars: Record<string, string> = {}
+) {
   const admin = createAdminClient();
 
   if (!admin) {
@@ -57,7 +64,9 @@ async function renderTemplate(key: string, vars: Record<string, string>) {
 
   const substitute = (value: string) =>
     value.replace(/\{\{(\w+)\}\}/g, (_, placeholder: string) =>
-      escapeHtml(vars[placeholder] ?? "")
+      placeholder in htmlVars
+        ? htmlVars[placeholder]
+        : escapeHtml(vars[placeholder] ?? "")
     );
 
   return {
@@ -103,6 +112,35 @@ export async function sendBookingRequestReceivedEmail(opts: {
   return result;
 }
 
+// Builds the add-to-calendar links block when the trigger got real session
+// times; the .ics link needs the session id for the hosted download route.
+function calendarLinksBlock(opts: {
+  presentationTitle: string;
+  schoolName: string;
+  sessionStartsAt?: string;
+  sessionEndsAt?: string;
+  bookingSessionId?: string;
+}) {
+  if (!opts.sessionStartsAt) {
+    return "";
+  }
+
+  const endsAt =
+    opts.sessionEndsAt ??
+    new Date(new Date(opts.sessionStartsAt).getTime() + 60 * 60 * 1000).toISOString();
+
+  return buildCalendarLinksEmailHtml(
+    {
+      title: `${opts.presentationTitle} — NZ Esports presentation`,
+      description: `NZ Esports school presentation at ${opts.schoolName}. Manage your booking: ${config.siteUrl}/school/bookings`,
+      location: opts.schoolName,
+      startsAt: opts.sessionStartsAt,
+      endsAt
+    },
+    opts.bookingSessionId ? `${config.siteUrl}/api/calendar/${opts.bookingSessionId}` : undefined
+  );
+}
+
 export async function sendBookingConfirmedEmail(opts: {
   contactEmail: string;
   contactName: string;
@@ -111,19 +149,26 @@ export async function sendBookingConfirmedEmail(opts: {
   presentationTitle: string;
   bookingId?: string;
   bookingSessionId?: string;
+  sessionStartsAt?: string;
+  sessionEndsAt?: string;
 }) {
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
-  const template = await renderTemplate("school_booking_confirmed", {
-    contactName: opts.contactName,
-    schoolName: opts.schoolName,
-    sessionDate: opts.sessionDate,
-    presentationTitle: opts.presentationTitle,
-    bookingId: opts.bookingId ?? "",
-    bookingSessionId: opts.bookingSessionId ?? ""
-  });
+  const calendarLinks = calendarLinksBlock(opts);
+  const template = await renderTemplate(
+    "school_booking_confirmed",
+    {
+      contactName: opts.contactName,
+      schoolName: opts.schoolName,
+      sessionDate: opts.sessionDate,
+      presentationTitle: opts.presentationTitle,
+      bookingId: opts.bookingId ?? "",
+      bookingSessionId: opts.bookingSessionId ?? ""
+    },
+    { calendarLinks }
+  );
   const result = await sendTransactionalEmail({
     templateKey: "school_booking_confirmed",
     recipientEmail: opts.contactEmail,
@@ -134,6 +179,7 @@ export async function sendBookingConfirmedEmail(opts: {
       <p>Hi ${contactName},</p>
       <p>Great news: your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> is now confirmed.</p>
+      ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>We'll send you a reminder closer to the date.</p>
     `
   });
@@ -195,6 +241,193 @@ export async function sendFeedbackRequestEmail(opts: {
     bookingSessionId: opts.bookingSessionId,
     recipientType: "school"
   });
+  return result;
+}
+
+// Sent when a reschedule request is resolved and the booking is re-confirmed
+// with its (new) session time.
+export async function sendBookingRescheduledEmail(opts: {
+  contactEmail: string;
+  contactName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  bookingId?: string;
+  bookingSessionId?: string;
+  sessionStartsAt?: string;
+  sessionEndsAt?: string;
+}) {
+  const contactName = escapeHtml(opts.contactName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const sessionDate = escapeHtml(opts.sessionDate);
+  const presentationTitle = escapeHtml(opts.presentationTitle);
+  const calendarLinks = calendarLinksBlock(opts);
+  const template = await renderTemplate(
+    "school_booking_rescheduled",
+    {
+      contactName: opts.contactName,
+      schoolName: opts.schoolName,
+      sessionDate: opts.sessionDate,
+      presentationTitle: opts.presentationTitle
+    },
+    { calendarLinks }
+  );
+  const result = await sendTransactionalEmail({
+    templateKey: "school_booking_rescheduled",
+    recipientEmail: opts.contactEmail,
+    subject: template?.subject ?? "Your NZ Esports presentation has been rescheduled",
+    html:
+      template?.html ??
+      `
+      <p>Hi ${contactName},</p>
+      <p>Your reschedule request has been sorted — the <strong>${presentationTitle}</strong>
+      session for <strong>${schoolName}</strong> is now confirmed for
+      <strong>${sessionDate}</strong>.</p>
+      ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
+      <p>We'll send a reminder closer to the day.</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "school"
+  });
+  return result;
+}
+
+// Reminder ahead of an upcoming confirmed session (sent by the hourly cron).
+export async function sendSessionReminderEmail(opts: {
+  contactEmail: string;
+  contactName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  bookingId?: string;
+  bookingSessionId?: string;
+}) {
+  const contactName = escapeHtml(opts.contactName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const sessionDate = escapeHtml(opts.sessionDate);
+  const presentationTitle = escapeHtml(opts.presentationTitle);
+  const template = await renderTemplate("school_session_reminder", {
+    contactName: opts.contactName,
+    schoolName: opts.schoolName,
+    sessionDate: opts.sessionDate,
+    presentationTitle: opts.presentationTitle
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "school_session_reminder",
+    recipientEmail: opts.contactEmail,
+    subject: template?.subject ?? `Coming up: ${opts.presentationTitle} at your school`,
+    html:
+      template?.html ??
+      `
+      <p>Hi ${contactName},</p>
+      <p>A quick reminder that the <strong>${presentationTitle}</strong> session at
+      <strong>${schoolName}</strong> is coming up on <strong>${sessionDate}</strong>.</p>
+      <p>Handy checklist: projector or screen ready, microphone if the space needs one,
+      and let the office know our ambassador is visiting.</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "school"
+  });
+  return result;
+}
+
+// Welcome email after a school creates a portal account.
+export async function sendSchoolWelcomeEmail(opts: {
+  contactEmail: string;
+  contactName: string;
+  schoolName: string;
+}) {
+  const contactName = escapeHtml(opts.contactName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const loginUrl = `${config.siteUrl}/school`;
+  const template = await renderTemplate("school_welcome", {
+    contactName: opts.contactName,
+    schoolName: opts.schoolName,
+    loginUrl
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "school_welcome",
+    recipientEmail: opts.contactEmail,
+    subject: template?.subject ?? "Welcome to the NZ Esports booking platform",
+    html:
+      template?.html ??
+      `
+      <p>Kia ora ${contactName},</p>
+      <p>Welcome! Your school portal account for <strong>${schoolName}</strong> is ready.</p>
+      <p>From your portal you can track bookings, request reschedules, access session
+      resources, and leave feedback after each visit.</p>
+      <p><a href="${escapeHtml(loginUrl)}" target="_blank" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Open your school portal</a></p>
+    `
+  });
+
+  await logEmail(result, { recipientType: "school" });
+  return result;
+}
+
+// Confirmation to an ambassador that their application was received.
+export async function sendAmbassadorApplicationReceivedEmail(opts: {
+  ambassadorEmail: string;
+  ambassadorName: string;
+}) {
+  const ambassadorName = escapeHtml(opts.ambassadorName);
+  const template = await renderTemplate("ambassador_application_received", {
+    ambassadorName: opts.ambassadorName
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "ambassador_application_received",
+    recipientEmail: opts.ambassadorEmail,
+    subject: template?.subject ?? "We've received your ambassador application",
+    html:
+      template?.html ??
+      `
+      <p>Kia ora ${ambassadorName},</p>
+      <p>Thanks for applying to become an NZ Esports ambassador!</p>
+      <p>Our team reviews every application personally — we'll be in touch once yours
+      has been looked at. Once approved, you'll get full access to the ambassador
+      portal with open bookings, training, and resources.</p>
+    `
+  });
+
+  await logEmail(result, { recipientType: "ambassador" });
+  return result;
+}
+
+// Sent when staff approve an ambassador application.
+export async function sendAmbassadorApprovedEmail(opts: {
+  ambassadorEmail: string;
+  ambassadorName: string;
+}) {
+  const ambassadorName = escapeHtml(opts.ambassadorName);
+  const loginUrl = `${config.siteUrl}/ambassador`;
+  const template = await renderTemplate("ambassador_approved", {
+    ambassadorName: opts.ambassadorName,
+    loginUrl
+  });
+  const result = await sendTransactionalEmail({
+    templateKey: "ambassador_approved",
+    recipientEmail: opts.ambassadorEmail,
+    subject: template?.subject ?? "You're in — welcome to the NZ Esports ambassador team!",
+    html:
+      template?.html ??
+      `
+      <p>Kia ora ${ambassadorName},</p>
+      <p>Great news — your ambassador application has been <strong>approved</strong>!</p>
+      <p>Your ambassador portal is now unlocked: browse open school bookings, complete
+      your training modules, and set up your payment details so you're ready for your
+      first session.</p>
+      <p><a href="${escapeHtml(loginUrl)}" target="_blank" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Open your ambassador portal</a></p>
+    `
+  });
+
+  await logEmail(result, { recipientType: "ambassador" });
   return result;
 }
 
@@ -275,6 +508,72 @@ export async function sendAmbassadorAssignedEmail(opts: {
       at <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
       <p>Location: ${sessionAddress}</p>
     `
+  });
+
+  await logEmail(result, {
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "ambassador"
+  });
+  return result;
+}
+
+export async function sendAmbassadorWithdrawalResolvedEmail(opts: {
+  ambassadorEmail: string;
+  ambassadorName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  decision: "approved" | "declined";
+  staffNote?: string;
+  bookingSessionId: string;
+}) {
+  const ambassadorName = escapeHtml(opts.ambassadorName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const sessionDate = escapeHtml(opts.sessionDate);
+  const presentationTitle = escapeHtml(opts.presentationTitle);
+  const staffNote = opts.staffNote ? escapeHtml(opts.staffNote) : "";
+  const portalUrl =
+    opts.decision === "approved"
+      ? `${config.siteUrl}/ambassador/open-bookings`
+      : `${config.siteUrl}/ambassador/upcoming`;
+  const templateKey =
+    opts.decision === "approved"
+      ? "ambassador_withdrawal_approved"
+      : "ambassador_withdrawal_declined";
+  const template = await renderTemplate(templateKey, {
+    ambassadorName: opts.ambassadorName,
+    schoolName: opts.schoolName,
+    sessionDate: opts.sessionDate,
+    presentationTitle: opts.presentationTitle,
+    staffNote: opts.staffNote ?? "No extra note was added.",
+    portalUrl
+  });
+  const result = await sendTransactionalEmail({
+    templateKey,
+    recipientEmail: opts.ambassadorEmail,
+    subject:
+      template?.subject ??
+      (opts.decision === "approved"
+        ? `Withdrawal approved: ${opts.presentationTitle}`
+        : `Withdrawal update: ${opts.presentationTitle}`),
+    html:
+      template?.html ??
+      (opts.decision === "approved"
+        ? `
+      <p>Kia ora ${ambassadorName},</p>
+      <p>Your withdrawal from <strong>${presentationTitle}</strong> at
+      <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> has been approved.</p>
+      <p>The session has been reopened for another ambassador. Thank you for letting us know.</p>
+      <p><a href="${escapeHtml(portalUrl)}">Open your ambassador portal</a></p>
+    `
+        : `
+      <p>Kia ora ${ambassadorName},</p>
+      <p>We've reviewed your withdrawal request for <strong>${presentationTitle}</strong>
+      at <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
+      <p>You remain assigned to this session for now.</p>
+      ${staffNote ? `<p><strong>Note from staff:</strong> ${staffNote}</p>` : ""}
+      <p><a href="${escapeHtml(portalUrl)}">Open your upcoming sessions</a></p>
+    `)
   });
 
   await logEmail(result, {

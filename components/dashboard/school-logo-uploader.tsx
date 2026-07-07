@@ -11,9 +11,22 @@ const CROP_SIZE = 768;
 type SchoolLogoUploaderProps = {
   currentLogoUrl?: string | null;
   schoolName: string;
+  inputName?: string;
+  uploadLabel?: string;
+  chooseLabel?: string;
+  emptyLabel?: string;
+  helperText?: string;
 };
 
-export function SchoolLogoUploader({ currentLogoUrl, schoolName }: SchoolLogoUploaderProps) {
+export function SchoolLogoUploader({
+  currentLogoUrl,
+  schoolName,
+  inputName = "logo",
+  uploadLabel = "Upload logo",
+  chooseLabel = "Choose image",
+  emptyLabel,
+  helperText = "PNG, JPG, or WebP works best. Uploading replaces your current logo."
+}: SchoolLogoUploaderProps) {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [sourceName, setSourceName] = useState("school-logo");
   const [scale, setScale] = useState(1);
@@ -103,11 +116,12 @@ export function SchoolLogoUploader({ currentLogoUrl, schoolName }: SchoolLogoUpl
             />
           ) : (
             <span className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#eef2f8,#eaf8ee)] text-3xl font-bold text-[color:var(--navy)]">
-              {schoolName
-                .split(" ")
-                .slice(0, 2)
-                .map((word) => word[0])
-                .join("")}
+              {emptyLabel ??
+                schoolName
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((word) => word[0])
+                  .join("")}
             </span>
           )}
         </div>
@@ -117,11 +131,11 @@ export function SchoolLogoUploader({ currentLogoUrl, schoolName }: SchoolLogoUpl
       <div className="grid content-start gap-4">
         <label className="grid gap-2">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-            Upload logo
+            {uploadLabel}
           </span>
           <span className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white/92 px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[rgba(24,168,59,0.35)] hover:bg-[#f7fdf8]">
             <ImagePlus className="h-4 w-4 text-[color:var(--green)]" />
-            Choose image
+            {chooseLabel}
           </span>
           <input
             type="file"
@@ -149,7 +163,7 @@ export function SchoolLogoUploader({ currentLogoUrl, schoolName }: SchoolLogoUpl
         <input
           ref={croppedInputRef}
           type="file"
-          name="logo"
+          name={inputName}
           className="sr-only"
           tabIndex={-1}
           aria-hidden="true"
@@ -187,7 +201,7 @@ export function SchoolLogoUploader({ currentLogoUrl, schoolName }: SchoolLogoUpl
           </div>
         ) : (
           <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-            PNG, JPG, or WebP works best. Uploading replaces your current logo.
+            {helperText}
           </p>
         )}
       </div>

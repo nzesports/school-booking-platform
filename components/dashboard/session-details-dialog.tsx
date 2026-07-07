@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -80,6 +81,7 @@ export function SessionDetailsButton({
   label,
   unstyled = false,
   updateStatusAction,
+  resolveWithdrawalAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -87,6 +89,7 @@ export function SessionDetailsButton({
   label?: ReactNode;
   unstyled?: boolean;
   updateStatusAction?: (formData: FormData) => void | Promise<void>;
+  resolveWithdrawalAction?: (formData: FormData) => void | Promise<void>;
   returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -269,6 +272,129 @@ export function SessionDetailsButton({
                   )}
                 </DetailTile>
               </div>
+
+              {session.assignedAmbassadorName ? (
+                <div className="mt-4 rounded-[22px] border border-[rgba(24,168,59,0.24)] bg-[#f2faf4] p-5">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#117a2e] shadow-[0_8px_20px_rgba(24,168,59,0.16)]">
+                      <UserRound className="h-5 w-5" />
+                    </span>
+                    Assigned ambassador
+                  </p>
+                  <div className="mt-4 rounded-[16px] border border-[rgba(24,168,59,0.18)] bg-white px-4 py-3">
+                    <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                      {session.assignedAmbassadorName}
+                    </p>
+                    {canReview && (session.assignedAmbassadorEmail || session.assignedAmbassadorPhone) ? (
+                      <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
+                        {session.assignedAmbassadorEmail ? (
+                          <a
+                            href={`mailto:${session.assignedAmbassadorEmail}`}
+                            className="font-semibold text-[color:var(--green)]"
+                          >
+                            {session.assignedAmbassadorEmail}
+                          </a>
+                        ) : null}
+                        {session.assignedAmbassadorEmail && session.assignedAmbassadorPhone
+                          ? " / "
+                          : ""}
+                        {session.assignedAmbassadorPhone ?? ""}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : canReview ? (
+                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                      <UserRound className="h-5 w-5" />
+                    </span>
+                    No ambassador assigned yet
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                    Assign an active applicant or search approved ambassadors from the booking row.
+                  </p>
+                </div>
+              ) : null}
+
+              {canReview ? (
+                <div className="mt-4 rounded-[22px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#1e4fae] shadow-[0_8px_20px_rgba(37,99,235,0.16)]">
+                      <UsersRound className="h-5 w-5" />
+                    </span>
+                    Ambassador applications
+                  </p>
+                  {session.applicants?.length ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {session.applicants.map((applicant) => (
+                        <span
+                          key={applicant.id}
+                          className="inline-flex min-h-[36px] items-center gap-2 rounded-[12px] border border-[#c4dbfb] bg-white px-3 text-sm font-semibold text-[color:var(--navy)]"
+                        >
+                          <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
+                          {applicant.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm leading-6 text-[color:var(--text-soft)]">
+                      No active ambassador applications are waiting for this session.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {session.status === "withdrawal_requested" && resolveWithdrawalAction ? (
+                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                      <AlertTriangle className="h-5 w-5" />
+                    </span>
+                    {session.assignedAmbassadorName ?? "Ambassador"} asked to withdraw
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                    {session.withdrawalReason ? `"${session.withdrawalReason}"` : "No reason provided."}
+                  </p>
+                  <div className="mt-4 grid gap-3">
+                    <form action={resolveWithdrawalAction}>
+                      <input type="hidden" name="bookingSessionId" value={session.id} />
+                      <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                      <input type="hidden" name="decision" value="approve" />
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.22)] transition hover:bg-[#12852f] sm:w-auto"
+                      >
+                        Approve withdrawal - reopen session
+                      </button>
+                    </form>
+                    <form
+                      action={resolveWithdrawalAction}
+                      className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                    >
+                      <input type="hidden" name="bookingSessionId" value={session.id} />
+                      <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                      <input type="hidden" name="decision" value="decline" />
+                      <label className="grid gap-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+                          Reply note (optional)
+                        </span>
+                        <input
+                          name="note"
+                          placeholder="Reply to the ambassador..."
+                          className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="inline-flex min-h-[44px] items-center justify-center rounded-[12px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
+                      >
+                        Decline - keep assigned
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              ) : null}
 
               {canReview && updateStatusAction ? (
                 <div className="mt-4 rounded-[22px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">

@@ -30,6 +30,7 @@ import {
 } from "@/app/portal/actions";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { DismissibleCard } from "@/components/dashboard/dismissible-card";
 import { SchoolLogoUploader } from "@/components/dashboard/school-logo-uploader";
 import { SchoolReviewSubmissionButton } from "@/components/dashboard/school-review-submission-dialog";
 import {
@@ -93,12 +94,19 @@ export default async function SchoolPortalPage({
   const reviewedSessionIds = new Set(
     portal.myReviews.map((review) => review.bookingSessionId).filter(Boolean)
   );
-  const sessionRows: SchoolSessionRow[] = sessions.map(({ session, bookingId }) => ({
-    session,
-    bookingId,
-    isDelivered: isDeliveredSession(session, now),
-    hasReview: reviewedSessionIds.has(session.id)
-  }));
+  const sessionRows: SchoolSessionRow[] = sessions.map(({ session, bookingId }) => {
+    const schoolVisibleSession =
+      session.status === "withdrawal_requested"
+        ? ({ ...session, status: "ambassador_assigned" as const })
+        : session;
+
+    return {
+      session: schoolVisibleSession,
+      bookingId,
+      isDelivered: isDeliveredSession(schoolVisibleSession, now),
+      hasReview: reviewedSessionIds.has(session.id)
+    };
+  });
   const activeStatuses = new Set([
     "tentative",
     "ambassador_needed",
@@ -140,10 +148,11 @@ export default async function SchoolPortalPage({
     sessionRows.map((row) => [row.session.id, row] as const)
   );
   // "What's next" prefers the next upcoming session, falling back to the most
-  // recently delivered one (so there's always something actionable).
+  // recently delivered one still waiting on feedback. Once the review is in
+  // there's nothing actionable, so the card stays hidden.
   const whatsNext =
     upcomingRows[0] ??
-    [...completedRows].sort(
+    [...readyForFeedbackRows].sort(
       (a, b) => new Date(b.session.startsAt).getTime() - new Date(a.session.startsAt).getTime()
     )[0] ??
     null;
@@ -192,11 +201,7 @@ export default async function SchoolPortalPage({
         currentPath={`/school${route ? `/${route}` : ""}`}
         headline={headline}
         subheadline={
-          route === ""
-            ? "Here's what's happening with your bookings, resources and school activity."
-            : route.startsWith("resources")
-              ? undefined
-              : "See your current requests, access session prep materials, and stay aligned with the NZ Esports delivery team."
+          route === "" ? "Here's what's happening with your bookings, resources and school activity." : undefined
         }
         dateLabel="Upcoming term"
         notifications={notifications}
@@ -206,7 +211,8 @@ export default async function SchoolPortalPage({
           name: actor.fullName,
           subtitle: schoolName,
           imageUrl: portal.school?.logoUrl ?? null,
-          imageAlt: `${schoolName} logo`
+          imageAlt: `${schoolName} logo`,
+          href: "/school/profile"
         }}
       >
         {notice ? (
@@ -218,6 +224,11 @@ export default async function SchoolPortalPage({
         {route === "" ? (
           <div className="grid gap-5">
             {whatsNext ? (
+              // Dismissal is remembered per session AND per phase, so hiding
+              // an upcoming card doesn't suppress the later review prompt.
+              <DismissibleCard
+                storageKey={`school-whats-next:${whatsNext.session.id}:${whatsNext.isDelivered ? "review" : "upcoming"}`}
+              >
               <Card
                 className="rounded-[28px]"
                 style={{ borderLeft: "4px solid var(--green)" }}
@@ -278,6 +289,7 @@ export default async function SchoolPortalPage({
                   </div>
                 </div>
               </Card>
+              </DismissibleCard>
             ) : null}
 
             <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

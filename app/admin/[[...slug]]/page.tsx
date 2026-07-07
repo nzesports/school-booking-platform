@@ -5,7 +5,6 @@ import {
   Bell,
   CalendarDays,
   CircleDollarSign,
-  ClipboardCheck,
   FileText,
   FolderKanban,
   Info,
@@ -23,34 +22,38 @@ import {
 
 import { logoutAction } from "@/app/auth/actions";
 import {
+  createEmailTemplateAction,
   deletePortalUserAction,
   deleteRegionAction,
   invitePortalUserAction,
   markNotificationReadAction,
   markReportReviewedAction,
   reviewAmbassadorAction,
+  reviewSchoolFeedbackAction,
   saveEmailTemplateAction,
+  sendTestEmailAction,
   saveHomepageSectionAction,
   savePresentationAction,
+  savePortalProfileAction,
   saveRegionAction,
   saveResourceAction,
   updateUserAccessAction
 } from "@/app/portal/actions";
 import { CopyTextButton } from "@/components/dashboard/copy-text-button";
+import { EmailTemplatesWorkspace } from "@/components/dashboard/email-templates-workspace";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
 import { RegionsManager } from "@/components/dashboard/regions-manager";
-import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
-import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
+import { FeedbackHub } from "@/components/dashboard/feedback-hub";
 import {
   BookingLifecyclePanel,
-  FeedbackWorkspace,
   SchoolDeliveryDatabase
 } from "@/components/dashboard/operations-views";
 import {
   PaymentsWorkspace,
   getPaymentsNotice
 } from "@/components/dashboard/payments-workspace";
+import { PortalProfileWorkspace } from "@/components/dashboard/portal-profile-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
@@ -95,7 +98,6 @@ const navItems = [
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/schools", label: "Schools", icon: School2 },
   { href: "/admin/ambassadors", label: "Ambassadors", icon: UsersRound },
-  { href: "/admin/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/admin/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/presentations", label: "Presentations", icon: Layers3 },
@@ -103,6 +105,7 @@ const navItems = [
   { href: "/admin/feedback", label: "Feedback", icon: Bell },
   { href: "/admin/resources", label: "Resources", icon: FolderKanban },
   { href: "/admin/email-templates", label: "Email templates", icon: FileText },
+  { href: "/admin/profile", label: "Profile", icon: UsersRound },
   { href: "/admin/audit-logs", label: "Audit logs", icon: ShieldCheck }
 ];
 
@@ -138,6 +141,9 @@ export default async function AdminPortalPage({
   const usersTab =
     readSearchParam(resolvedSearchParams, "tab") === "ambassadors" ? "ambassadors" : "staff";
   const directoryUsers = usersTab === "ambassadors" ? ambassadorDirectoryUsers : staffDirectoryUsers;
+  const activeSuperAdminCount = portal.users.filter(
+    (user) => user.role === "super_admin" && user.status === "active"
+  ).length;
   const usersHref = (suffix?: string) => {
     const parts = [usersTab === "ambassadors" ? "tab=ambassadors" : "", suffix ?? ""].filter(
       Boolean
@@ -184,6 +190,7 @@ export default async function AdminPortalPage({
         title: "",
         description: "",
         type: "pdf",
+        category: "resource" as const,
         audience: "school" as const,
         audiences: ["school" as const],
         tags: [],
@@ -227,7 +234,7 @@ export default async function AdminPortalPage({
             : route.startsWith("ambassadors/")
               ? "Review ambassador application"
               : route === "reports"
-                ? "Review submitted session reports"
+                ? "School & ambassador feedback"
                 : route === "payments"
                   ? "Track ambassador invoices and payments"
           : route === "users"
@@ -249,11 +256,13 @@ export default async function AdminPortalPage({
                             : route === "pages-content"
                               ? "Update homepage and content blocks"
                               : route === "feedback"
-                                ? "Review school and ambassador feedback"
+                                ? "School & ambassador feedback"
                                 : route === "email-templates"
                                   ? "Manage transactional email templates"
                                   : route === "audit-logs"
                                     ? "Review recent admin actions"
+                                    : route === "profile"
+                                      ? "Your profile"
                                     : route === "activity"
                                       ? "Admin activity and ambassador approvals"
                                       : "Platform configuration";
@@ -273,13 +282,18 @@ export default async function AdminPortalPage({
         }))}
         activeRange={dashboardRange}
         activityHref="/admin/activity"
-        notificationCount={actor.notificationCount}
+        notificationCount={
+          portal.notifications.filter((notification) => !notification.readAt).length
+        }
         notifications={portal.notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
-          subtitle: "Platform Admin"
+          subtitle: "Platform Admin",
+          imageUrl: actor.avatarUrl ?? null,
+          imageAlt: `${actor.fullName} profile image`,
+          href: "/admin/profile"
         }}
       >
         {route === "" ? (
@@ -301,8 +315,7 @@ export default async function AdminPortalPage({
             }
             emailTemplatesCount={portal.emailTemplates.length}
             activeSuperAdminsCount={
-              portal.users.filter((user) => user.role === "super_admin" && user.status === "active")
-                .length
+              activeSuperAdminCount
             }
             presentationsHref="/admin/presentations"
             regionsHref="/admin/regions"
@@ -310,17 +323,22 @@ export default async function AdminPortalPage({
         ) : null}
 
         {route === "bookings" ? (
-          <BookingLifecyclePanel
-            basePath="/admin"
-            bookings={filteredDashboard.bookings}
-            schools={portal.schools}
-            presentations={portal.presentations}
-            ambassadors={portal.ambassadors}
-            activeView={activeBookingView}
-            range={dashboardRange}
-            initialQuery={readSearchParam(resolvedSearchParams, "q")}
-            initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
-          />
+          <div className="grid gap-4">
+            {contentNotice ? (
+              <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
+            ) : null}
+            <BookingLifecyclePanel
+              basePath="/admin"
+              bookings={filteredDashboard.bookings}
+              schools={portal.schools}
+              presentations={portal.presentations}
+              ambassadors={portal.ambassadors}
+              activeView={activeBookingView}
+              range={dashboardRange}
+              initialQuery={readSearchParam(resolvedSearchParams, "q")}
+              initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
+            />
+          </div>
         ) : null}
 
         {route === "schools" ? (
@@ -504,38 +522,18 @@ export default async function AdminPortalPage({
           </div>
         ) : null}
 
-        {route === "reports" ? (
-          <div className="grid gap-5">
-            <ReportsOverview reports={portal.reports} />
-            <div id="session-reports" className="scroll-mt-24">
-              <DataTable
-                title="Session reports"
-                columns={[
-                  "School",
-                  "Presentation",
-                  "Submitted",
-                  "Attendees",
-                  "Ambassador",
-                  "Status",
-                  "Report"
-                ]}
-                rows={portal.reports.map((report) => [
-                  report.schoolName,
-                  report.presentationTitle,
-                  formatDateTime(report.submittedAt),
-                  String(report.attendeeCount),
-                  report.ambassadorName ?? "Unassigned",
-                  <StatusBadge key={`${report.id}-status`} value={report.status} />,
-                  <ReportDetailsButton
-                    key={`${report.id}-view`}
-                    report={report}
-                    reviewAction={markReportReviewedAction}
-                    reviewReturnTo="/admin/reports#session-reports"
-                  />
-                ])}
-              />
-            </div>
-          </div>
+        {route === "reports" || route === "feedback" ? (
+          <FeedbackHub
+            reports={filteredDashboard.reports}
+            schoolReviews={filteredDashboard.schoolReviews}
+            reviewAction={markReportReviewedAction}
+            feedbackDecisionAction={reviewSchoolFeedbackAction}
+            returnTo={feedbackReturnTo}
+            reportsReturnTo="/admin/reports"
+            initialTab={route === "reports" ? "ambassador" : "school"}
+            showAmbassadorColumn
+            presentationFilterId={presentationFilterId}
+          />
         ) : null}
 
         {route === "payments" ? (
@@ -548,14 +546,6 @@ export default async function AdminPortalPage({
           />
         ) : null}
 
-        {route === "feedback" ? (
-          <FeedbackWorkspace
-            reports={filteredDashboard.reports}
-            schoolReviews={filteredDashboard.schoolReviews}
-            returnTo={feedbackReturnTo}
-            presentationFilterId={presentationFilterId}
-          />
-        ) : null}
 
         {route === "users" ? (
           <Card className="rounded-[34px]">
@@ -732,6 +722,10 @@ export default async function AdminPortalPage({
               {directoryUsers.map((user, index) => {
                 const isDeleteOpen = selectedDeleteUser?.id === user.id;
                 const isCurrentUser = user.id === actor.id;
+                const isSoleActiveSuperAdmin =
+                  user.role === "super_admin" &&
+                  user.status === "active" &&
+                  activeSuperAdminCount <= 1;
                 const accessFormId = `access-form-${user.id}`;
 
                 return (
@@ -787,7 +781,13 @@ export default async function AdminPortalPage({
                           name="role"
                           form={accessFormId}
                           defaultValue={user.role}
-                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm"
+                          disabled={isSoleActiveSuperAdmin}
+                          title={
+                            isSoleActiveSuperAdmin
+                              ? "At least one active super admin is required."
+                              : undefined
+                          }
+                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
                         >
                           <option value="staff">Staff</option>
                           <option value="super_admin">Super admin</option>
@@ -803,7 +803,13 @@ export default async function AdminPortalPage({
                           name="status"
                           form={accessFormId}
                           defaultValue={user.status}
-                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm"
+                          disabled={isSoleActiveSuperAdmin}
+                          title={
+                            isSoleActiveSuperAdmin
+                              ? "At least one active super admin is required."
+                              : undefined
+                          }
+                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
                         >
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
@@ -818,6 +824,11 @@ export default async function AdminPortalPage({
                           {isCurrentUser ? (
                             <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1 text-xs font-semibold text-[color:var(--navy)]">
                               Current user
+                            </span>
+                          ) : null}
+                          {isSoleActiveSuperAdmin ? (
+                            <span className="rounded-full bg-[#eaf8ee] px-3 py-1 text-xs font-semibold text-[#117a2e]">
+                              Required admin
                             </span>
                           ) : null}
                           <span className="rounded-full bg-[#e9edff] px-3 py-1 text-xs font-semibold text-[#4a5fd5]">
@@ -852,6 +863,14 @@ export default async function AdminPortalPage({
                             Current account
                             <Info className="h-4 w-4" />
                           </span>
+                        ) : isSoleActiveSuperAdmin ? (
+                          <span
+                            title="At least one active super admin is required."
+                            className="inline-flex items-center gap-2 rounded-[14px] border border-[color:var(--border-soft)] bg-[#f2f5fa] px-4 py-2.5 text-sm font-semibold text-[color:var(--text-soft)]"
+                          >
+                            Locked
+                            <Info className="h-4 w-4" />
+                          </span>
                         ) : (
                           <>
                             <button
@@ -884,7 +903,7 @@ export default async function AdminPortalPage({
                       </div>
                     </div>
 
-                    {isDeleteOpen ? (
+                    {isDeleteOpen && !isCurrentUser && !isSoleActiveSuperAdmin ? (
                       <form
                         action={deletePortalUserAction}
                         className="mt-5 grid gap-4 rounded-[24px] border border-[#f3b4b4] bg-[#fff7f7] p-4"
@@ -1714,47 +1733,25 @@ export default async function AdminPortalPage({
         ) : null}
 
         {route === "email-templates" ? (
-          <div className="grid gap-5">
-            {portal.emailTemplates.map((template) => (
-              <Card key={template.id} className="rounded-[34px]">
-                <SectionHeading kicker={template.key} title={template.subject} />
-                <form action={saveEmailTemplateAction} className="mt-6 grid gap-4">
-                  <input type="hidden" name="id" value={template.id} />
-                  <Field label="Subject">
-                    <input
-                      name="subject"
-                      defaultValue={template.subject}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
-                    />
-                  </Field>
-                  <Field label="HTML body">
-                    <RichTextEditor
-                      name="bodyHtml"
-                      defaultValue={template.bodyHtml ?? ""}
-                      placeholder="Write the email body."
-                    />
-                    <p className="mt-2 text-xs leading-6 text-[color:var(--text-soft)]">
-                      Available placeholders include {"{{contactName}}"}, {"{{schoolName}}"},{" "}
-                      {"{{bookingId}}"}, {"{{sessionDate}}"}, and {"{{presentationTitle}}"}.
-                    </p>
-                  </Field>
-                  <Field label="Plain text body">
-                    <textarea
-                      name="bodyText"
-                      defaultValue={template.bodyText ?? ""}
-                      className="min-h-24 w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
-                    />
-                  </Field>
-                  <label className="flex items-center gap-2 text-sm text-[color:var(--text-soft)]">
-                    <input type="checkbox" name="isActive" defaultChecked={template.status === "active"} />
-                    Template is active
-                  </label>
-                  <button type="submit" className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]">
-                    Save template
-                  </button>
-                </form>
+          <div className="grid gap-4">
+            {getEmailTemplatesNotice(resolvedSearchParams) ? (
+              <Card
+                className={cn(
+                  "rounded-[24px] px-5 py-4 text-sm font-semibold",
+                  getEmailTemplatesNotice(resolvedSearchParams)?.tone === "error"
+                    ? "border-[#f2c6c6] bg-[#fff6f6] text-[#9d2424]"
+                    : "border-[#b9e2c7] bg-[#f4fbf6] text-[#1d6f35]"
+                )}
+              >
+                {getEmailTemplatesNotice(resolvedSearchParams)?.message}
               </Card>
-            ))}
+            ) : null}
+            <EmailTemplatesWorkspace
+              templates={portal.emailTemplates}
+              saveAction={saveEmailTemplateAction}
+              sendTestAction={sendTestEmailAction}
+              createAction={createEmailTemplateAction}
+            />
           </div>
         ) : null}
 
@@ -1768,6 +1765,18 @@ export default async function AdminPortalPage({
               log.actor,
               formatDateTime(log.createdAt)
             ])}
+          />
+        ) : null}
+
+        {route === "profile" ? (
+          <PortalProfileWorkspace
+            name={actor.fullName}
+            email={actor.email}
+            phone={actor.phone}
+            avatarUrl={actor.avatarUrl}
+            roleLabel="Platform admin"
+            returnTo="/admin/profile"
+            action={savePortalProfileAction}
           />
         ) : null}
 
@@ -1876,6 +1885,58 @@ function readSearchParam(
 ) {
   const value = searchParams[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getEmailTemplatesNotice(
+  searchParams: Record<string, string | string[] | undefined>
+): { tone: "success" | "error"; message: string } | null {
+  const saved = readSearchParam(searchParams, "saved");
+  const error = readSearchParam(searchParams, "error");
+
+  if (saved === "template") {
+    return { tone: "success", message: "Template saved. New emails will use this version." };
+  }
+
+  if (saved === "template-created") {
+    return {
+      tone: "success",
+      message:
+        "Template created. It will send once a platform event is wired to its key — the built-in events use it automatically if the key matches."
+    };
+  }
+
+  if (error === "template-key-exists") {
+    return {
+      tone: "error",
+      message: "A template with that name already exists — pick a different name."
+    };
+  }
+
+  if (saved === "test-sent") {
+    return { tone: "success", message: "Test email sent — check your inbox (and spam folder)." };
+  }
+
+  if (error === "brevo-not-configured") {
+    return {
+      tone: "error",
+      message:
+        "Brevo isn't configured yet — add BREVO_API_KEY to .env.local and restart the server."
+    };
+  }
+
+  if (error === "test-failed") {
+    return {
+      tone: "error",
+      message:
+        "The test send failed — check the sender is verified in Brevo, and see email_logs for the error."
+    };
+  }
+
+  if (error === "template-not-found") {
+    return { tone: "error", message: "That template couldn't be found." };
+  }
+
+  return null;
 }
 
 function getRegionsNotice(searchParams: Record<string, string | string[] | undefined>) {
@@ -1993,6 +2054,39 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
 
 function getContentNotice(searchParams: Record<string, string | string[] | undefined>) {
   const error = readSearchParam(searchParams, "error");
+  const withdrawal = readSearchParam(searchParams, "withdrawal");
+
+  if (withdrawal === "approved") {
+    return {
+      scope: "booking" as const,
+      tone: "success" as const,
+      message: "Withdrawal approved - the session has returned to the open pool."
+    };
+  }
+
+  if (withdrawal === "declined") {
+    return {
+      scope: "booking" as const,
+      tone: "success" as const,
+      message: "Withdrawal declined - the ambassador remains assigned and has been notified."
+    };
+  }
+
+  if (error === "invalid-withdrawal-resolution") {
+    return {
+      scope: "booking" as const,
+      tone: "error" as const,
+      message: "That withdrawal decision was incomplete. Please try again."
+    };
+  }
+
+  if (error === "no-withdrawal-pending") {
+    return {
+      scope: "booking" as const,
+      tone: "error" as const,
+      message: "That withdrawal request has already been resolved or is no longer pending."
+    };
+  }
 
   if (error === "invalid-presentation") {
     return { scope: "presentation" as const, tone: "error" as const, message: "Fill in the required presentation fields before saving." };

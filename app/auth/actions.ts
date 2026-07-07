@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { buildAuthConfirmUrl, buildPublicAuthPath, portalPathForRole } from "@/lib/services/auth";
+import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
+import {
+  sendAmbassadorApplicationReceivedEmail,
+  sendSchoolWelcomeEmail
+} from "@/lib/services/email-triggers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { splitCommaList } from "@/lib/utils";
@@ -234,6 +239,20 @@ export async function registerSchoolAccountAction(
     };
   }
 
+  void sendSchoolWelcomeEmail({
+    contactEmail: parsed.data.email,
+    contactName: parsed.data.contactName,
+    schoolName: parsed.data.schoolName
+  }).catch(() => {});
+
+  if (parsed.data.marketingConsent) {
+    void addContactToTeachersList({
+      email: parsed.data.email,
+      name: parsed.data.contactName,
+      schoolName: parsed.data.schoolName
+    }).catch(() => {});
+  }
+
   if (data.session) {
     redirect("/school");
   }
@@ -323,6 +342,11 @@ export async function registerAmbassadorAccountAction(
       attempt
     };
   }
+
+  void sendAmbassadorApplicationReceivedEmail({
+    ambassadorEmail: parsed.data.email,
+    ambassadorName: parsed.data.fullName
+  }).catch(() => {});
 
   if (data.session) {
     await supabase.auth.signOut();

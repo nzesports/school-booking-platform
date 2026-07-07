@@ -17,21 +17,22 @@ import {
   markNotificationReadAction,
   markReportReviewedAction,
   reviewAmbassadorAction,
+  reviewSchoolFeedbackAction,
   savePlatformSettingsAction,
+  savePortalProfileAction,
   saveResourceAction
 } from "@/app/portal/actions";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
+import { FeedbackHub } from "@/components/dashboard/feedback-hub";
 import {
   BookingLifecyclePanel,
-  FeedbackWorkspace,
   SchoolDeliveryDatabase
 } from "@/components/dashboard/operations-views";
 import {
   PaymentsWorkspace,
   getPaymentsNotice
 } from "@/components/dashboard/payments-workspace";
-import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
-import { ReportsOverview } from "@/components/dashboard/reports-overview";
+import { PortalProfileWorkspace } from "@/components/dashboard/portal-profile-workspace";
 import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
 import { SettingsWorkspace } from "@/components/dashboard/settings-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -63,10 +64,10 @@ const navItems = [
   { href: "/staff/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/staff/schools", label: "Schools", icon: School2 },
   { href: "/staff/ambassadors", label: "Ambassadors", icon: UsersRound },
-  { href: "/staff/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/staff/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/staff/feedback", label: "Feedback", icon: MessageSquareText },
   { href: "/staff/resources", label: "Resources", icon: FolderKanban },
+  { href: "/staff/profile", label: "Profile", icon: UsersRound },
   { href: "/staff/settings", label: "Settings", icon: Settings }
 ];
 
@@ -103,6 +104,7 @@ export default async function StaffPortalPage({
         title: "",
         description: "",
         type: "pdf",
+        category: "resource" as const,
         audience: "school" as const,
         audiences: ["school" as const],
         tags: [],
@@ -139,11 +141,11 @@ export default async function StaffPortalPage({
               : route.startsWith("ambassadors/")
                 ? "Review ambassador application"
                 : route === "reports"
-                  ? "Stay on top of submitted reports"
+                  ? "School & ambassador feedback"
                   : route === "payments"
                     ? "Track ambassador invoices and payments"
                   : route === "feedback"
-                    ? "Monitor school feedback and report quality"
+                    ? "School & ambassador feedback"
                     : route === "resources"
                       ? "Manage school and ambassador resources"
                       : route === "resources/new"
@@ -152,6 +154,8 @@ export default async function StaffPortalPage({
                           ? "Edit resource content"
                       : route === "settings"
                         ? "Platform settings"
+                        : route === "profile"
+                          ? "Your profile"
                         : route === "activity"
                           ? "Unread activity and approval notifications"
                           : "Staff operations workspace";
@@ -172,13 +176,18 @@ export default async function StaffPortalPage({
         }))}
         activeRange={dashboardRange}
         activityHref="/staff/activity"
-        notificationCount={actor.notificationCount}
+        notificationCount={
+          portal.notifications.filter((notification) => !notification.readAt).length
+        }
         notifications={portal.notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
-          subtitle: actor.role === "super_admin" ? "Super Admin on staff view" : "Operations Team"
+          subtitle: actor.role === "super_admin" ? "Super Admin on staff view" : "Operations Team",
+          imageUrl: actor.avatarUrl ?? null,
+          imageAlt: `${actor.fullName} profile image`,
+          href: "/staff/profile"
         }}
       >
         {route === "" ? (
@@ -204,17 +213,22 @@ export default async function StaffPortalPage({
         ) : null}
 
         {route === "bookings" ? (
-          <BookingLifecyclePanel
-            basePath="/staff"
-            bookings={filteredDashboard.bookings}
-            schools={portal.schools}
-            presentations={portal.presentations}
-            ambassadors={portal.ambassadors}
-            activeView={activeBookingView}
-            range={dashboardRange}
-            initialQuery={readSearchParam(resolvedSearchParams, "q")}
-            initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
-          />
+          <div className="grid gap-4">
+            {resourceNotice ? (
+              <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
+            ) : null}
+            <BookingLifecyclePanel
+              basePath="/staff"
+              bookings={filteredDashboard.bookings}
+              schools={portal.schools}
+              presentations={portal.presentations}
+              ambassadors={portal.ambassadors}
+              activeView={activeBookingView}
+              range={dashboardRange}
+              initialQuery={readSearchParam(resolvedSearchParams, "q")}
+              initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
+            />
+          </div>
         ) : null}
 
         {route === "calendar" ? (
@@ -413,29 +427,16 @@ export default async function StaffPortalPage({
           </div>
         ) : null}
 
-        {route === "reports" ? (
-          <div className="grid gap-5">
-            <ReportsOverview reports={portal.reports} />
-            <div id="session-reports" className="scroll-mt-24">
-              <DataTable
-                title="Session reports"
-                columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Report"]}
-                rows={portal.reports.map((report) => [
-                  report.schoolName,
-                  report.presentationTitle,
-                  formatDateTime(report.submittedAt),
-                  String(report.attendeeCount),
-                  <StatusBadge key={`${report.id}-status`} value={report.status} />,
-                  <ReportDetailsButton
-                    key={`${report.id}-view`}
-                    report={report}
-                    reviewAction={markReportReviewedAction}
-                    reviewReturnTo="/staff/reports#session-reports"
-                  />
-                ])}
-              />
-            </div>
-          </div>
+        {route === "reports" || route === "feedback" ? (
+          <FeedbackHub
+            reports={filteredDashboard.reports}
+            schoolReviews={filteredDashboard.schoolReviews}
+            reviewAction={markReportReviewedAction}
+            feedbackDecisionAction={reviewSchoolFeedbackAction}
+            returnTo="/staff/feedback"
+            reportsReturnTo="/staff/reports"
+            initialTab={route === "reports" ? "ambassador" : "school"}
+          />
         ) : null}
 
         {route === "payments" ? (
@@ -448,13 +449,6 @@ export default async function StaffPortalPage({
           />
         ) : null}
 
-        {route === "feedback" ? (
-          <FeedbackWorkspace
-            reports={filteredDashboard.reports}
-            schoolReviews={filteredDashboard.schoolReviews}
-            returnTo="/staff/feedback"
-          />
-        ) : null}
 
         {route === "resources" ? (
           <div className="grid gap-4">
@@ -740,6 +734,18 @@ export default async function StaffPortalPage({
           />
         ) : null}
 
+        {route === "profile" ? (
+          <PortalProfileWorkspace
+            name={actor.fullName}
+            email={actor.email}
+            phone={actor.phone}
+            avatarUrl={actor.avatarUrl}
+            roleLabel={actor.role === "super_admin" ? "Super admin" : "Staff profile"}
+            returnTo="/staff/profile"
+            action={savePortalProfileAction}
+          />
+        ) : null}
+
         {route === "activity" ? (
           <div className="grid gap-4">
             {portal.notifications.filter((notification) => !notification.readAt).length === 0 ? (
@@ -859,6 +865,35 @@ function readSearchParam(
 function getStaffContentNotice(searchParams: Record<string, string | string[] | undefined>) {
   const error = readSearchParam(searchParams, "error");
   const saved = readSearchParam(searchParams, "saved");
+  const withdrawal = readSearchParam(searchParams, "withdrawal");
+
+  if (withdrawal === "approved") {
+    return {
+      tone: "success" as const,
+      message: "Withdrawal approved - the session has returned to the open pool."
+    };
+  }
+
+  if (withdrawal === "declined") {
+    return {
+      tone: "success" as const,
+      message: "Withdrawal declined - the ambassador remains assigned and has been notified."
+    };
+  }
+
+  if (error === "invalid-withdrawal-resolution") {
+    return {
+      tone: "error" as const,
+      message: "That withdrawal decision was incomplete. Please try again."
+    };
+  }
+
+  if (error === "no-withdrawal-pending") {
+    return {
+      tone: "error" as const,
+      message: "That withdrawal request has already been resolved or is no longer pending."
+    };
+  }
 
   if (error === "invalid-resource") {
     return {

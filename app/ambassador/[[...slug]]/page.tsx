@@ -4,7 +4,9 @@ import {
   CheckCircle2,
   Coins,
   FileSpreadsheet,
+  FolderOpen,
   GraduationCap,
+  Presentation,
   UserRound,
   Wallet
 } from "lucide-react";
@@ -14,10 +16,15 @@ import {
   applyToSessionAction,
   markNotificationReadAction,
   markTrainingCompleteAction,
+  requestSessionWithdrawalAction,
   saveAmbassadorProfileAction,
   submitAmbassadorReportAction,
-  submitPaymentInvoiceAction
+  submitPaymentInvoiceAction,
+  withdrawApplicationAction
 } from "@/app/portal/actions";
+import { AmbassadorOpenSessionDialog } from "@/components/dashboard/ambassador-open-session-dialog";
+import { AmbassadorApplicationWithdrawDialog } from "@/components/dashboard/ambassador-application-withdraw-dialog";
+import { AmbassadorWithdrawDialog } from "@/components/dashboard/ambassador-withdraw-dialog";
 import { AmbassadorProfileWorkspace } from "@/components/dashboard/ambassador-profile";
 import { AmbassadorReportForm } from "@/components/dashboard/ambassador-report-form";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -25,7 +32,10 @@ import { DataTable } from "@/components/dashboard/data-table";
 import { MetricGrid } from "@/components/dashboard/metric-grid";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
-import { TrainingWorkspace } from "@/components/dashboard/training-workspace";
+import {
+  ResourceLibraryWorkspace,
+  TrainingWorkspace
+} from "@/components/dashboard/training-workspace";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,7 +57,9 @@ const navItems = [
   { href: "/ambassador/upcoming", label: "Upcoming", icon: CalendarCheck2 },
   { href: "/ambassador/completed", label: "Completed", icon: FileSpreadsheet },
   { href: "/ambassador/earnings", label: "Earnings", icon: Coins },
+  { href: "/ambassador/materials", label: "Materials", icon: Presentation },
   { href: "/ambassador/training", label: "Training", icon: GraduationCap },
+  { href: "/ambassador/resources", label: "Resources", icon: FolderOpen },
   { href: "/ambassador/profile", label: "Profile", icon: Wallet }
 ];
 
@@ -93,6 +105,10 @@ export default async function AmbassadorPortalPage({
             portal.trainingModules.length
         )
       : 0;
+  const trainingResources = portal.resources.filter((resource) => resource.category === "training");
+  const presentationMaterials = portal.resources.filter(
+    (resource) => resource.category === "presentation_material"
+  );
   const notice = getAmbassadorNotice(resolvedSearchParams);
   const reportRatings = portal.reports.flatMap((report) =>
     [report.teacherResponseRating, report.studentEngagementRating].filter(
@@ -101,30 +117,31 @@ export default async function AmbassadorPortalPage({
   );
   const profileStats = {
     schoolVisits: completedSessions.length,
-    nextPayoutCents: portal.ambassador.pendingPaymentsCents,
+    invoicesSubmittedCount: ambassadorPayments.filter(
+      (payment) => payment.invoiceNumber || payment.invoiceSubmittedAt
+    ).length,
+    latestInvoiceSubmittedAt: ambassadorPayments
+      .map((payment) => payment.invoiceSubmittedAt)
+      .filter((date): date is string => Boolean(date))
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0],
     ratingAverage:
       reportRatings.length > 0
         ? reportRatings.reduce((total, rating) => total + rating, 0) / reportRatings.length
         : null,
     ratingCount: portal.reports.length
   };
+  const selectedOpenSession = route.startsWith("open-bookings/")
+    ? portal.openSessions.find((session) => session.id === slug?.[1]) ?? null
+    : null;
 
   const metrics: DashboardMetric[] = [
     {
-      label: "Estimated earnings",
+      label: "Total earned",
       value: formatCurrency(portal.ambassador.estimatedEarningsCents),
-      trend: "All time",
+      trend: "To date",
       detail: "Across assigned and eligible sessions",
       icon: "banknote",
       tone: "green"
-    },
-    {
-      label: "Pending payments",
-      value: formatCurrency(portal.ambassador.pendingPaymentsCents),
-      trend: "Awaiting finance",
-      detail: "Current payment queue",
-      icon: "banknote",
-      tone: "amber"
     },
     {
       label: "Upcoming sessions",
@@ -148,27 +165,35 @@ export default async function AmbassadorPortalPage({
     route === ""
       ? `Kia ora, ${actor.fullName.split(" ")[0]}`
       : route.startsWith("open-bookings")
-        ? "Review privacy-safe open opportunities"
+        ? "Review open opportunities"
         : route.startsWith("reports")
           ? "Submit post-session reports"
           : route.startsWith("earnings/invoice/")
             ? "Submit your invoice for payment"
             : route === "earnings"
-              ? "Track earnings and payment status"
+              ? "Track earnings"
               : route === "profile"
                 ? "Manage your profile and payment details"
                 : route === "training" || route.startsWith("training/")
-                  ? "Complete training and access resources"
-                  : route === "upcoming"
-                    ? "Your upcoming presentation schedule"
-                    : "Ambassador workspace";
+                  ? "Complete your training modules"
+                  : route === "materials"
+                    ? "Download your presentation materials"
+                    : route === "resources"
+                      ? "Browse the resource library"
+                      : route === "upcoming"
+                        ? "Your upcoming presentation schedule"
+                        : route === "completed"
+                          ? "Completed Bookings"
+                        : "Ambassador workspace";
 
   const subheadline =
     route === ""
       ? "Here’s what’s happening across your upcoming presentations, applications, and reporting work."
-      : route === "training" || route === "resources" || route.startsWith("training/")
-        ? "Build your confidence and access everything you need to deliver great sessions."
-        : "Everything here is scoped to the ambassador experience, with privacy-safe access before assignment and operational tools after confirmation.";
+      : route === "materials"
+        ? "Quick access to the current presentation decks — download the latest version before each session."
+        : route === "training" || route === "resources" || route.startsWith("training/")
+          ? "Build your confidence and access everything you need to deliver great sessions."
+          : undefined;
 
   return (
     <main className="min-h-screen">
@@ -185,7 +210,10 @@ export default async function AmbassadorPortalPage({
         logoutAction={logoutAction}
         profile={{
           name: actor.fullName,
-          subtitle: "NZ Esports Ambassador"
+          subtitle: "NZ Esports Ambassador",
+          imageUrl: portal.ambassador.imageUrl ?? actor.avatarUrl ?? null,
+          imageAlt: `${actor.fullName} profile image`,
+          href: "/ambassador/profile"
         }}
       >
         {notice ? (
@@ -246,29 +274,26 @@ export default async function AmbassadorPortalPage({
                         <StatusBadge value={session.status} />
                       </div>
                       <div className="mt-4 flex flex-wrap gap-3">
-                        <ButtonLink
-                          href={`/ambassador/open-bookings/${session.id}`}
-                          variant="secondary"
-                        >
-                          View safe details
-                        </ButtonLink>
-                        {session.myApplicationStatus ? (
+                        <AmbassadorOpenSessionDialog
+                          session={session}
+                          action={applyToSessionAction}
+                          withdrawAction={withdrawApplicationAction}
+                          returnTo="/ambassador"
+                          className="min-h-[48px]"
+                        />
+                        {session.myApplicationStatus === "applied" ? (
                           <span className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-2.5 text-sm font-semibold text-[#1d6f35]">
                             <CheckCircle2 className="h-4 w-4" />
-                            Applied — in review
+                            Applied - in review
                           </span>
-                        ) : (
-                          <form action={applyToSessionAction}>
-                            <input type="hidden" name="bookingSessionId" value={session.id} />
-                            <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
-                            <button
-                              type="submit"
-                              className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
-                            >
-                              Apply
-                            </button>
-                          </form>
-                        )}
+                        ) : null}
+                        {session.myApplicationStatus === "applied" ? (
+                          <AmbassadorApplicationWithdrawDialog
+                            sessionId={session.id}
+                            action={withdrawApplicationAction}
+                            returnTo="/ambassador"
+                          />
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -305,7 +330,7 @@ export default async function AmbassadorPortalPage({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm text-[color:var(--text-soft)]">
-                            {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}
+                            {formatShortDate(session.startsAt)} Â· {formatTime(session.startsAt)}
                           </p>
                           <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                             {session.presentationTitle}
@@ -316,8 +341,13 @@ export default async function AmbassadorPortalPage({
                         </div>
                         <StatusBadge value={session.status} />
                       </div>
-                      <div className="mt-3">
+                      <div className="mt-3 flex flex-wrap gap-2">
                         <SessionDetailsButton session={session} />
+                        <AmbassadorWithdrawDialog
+                          session={session}
+                          action={requestSessionWithdrawalAction}
+                          returnTo="/ambassador"
+                        />
                       </div>
                     </div>
                   ))}
@@ -327,37 +357,89 @@ export default async function AmbassadorPortalPage({
 
             <div className="grid gap-5 xl:grid-cols-[1fr_1fr_0.9fr]">
               <Card className="rounded-[34px]">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Training progress
-                </p>
-                <div className="mt-5 grid gap-4">
-                  {portal.trainingModules.length === 0 ? (
-                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                      No training modules have been published yet. They&apos;ll appear here as soon
-                      as the team adds them.
-                    </p>
-                  ) : null}
-                  {portal.trainingModules.map((module) => (
-                    <div key={module.id}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-[color:var(--navy)]">{module.title}</p>
-                          <p className="text-sm text-[color:var(--text-soft)]">
-                            {module.description}
-                          </p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                    Training progress
+                  </p>
+                  <ButtonLink
+                    href="/ambassador/training"
+                    variant="ghost"
+                    className="min-h-[36px] px-3 py-1.5 text-xs"
+                  >
+                    Training materials
+                  </ButtonLink>
+                </div>
+                <div className="mt-5 grid gap-5">
+                  <div className="grid gap-4">
+                    {portal.trainingModules.length === 0 ? (
+                      <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                        No training modules have been published yet. They&apos;ll appear here as
+                        soon as the team adds them.
+                      </p>
+                    ) : null}
+                    {portal.trainingModules.map((module) => (
+                      <div key={module.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[color:var(--navy)]">{module.title}</p>
+                            <p className="text-sm text-[color:var(--text-soft)]">
+                              {module.description}
+                            </p>
+                          </div>
+                          <span className="text-sm font-semibold text-[color:var(--green)]">
+                            {module.progress}%
+                          </span>
                         </div>
-                        <span className="text-sm font-semibold text-[color:var(--green)]">
-                          {module.progress}%
-                        </span>
+                        <div className="mt-3 h-2 rounded-full bg-[color:var(--blue-soft)]">
+                          <div
+                            className="h-full rounded-full bg-[linear-gradient(135deg,var(--green),var(--green-bright))]"
+                            style={{ width: `${module.progress}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="mt-3 h-2 rounded-full bg-[color:var(--blue-soft)]">
-                        <div
-                          className="h-full rounded-full bg-[linear-gradient(135deg,var(--green),var(--green-bright))]"
-                          style={{ width: `${module.progress}%` }}
-                        />
-                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-[color:var(--border-soft)] pt-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                        Quick presentation downloads
+                      </p>
+                      <ButtonLink
+                        href="/ambassador/materials"
+                        variant="ghost"
+                        className="min-h-[32px] px-2.5 py-1 text-xs"
+                      >
+                        View all
+                      </ButtonLink>
                     </div>
-                  ))}
+                    <div className="mt-3 grid gap-3">
+                      {presentationMaterials.length === 0 ? (
+                        <p className="text-sm leading-7 text-[color:var(--text-soft)]">
+                          Presentation decks will appear here once the team publishes them.
+                        </p>
+                      ) : null}
+                      {presentationMaterials.slice(0, 3).map((resource) => (
+                        <div
+                          key={resource.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3"
+                        >
+                          <span className="text-sm font-semibold text-[color:var(--navy)]">
+                            {resource.title}
+                          </span>
+                          {resource.downloadUrl ? (
+                            <ButtonLink
+                              href={resource.downloadUrl}
+                              variant="secondary"
+                              className="min-h-[34px] rounded-[12px] px-3 py-1 text-xs"
+                            >
+                              Download
+                            </ButtonLink>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </Card>
 
@@ -451,23 +533,29 @@ export default async function AmbassadorPortalPage({
               `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
               session.regionName ?? session.regionSlug,
               <StatusBadge key={`${session.id}-status`} value={session.status} />,
-              session.myApplicationStatus ? (
-                <span
-                  key={`${session.id}-applied`}
-                  className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-3 py-1.5 text-xs font-semibold text-[#1d6f35]"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Applied — in review
-                </span>
-              ) : (
-                <form key={`${session.id}-apply`} action={applyToSessionAction} className="flex flex-wrap gap-2">
-                  <input type="hidden" name="bookingSessionId" value={session.id} />
-                  <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
-                  <Button type="submit" variant="secondary">
-                    Apply
-                  </Button>
-                </form>
-              )
+              <div key={`${session.id}-action`} className="flex flex-wrap items-center gap-2">
+                <AmbassadorOpenSessionDialog
+                  session={session}
+                  action={applyToSessionAction}
+                  withdrawAction={withdrawApplicationAction}
+                  returnTo="/ambassador/open-bookings"
+                  className="min-h-[40px] rounded-[14px] px-3 py-1.5 text-xs"
+                />
+                {session.myApplicationStatus === "applied" ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-3 py-1.5 text-xs font-semibold text-[#1d6f35]">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Applied
+                  </span>
+                ) : null}
+                {session.myApplicationStatus === "applied" ? (
+                  <AmbassadorApplicationWithdrawDialog
+                    sessionId={session.id}
+                    action={withdrawApplicationAction}
+                    returnTo="/ambassador/open-bookings"
+                    className="min-h-[34px] rounded-[12px] px-2.5 py-1 text-xs"
+                  />
+                ) : null}
+              </div>
             ])}
           />
         ) : null}
@@ -481,12 +569,18 @@ export default async function AmbassadorPortalPage({
               The staff team will review applications and decide assignment. Teacher contact
               details stay hidden at this stage.
             </p>
-            {portal.openSessions.find((session) => session.id === slug?.[1])
-              ?.myApplicationStatus ? (
-              <p className="mt-6 inline-flex items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
+            {selectedOpenSession?.myApplicationStatus === "applied" ? (
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+              <p className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
                 <CheckCircle2 className="h-4 w-4" />
                 You&apos;ve applied for this session — staff are reviewing applications now.
               </p>
+              <AmbassadorApplicationWithdrawDialog
+                sessionId={selectedOpenSession.id}
+                action={withdrawApplicationAction}
+                returnTo="/ambassador/open-bookings"
+              />
+              </div>
             ) : (
               <form action={applyToSessionAction} className="mt-6 grid gap-4">
                 <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
@@ -528,7 +622,14 @@ export default async function AmbassadorPortalPage({
               ) : route === "completed" ? (
                 <StatusBadge key={`${session.id}-report-status`} value={session.reportStatus} />
               ) : (
-                <SessionDetailsButton key={`${session.id}-details`} session={session} />
+                <div key={`${session.id}-details`} className="flex flex-wrap gap-2">
+                  <SessionDetailsButton session={session} />
+                  <AmbassadorWithdrawDialog
+                    session={session}
+                    action={requestSessionWithdrawalAction}
+                    returnTo="/ambassador/upcoming"
+                  />
+                </div>
               )
             ])}
           />
@@ -545,12 +646,17 @@ export default async function AmbassadorPortalPage({
 
         {route === "earnings" ? (
           <DataTable
-            title="Earnings and payment status"
-            columns={["Session", "Amount", "Status", "Invoice"]}
+            title="Earnings and invoices"
+            columns={["Session", "Amount", "Status", "Invoice sent", "Invoice"]}
             rows={ambassadorPayments.map((record) => [
               paymentSessionLabel(record.bookingSessionId),
               formatCurrency(record.amountCents),
-              <StatusBadge key={`${record.id}-status`} value={record.status} />,
+              <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
+              record.sentToFinanceAt
+                ? formatShortDate(record.sentToFinanceAt)
+                : record.invoiceSubmittedAt
+                  ? formatShortDate(record.invoiceSubmittedAt)
+                  : "Not submitted",
               record.status === "pending" ? (
                 <ButtonLink
                   key={`${record.id}-invoice`}
@@ -564,6 +670,8 @@ export default async function AmbassadorPortalPage({
                 <ButtonLink
                   key={`${record.id}-invoice`}
                   href={`/portal/invoice/${record.id}`}
+                  target="_blank"
+                  rel="noreferrer"
                   variant="ghost"
                   className="min-h-[40px] rounded-[14px] px-3 py-1.5"
                 >
@@ -646,12 +754,26 @@ export default async function AmbassadorPortalPage({
           )
         ) : null}
 
-        {route === "resources" || route === "training" || route.startsWith("training/") ? (
+        {route === "training" || route.startsWith("training/") ? (
           <TrainingWorkspace
             modules={portal.trainingModules}
-            resources={portal.resources}
+            resources={trainingResources}
             markCompleteAction={markTrainingCompleteAction}
             returnTo="/ambassador/training"
+          />
+        ) : null}
+
+        {route === "materials" ? (
+          <ResourceLibraryWorkspace
+            resources={presentationMaterials}
+            heading="Presentation materials"
+            note="Grab the latest deck before your session — new versions land here first, so always download fresh."
+          />
+        ) : null}
+
+        {route === "resources" ? (
+          <ResourceLibraryWorkspace
+            resources={portal.resources.filter((resource) => resource.category === "resource")}
           />
         ) : null}
 
@@ -683,11 +805,41 @@ export default async function AmbassadorPortalPage({
   );
 }
 
+function InvoiceStatusBadge({
+  record
+}: {
+  record: {
+    paidAt?: string;
+    sentToFinanceAt?: string;
+    invoiceNumber?: string;
+    invoiceSubmittedAt?: string;
+  };
+}) {
+  const label = record.paidAt
+    ? "Paid"
+    : record.sentToFinanceAt
+      ? "Submitted for payment"
+      : record.invoiceNumber || record.invoiceSubmittedAt
+        ? "Invoice submitted"
+        : "Invoice not submitted";
+  const className = record.paidAt || record.sentToFinanceAt || record.invoiceNumber
+    ? "border-[rgba(24,168,59,0.22)] bg-[color:var(--green-soft)] text-[#1d6f35]"
+    : "border-[color:var(--border-soft)] bg-white text-[color:var(--text-soft)]";
+
+  return (
+    <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${className}`}>
+      {label}
+    </span>
+  );
+}
+
 function getAmbassadorNotice(
   searchParams: Record<string, string | string[] | undefined>
 ): { tone: "success" | "error"; message: string } | null {
   const submitted = readSearchParam(searchParams, "submitted");
   const applied = readSearchParam(searchParams, "applied");
+  const requested = readSearchParam(searchParams, "requested");
+  const withdrawn = readSearchParam(searchParams, "withdrawn");
   const completed = readSearchParam(searchParams, "completed");
   const saved = readSearchParam(searchParams, "saved");
   const error = readSearchParam(searchParams, "error");
@@ -718,10 +870,61 @@ function getAmbassadorNotice(
     };
   }
 
+  if (requested === "withdrawal") {
+    return {
+      tone: "success",
+      message:
+        "Withdrawal request sent. Staff will review it and you'll be notified of the outcome; the session stays yours until then."
+    };
+  }
+
+  if (withdrawn === "application") {
+    return {
+      tone: "success",
+      message: "Application withdrawn. You can re-apply later while the session remains open."
+    };
+  }
+
   if (error === "already-applied") {
     return {
       tone: "error",
       message: "You've already applied for that session — staff are reviewing it now."
+    };
+  }
+
+  if (error === "invalid-withdrawal") {
+    return {
+      tone: "error",
+      message: "Add a reason of at least five characters before sending a withdrawal request."
+    };
+  }
+
+  if (error === "withdrawal-already-requested") {
+    return {
+      tone: "error",
+      message: "A withdrawal request is already awaiting staff review for that session."
+    };
+  }
+
+  if (error === "withdrawal-not-allowed") {
+    return { tone: "error", message: "That session cannot be withdrawn from right now." };
+  }
+
+  if (error === "session-already-started") {
+    return {
+      tone: "error",
+      message: "This session has already started, so contact the team directly for urgent changes."
+    };
+  }
+
+  if (error === "not-your-session") {
+    return { tone: "error", message: "That session is not assigned to your account." };
+  }
+
+  if (error === "application-not-found") {
+    return {
+      tone: "error",
+      message: "We couldn't find an active application to withdraw for that session."
     };
   }
 

@@ -535,24 +535,24 @@ const trainingSeed = [
 
 const lessonIdsByModule = {};
 
-for (const module of trainingSeed) {
+for (const trainingModule of trainingSeed) {
   const { data: moduleRow, error: moduleError } = await admin
     .from("training_modules")
     .insert({
-      title: module.title,
-      description: module.description,
-      sort_order: module.sort_order,
+      title: trainingModule.title,
+      description: trainingModule.description,
+      sort_order: trainingModule.sort_order,
       is_active: true,
       is_published: true,
       is_required: true
     })
     .select("id")
     .single();
-  if (moduleError) fail(`creating training module ${module.title}`, moduleError);
+  if (moduleError) fail(`creating training module ${trainingModule.title}`, moduleError);
 
-  lessonIdsByModule[module.title] = [];
+  lessonIdsByModule[trainingModule.title] = [];
 
-  for (const [index, lesson] of module.lessons.entries()) {
+  for (const [index, lesson] of trainingModule.lessons.entries()) {
     const { data: lessonRow, error: lessonError } = await admin
       .from("training_lessons")
       .insert({
@@ -565,7 +565,7 @@ for (const module of trainingSeed) {
       .select("id")
       .single();
     if (lessonError) fail(`creating lesson ${lesson.title}`, lessonError);
-    lessonIdsByModule[module.title].push(lessonRow.id);
+    lessonIdsByModule[trainingModule.title].push(lessonRow.id);
   }
 }
 

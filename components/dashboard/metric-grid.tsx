@@ -37,11 +37,11 @@ const toneMap = {
 
 export function MetricGrid({ metrics }: { metrics: DashboardMetric[] }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+    <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => {
         const Icon = iconMap[metric.icon ?? "sparkles"];
         return (
-          <Card key={metric.label} className="relative overflow-hidden">
+          <Card key={metric.label} className="relative h-full overflow-hidden">
             <div className={`absolute inset-x-0 top-0 h-1 ${toneMap[metric.tone ?? "green"]}`} />
             <div className="flex items-start justify-between gap-4">
               <div>

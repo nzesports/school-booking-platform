@@ -9,6 +9,7 @@ export type BookingStatus =
   | "ambassador_applied"
   | "ambassador_assigned"
   | "confirmed"
+  | "withdrawal_requested"
   | "reschedule_requested"
   | "cancel_requested"
   | "cancelled"
@@ -172,6 +173,7 @@ export interface AmbassadorProfile {
   name: string;
   email: string;
   phone?: string;
+  imageUrl?: string | null;
   regionSlug: string;
   regionName?: string;
   status: "applied" | "approved" | "inactive" | "declined";
@@ -210,12 +212,16 @@ export interface BookingSessionView {
   actualStudentCount?: number;
   status: BookingStatus;
   assignedAmbassadorName?: string;
+  assignedAmbassadorEmail?: string;
+  assignedAmbassadorPhone?: string;
   reportStatus: ReportStatus;
   paymentStatus: PaymentStatus;
   myApplicationStatus?: string;
   applicants?: Array<{ id: string; name: string }>;
   bookingRequestId?: string;
   bookingStatus?: BookingStatus;
+  withdrawalReason?: string;
+  withdrawalRequestedAt?: string;
 }
 
 export interface BookingRequestView {
@@ -397,6 +403,7 @@ export interface UserSummary {
   role: Role;
   status: ProfileStatus;
   phone?: string;
+  avatarUrl?: string | null;
   createdAt?: string;
   ambassadorProfileId?: string;
   ambassadorStatus?: AmbassadorProfile["status"];

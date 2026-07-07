@@ -267,7 +267,7 @@ values
     'school_booking_confirmed',
     'School booking confirmed',
     'Your NZ Esports presentation has been confirmed',
-    '<p>Hi {{contactName}},</p><p>Your <strong>{{presentationTitle}}</strong> session for <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong> has been confirmed.</p>',
+    '<p>Hi {{contactName}},</p><p>Your <strong>{{presentationTitle}}</strong> session for <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong> has been confirmed.</p><p>{{calendarLinks}}</p>',
     'Hi {{contactName}}, your {{presentationTitle}} session for {{schoolName}} on {{sessionDate}} has been confirmed.'
   ),
   (

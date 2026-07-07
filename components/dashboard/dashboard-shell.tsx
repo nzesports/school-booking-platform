@@ -2,14 +2,13 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Bell,
-  CalendarRange,
-  ChevronDown,
   Headphones,
   Home,
   LogOut,
   type LucideIcon
 } from "lucide-react";
 
+import { DashboardRangePicker } from "@/components/dashboard/dashboard-range-picker";
 import { NotificationsBell } from "@/components/dashboard/notifications-bell";
 import { BrandLockup } from "@/components/site/brand-lockup";
 import type { PortalNotification } from "@/lib/domain/types";
@@ -73,9 +72,31 @@ export function DashboardShell({
     subtitle: string;
     imageUrl?: string | null;
     imageAlt?: string;
+    href?: string;
   };
   children: ReactNode;
 }) {
+  const profileContent = profile ? (
+    <div className="flex items-center gap-3">
+      {profile.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={profile.imageUrl}
+          alt={profile.imageAlt ?? profile.name}
+          className="h-12 w-12 rounded-2xl border border-[color:var(--border-soft)] bg-white object-cover"
+        />
+      ) : (
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--navy),#1d327a)] text-sm font-bold text-white">
+          {initials(profile.name)}
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="truncate font-semibold text-[color:var(--navy)]">{profile.name}</p>
+        <p className="truncate text-sm text-[color:var(--text-soft)]">{profile.subtitle}</p>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="grid min-h-screen w-full gap-5 px-4 py-4 xl:grid-cols-[292px_minmax(0,1fr)] xl:gap-0 xl:px-0 xl:py-0">
       <aside className="surface-panel flex flex-col rounded-[34px] p-5 xl:min-h-screen xl:rounded-none xl:border-x-0 xl:border-y-0 xl:border-r xl:border-r-[color:var(--border-soft)] xl:bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(246,250,255,0.94))] xl:px-6 xl:py-7 xl:shadow-none">
@@ -119,26 +140,18 @@ export function DashboardShell({
 
         <div className="mt-auto grid gap-3 pt-6">
           {profile ? (
-            <div className="rounded-[26px] border border-[color:var(--border-soft)] bg-white/95 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
-              <div className="flex items-center gap-3">
-                {profile.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.imageUrl}
-                    alt={profile.imageAlt ?? profile.name}
-                    className="h-12 w-12 rounded-2xl border border-[color:var(--border-soft)] bg-white object-cover"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--navy),#1d327a)] text-sm font-bold text-white">
-                    {initials(profile.name)}
-                  </div>
-                )}
-                <div>
-                  <p className="font-semibold text-[color:var(--navy)]">{profile.name}</p>
-                  <p className="text-sm text-[color:var(--text-soft)]">{profile.subtitle}</p>
-                </div>
+            profile.href ? (
+              <Link
+                href={profile.href}
+                className="rounded-[26px] border border-[color:var(--border-soft)] bg-white/95 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)] transition hover:border-[rgba(24,168,59,0.28)] hover:bg-[#fbfffc]"
+              >
+                {profileContent}
+              </Link>
+            ) : (
+              <div className="rounded-[26px] border border-[color:var(--border-soft)] bg-white/95 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
+                {profileContent}
               </div>
-            </div>
+            )
           ) : null}
 
           <div className="rounded-[26px] bg-[linear-gradient(135deg,#f5fbff,#f7fdf8)] p-4 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]">
@@ -217,27 +230,11 @@ export function DashboardShell({
             {/* Only render the range picker when there are actual options —
                 a dropdown that changes nothing is just confusing chrome. */}
             {rangeOptions && rangeOptions.length > 0 ? (
-              <details className="group relative">
-                <summary className="inline-flex cursor-pointer list-none items-center gap-3 rounded-2xl border border-[color:var(--border-soft)] bg-white/94 px-5 py-4 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)] marker:hidden">
-                  <CalendarRange className="h-5 w-5 text-[color:var(--green)]" />
-                  {dateLabel ?? "This week"}
-                  <ChevronDown className="h-4 w-4 text-[color:var(--text-soft)] transition group-open:rotate-180" />
-                </summary>
-                <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white/98 p-2 shadow-[0_18px_42px_rgba(11,24,77,0.14)]">
-                  {rangeOptions.map((option) => (
-                    <Link
-                      key={option.value}
-                      href={option.href}
-                      className={cn(
-                        "flex rounded-[14px] px-3 py-2 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]",
-                        option.value === activeRange ? "bg-[color:var(--green-soft)] text-[color:var(--green)]" : ""
-                      )}
-                    >
-                      {option.label}
-                    </Link>
-                  ))}
-                </div>
-              </details>
+              <DashboardRangePicker
+                label={dateLabel ?? "This week"}
+                options={rangeOptions}
+                activeRange={activeRange}
+              />
             ) : null}
           </div>
         </div>
