@@ -295,20 +295,22 @@ as $$
 declare
   still_active_super_admins integer;
 begin
-  if tg_op = 'DELETE'
-    and old.role = 'super_admin'
-    and old.status = 'active' then
-    perform pg_advisory_xact_lock(hashtext('public.profiles.active_super_admin_guard')::bigint);
+  -- DELETE must always return OLD (0019): returning NEW here is NULL for
+  -- deletes, which silently cancelled every non-super-admin profile delete.
+  if tg_op = 'DELETE' then
+    if old.role = 'super_admin' and old.status = 'active' then
+      perform pg_advisory_xact_lock(hashtext('public.profiles.active_super_admin_guard')::bigint);
 
-    select count(*)::int
-    into still_active_super_admins
-    from public.profiles
-    where role = 'super_admin'
-      and status = 'active'
-      and id <> old.id;
+      select count(*)::int
+      into still_active_super_admins
+      from public.profiles
+      where role = 'super_admin'
+        and status = 'active'
+        and id <> old.id;
 
-    if still_active_super_admins = 0 then
-      raise exception 'At least one active super admin is required.';
+      if still_active_super_admins = 0 then
+        raise exception 'At least one active super admin is required.';
+      end if;
     end if;
 
     return old;
