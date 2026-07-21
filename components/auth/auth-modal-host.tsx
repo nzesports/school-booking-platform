@@ -116,7 +116,7 @@ export function AuthModalHost({
 
   return (
     <div
-      className="fixed inset-0 z-[80] overflow-y-auto bg-[rgba(4,15,75,0.44)] px-4 py-4 backdrop-blur-sm md:px-6 md:py-6"
+      className="fixed inset-0 z-[80] overflow-y-auto bg-[rgba(4,15,75,0.55)] px-4 py-4 md:px-6 md:py-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           closeAuth();

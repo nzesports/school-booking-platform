@@ -34,7 +34,7 @@ export function BookingDialogShell({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[70] overflow-y-auto bg-[rgba(4,15,75,0.45)] px-3 py-3 backdrop-blur-sm lg:px-4 lg:py-4",
+        "fixed inset-0 z-[70] overflow-y-auto bg-[rgba(4,15,75,0.55)] px-3 py-3 lg:px-4 lg:py-4",
         overlayClassName
       )}
       onClick={(event) => {

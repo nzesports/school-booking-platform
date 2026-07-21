@@ -299,7 +299,7 @@ export function ReportDetailsButton({
       {lightbox
         ? createPortal(
             <div
-              className="fixed inset-0 z-[95] flex items-center justify-center bg-[rgba(4,15,75,0.78)] px-4 py-6 backdrop-blur-sm"
+              className="fixed inset-0 z-[95] flex items-center justify-center bg-[rgba(4,15,75,0.78)] px-4 py-6"
               onClick={(event) => {
                 if (event.target === event.currentTarget) {
                   setLightbox(null);
