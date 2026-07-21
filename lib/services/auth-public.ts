@@ -1,4 +1,12 @@
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+// Vercel system env vars are host-only (no protocol) and only defined
+// server-side; client bundles fall through to the localhost default, which is
+// fine because buildAbsoluteUrl is only called from server code.
+const vercelUrl =
+  process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (vercelUrl ? `https://${vercelUrl}` : "http://localhost:3000");
 
 type PublicAuthMode = "login" | "signup" | "forgot";
 export type PublicAuthRole = "school" | "ambassador";

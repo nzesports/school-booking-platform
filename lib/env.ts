@@ -1,5 +1,13 @@
+// Vercel system env vars are host-only (no protocol) and server-side only;
+// they keep auth emails pointing at the deployed domain when
+// NEXT_PUBLIC_SITE_URL is not set.
+const vercelUrl =
+  process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+
 const env = {
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+  siteUrl:
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (vercelUrl ? `https://${vercelUrl}` : "http://localhost:3000"),
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   supabasePublishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,

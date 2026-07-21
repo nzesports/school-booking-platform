@@ -69,7 +69,10 @@ alter table public.presentation_types
 alter table public.ambassador_profiles
   add column if not exists profile_details jsonb not null default '{}'::jsonb;
 
--- ------------------------------------------------- from 0010 (school signup fix)
+-- ------------------------- from 0018 (school signup fix, supersedes 0010)
+-- Local variables use a v_ prefix: a variable named school_contact_id was
+-- ambiguous against the column inside ON CONFLICT (...), raising 42702 and
+-- aborting every signup.
 create or replace function public.handle_new_auth_user()
 returns trigger
 language plpgsql
@@ -77,18 +80,18 @@ security definer
 set search_path = public
 as $$
 declare
-  metadata jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
-  selected_role text := case
-    when metadata->>'role' in ('school', 'ambassador') then metadata->>'role'
+  v_metadata jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  v_selected_role text := case
+    when v_metadata->>'role' in ('school', 'ambassador') then v_metadata->>'role'
     else 'school'
   end;
-  selected_region_id uuid;
-  school_record_id uuid;
-  school_contact_id uuid;
-  ambassador_profile_id uuid;
-  travel_region_slug text;
+  v_selected_region_id uuid;
+  v_school_record_id uuid;
+  v_school_contact_id uuid;
+  v_ambassador_profile_id uuid;
+  v_travel_region_slug text;
 begin
-  selected_region_id := public.region_id_from_slug(metadata->>'region_slug');
+  v_selected_region_id := public.region_id_from_slug(v_metadata->>'region_slug');
 
   insert into public.profiles (
     id,
@@ -100,10 +103,10 @@ begin
   )
   values (
     new.id,
-    coalesce(new.email, metadata->>'email', ''),
-    metadata->>'full_name',
-    metadata->>'phone',
-    selected_role,
+    coalesce(new.email, v_metadata->>'email', ''),
+    v_metadata->>'full_name',
+    v_metadata->>'phone',
+    v_selected_role,
     'active'
   )
   on conflict (id) do update
@@ -113,21 +116,21 @@ begin
     phone = coalesce(excluded.phone, public.profiles.phone),
     role = excluded.role;
 
-  if selected_role = 'school' then
+  if v_selected_role = 'school' then
     select sc.id, sc.school_id
-    into school_contact_id, school_record_id
+    into v_school_contact_id, v_school_record_id
     from public.school_contacts sc
-    where lower(sc.email) = lower(coalesce(new.email, metadata->>'email', ''))
+    where lower(sc.email) = lower(coalesce(new.email, v_metadata->>'email', ''))
     order by sc.is_primary desc, sc.created_at asc
     limit 1;
 
-    if school_contact_id is not null then
+    if v_school_contact_id is not null then
       insert into public.school_contact_users (
         school_contact_id,
         user_id
       )
       values (
-        school_contact_id,
+        v_school_contact_id,
         new.id
       )
       on conflict (school_contact_id, user_id) do nothing;
@@ -138,11 +141,11 @@ begin
         status
       )
       values (
-        coalesce(metadata->>'school_name', split_part(coalesce(new.email, ''), '@', 1)),
-        selected_region_id,
+        coalesce(v_metadata->>'school_name', split_part(coalesce(new.email, ''), '@', 1)),
+        v_selected_region_id,
         'pending_review'
       )
-      returning id into school_record_id;
+      returning id into v_school_record_id;
 
       insert into public.school_contacts (
         school_id,
@@ -154,27 +157,27 @@ begin
         marketing_consent
       )
       values (
-        school_record_id,
-        coalesce(metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
-        coalesce(new.email, metadata->>'email', ''),
-        metadata->>'phone',
+        v_school_record_id,
+        coalesce(v_metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
+        coalesce(new.email, v_metadata->>'email', ''),
+        v_metadata->>'phone',
         true,
         true,
-        coalesce((metadata->>'marketing_consent')::boolean, false)
+        coalesce((v_metadata->>'marketing_consent')::boolean, false)
       )
-      returning id into school_contact_id;
+      returning id into v_school_contact_id;
 
       insert into public.school_contact_users (
         school_contact_id,
         user_id
       )
       values (
-        school_contact_id,
+        v_school_contact_id,
         new.id
       )
       on conflict (school_contact_id, user_id) do nothing;
     end if;
-  elsif selected_role = 'ambassador' then
+  elsif v_selected_role = 'ambassador' then
     insert into public.ambassador_profiles (
       user_id,
       region_id,
@@ -186,35 +189,35 @@ begin
     )
     values (
       new.id,
-      selected_region_id,
-      metadata->>'experience',
-      metadata->>'experience',
-      nullif(metadata->>'referred_by', ''),
-      coalesce((metadata->>'open_to_travel')::boolean, false),
+      v_selected_region_id,
+      v_metadata->>'experience',
+      v_metadata->>'experience',
+      nullif(v_metadata->>'referred_by', ''),
+      coalesce((v_metadata->>'open_to_travel')::boolean, false),
       'applied'
     )
-    returning id into ambassador_profile_id;
+    returning id into v_ambassador_profile_id;
 
-    if jsonb_typeof(metadata->'travel_regions') = 'array' then
-      for travel_region_slug in
-        select jsonb_array_elements_text(metadata->'travel_regions')
+    if jsonb_typeof(v_metadata->'travel_regions') = 'array' then
+      for v_travel_region_slug in
+        select jsonb_array_elements_text(v_metadata->'travel_regions')
       loop
         insert into public.ambassador_travel_regions (
           ambassador_profile_id,
           region_id
         )
         select
-          ambassador_profile_id,
+          v_ambassador_profile_id,
           id
         from public.regions
-        where slug = travel_region_slug
+        where slug = v_travel_region_slug
         on conflict do nothing;
       end loop;
     end if;
 
     perform public.notify_staff_about_ambassador_application(
-      ambassador_profile_id,
-      coalesce(metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1))
+      v_ambassador_profile_id,
+      coalesce(v_metadata->>'full_name', split_part(coalesce(new.email, ''), '@', 1))
     );
   end if;
 

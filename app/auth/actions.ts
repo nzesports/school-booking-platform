@@ -391,10 +391,13 @@ export async function loginWithPasswordAction(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
+    const emailNotConfirmed =
+      error.code === "email_not_confirmed" || /email not confirmed/i.test(error.message);
+
     redirect(
       buildPublicAuthPath(returnTo, {
         auth: "login",
-        error: "invalid-credentials"
+        error: emailNotConfirmed ? "email-not-confirmed" : "invalid-credentials"
       })
     );
   }

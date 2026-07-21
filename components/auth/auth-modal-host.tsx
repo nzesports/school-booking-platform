@@ -27,6 +27,8 @@ const loginMessages: Record<string, string> = {
   "confirm-failed": "We couldn't verify that link. Try requesting a new password reset or sign in again.",
   "invalid-confirm-link": "That confirmation link is invalid or has expired.",
   "invalid-credentials": "The email or password was incorrect.",
+  "email-not-confirmed":
+    "Please confirm your email address first — check your inbox for the confirmation link we sent when you signed up.",
   "email-exists":
     "That email address already has an account. Log in below, or use “Forgot password” if you need to reset it.",
   "profile-missing": "Your account exists, but the portal profile is missing. Please contact support.",
