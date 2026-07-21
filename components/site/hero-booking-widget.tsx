@@ -68,10 +68,10 @@ export function HeroBookingWidget({
 
   const shellClassName =
     mode === "page"
-      ? "rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-5 shadow-[0_28px_62px_rgba(11,24,77,0.12)] backdrop-blur-2xl md:p-6 lg:p-7"
+      ? "rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(255,255,255,0.96))] p-5 shadow-[0_28px_62px_rgba(11,24,77,0.12)] md:p-6 lg:p-7"
       : mode === "compact"
-        ? "rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.62),rgba(255,255,255,0.88))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5"
-        : "mt-8 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(255,255,255,0.76))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] backdrop-blur-2xl md:p-5 lg:p-6";
+        ? "rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(255,255,255,0.96))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] md:p-5"
+        : "mt-8 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.8),rgba(255,255,255,0.92))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] md:p-5 lg:p-6";
 
   const kickerText = mode === "compact" ? "Book this presentation" : "Plan your visit";
   const helperText = useMemo(
@@ -128,7 +128,7 @@ export function HeroBookingWidget({
           return (
             <div
               key={session.id}
-              className="rounded-[24px] border border-white/75 bg-white/70 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)] backdrop-blur-xl md:p-5"
+              className="rounded-[24px] border border-white/75 bg-white/88 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)] md:p-5"
             >
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -370,7 +370,7 @@ function Field({
   return (
     <div
       className={cn(
-        "rounded-[20px] border border-white/75 bg-white/66 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.52)] backdrop-blur-xl",
+        "rounded-[20px] border border-white/75 bg-white/86 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.52)]",
         className
       )}
     >

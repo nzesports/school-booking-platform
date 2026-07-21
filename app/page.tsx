@@ -115,7 +115,7 @@ export default async function HomePage() {
                 {highlights.map(({ label, icon: Icon }) => (
                   <div
                     key={label}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/65 bg-white/70 px-4 py-3 text-sm font-medium text-[color:var(--navy)] shadow-[0_10px_22px_rgba(11,24,77,0.06)] backdrop-blur"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/65 bg-white/85 px-4 py-3 text-sm font-medium text-[color:var(--navy)] shadow-[0_10px_22px_rgba(11,24,77,0.06)]"
                   >
                     <Icon className="h-4 w-4 text-[color:var(--green)]" />
                     {label}
@@ -224,7 +224,7 @@ export default async function HomePage() {
             {testimonials.map((testimonial) => (
               <article
                 key={testimonial.id}
-                className="flex h-full flex-col rounded-[30px] border border-[color:var(--border-soft)] bg-white/88 p-7 shadow-[0_18px_42px_rgba(11,24,77,0.08)] backdrop-blur"
+                className="flex h-full flex-col rounded-[30px] border border-[color:var(--border-soft)] bg-white/88 p-7 shadow-[0_18px_42px_rgba(11,24,77,0.08)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -341,7 +341,7 @@ function HeroVisual() {
         className="relative mx-auto h-auto w-full max-w-[680px] object-contain drop-shadow-[0_30px_60px_rgba(11,24,77,0.16)]"
       />
 
-      <div className="relative -mt-24 ml-auto mr-1 max-w-[230px] rounded-[20px] border border-white/55 bg-white/42 p-4 shadow-[0_16px_36px_rgba(11,24,77,0.14)] backdrop-blur-2xl md:mr-4">
+      <div className="relative -mt-24 ml-auto mr-1 max-w-[230px] rounded-[20px] border border-white/55 bg-white/60 p-4 shadow-[0_16px_36px_rgba(11,24,77,0.14)] backdrop-blur-sm md:mr-4">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
           Presentation impact
         </p>
@@ -375,7 +375,7 @@ function StepRailItem({
       <span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--green)] text-sm font-semibold text-white">
         {step}
       </span>
-      <div className="mx-auto mt-5 flex h-16 w-16 items-center justify-center rounded-full border border-[rgba(4,15,75,0.08)] bg-white/82 text-[color:var(--navy)] shadow-[0_14px_32px_rgba(11,24,77,0.08)] backdrop-blur">
+      <div className="mx-auto mt-5 flex h-16 w-16 items-center justify-center rounded-full border border-[rgba(4,15,75,0.08)] bg-white/90 text-[color:var(--navy)] shadow-[0_14px_32px_rgba(11,24,77,0.08)]">
         <Icon className="h-5 w-5" />
       </div>
       <h3 className="mt-4 text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">

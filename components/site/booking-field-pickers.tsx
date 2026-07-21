@@ -70,6 +70,9 @@ function useAnchoredPopover(anchorRef: RefObject<HTMLElement | null>, fixedWidth
     };
 
     // Keep the popover glued to its trigger while the page scrolls or resizes.
+    // Coalesced to one rAF per frame so scroll events don't thrash layout.
+    let rafId = 0;
+
     const reposition = () => {
       const anchor = anchorRef.current;
 
@@ -84,16 +87,28 @@ function useAnchoredPopover(anchorRef: RefObject<HTMLElement | null>, fixedWidth
       setPosition({ top: rect.bottom + 8, left, width });
     };
 
+    const scheduleReposition = () => {
+      if (rafId) {
+        return;
+      }
+
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        reposition();
+      });
+    };
+
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", scheduleReposition, { capture: true, passive: true });
+    window.addEventListener("resize", scheduleReposition);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", scheduleReposition, { capture: true });
+      window.removeEventListener("resize", scheduleReposition);
+      window.cancelAnimationFrame(rafId);
     };
   }, [open, anchorRef, fixedWidth]);
 

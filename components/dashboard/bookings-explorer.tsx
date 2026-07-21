@@ -991,6 +991,9 @@ function AmbassadorSearchSelect({
       setPosition(null);
     };
 
+    // Coalesced to one rAF per frame so scroll events don't thrash layout.
+    let rafId = 0;
+
     const reposition = () => {
       const rect = anchorRef.current?.getBoundingClientRect();
 
@@ -1006,14 +1009,26 @@ function AmbassadorSearchSelect({
       });
     };
 
+    const scheduleReposition = () => {
+      if (rafId) {
+        return;
+      }
+
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        reposition();
+      });
+    };
+
     document.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", scheduleReposition, { capture: true, passive: true });
+    window.addEventListener("resize", scheduleReposition);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", scheduleReposition, { capture: true });
+      window.removeEventListener("resize", scheduleReposition);
+      window.cancelAnimationFrame(rafId);
     };
   }, [open]);
 

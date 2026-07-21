@@ -804,7 +804,7 @@ function PlannerField({
   return (
     <div
       className={cn(
-        "rounded-[20px] border border-[rgba(164,202,227,0.34)] bg-white/82 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] backdrop-blur-xl",
+        "rounded-[20px] border border-[rgba(164,202,227,0.34)] bg-white/94 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]",
         className
       )}
     >
