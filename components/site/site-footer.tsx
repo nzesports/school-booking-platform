@@ -37,8 +37,8 @@ export function SiteFooter({
       icon: Linkedin
     },
     {
-      href: "mailto:schools@esf.nz",
-      label: "Email NZ Esports schools team",
+      href: "/contact",
+      label: "Contact the NZ Esports schools team",
       icon: Mail
     }
   ];
@@ -77,15 +77,13 @@ export function SiteFooter({
         )}
       >
         <div id="about">
-          <a
+          <BrandLockup
+            size="footer"
             href="https://www.nzesports.org.nz/"
-            aria-label="Visit the NZ Esports website"
-            className="inline-flex"
+            ariaLabel="Visit the NZ Esports website"
             target="_blank"
             rel="noreferrer"
-          >
-            <BrandLockup size="footer" />
-          </a>
+          />
           <p className="mt-4 max-w-sm text-sm leading-7 text-[color:var(--text-soft)]">
             <a
               href="https://www.nzesports.org.nz/"
@@ -106,8 +104,8 @@ export function SiteFooter({
                 href={href}
                 aria-label={label}
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white/80 transition hover:-translate-y-0.5 hover:border-[rgba(4,15,75,0.16)]"
-                target={href.startsWith("mailto:") ? undefined : "_blank"}
-                rel={href.startsWith("mailto:") ? undefined : "noreferrer"}
+                target={href.startsWith("http") ? "_blank" : undefined}
+                rel={href.startsWith("http") ? "noreferrer" : undefined}
               >
                 <Icon className="h-4 w-4" />
               </a>
@@ -124,7 +122,7 @@ export function SiteFooter({
             <Link href="/#how-it-works">How It Works</Link>
             <Link href="/#regions">Regions</Link>
             <Link href="/#about">About Us</Link>
-            <a href="mailto:schools@esf.nz">Contact</a>
+            <Link href="/contact">Contact</Link>
           </div>
         </div>
 

@@ -79,11 +79,10 @@ export function HeroBookingModal({
   const sessionHeading = sessions.length === 1 ? "Selected session" : "Selected sessions";
   const editLabel = sessions.length === 1 ? "Edit session" : "Edit sessions";
   const draftSummary =
-    sessions.length === 1 ? "1 session draft ready" : `${sessions.length} session draft ready`;
+    sessions.length === 1 ? "1 session ready" : `${sessions.length} sessions ready`;
 
   return (
     <BookingDialogShell
-      kicker="Complete your booking"
       title="Review and send your booking request"
       description="We'll check availability and confirm the session details with your school before anything is final."
       onClose={onClose}
@@ -98,14 +97,9 @@ export function HeroBookingModal({
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_14px_30px_rgba(11,24,77,0.08)]">
                     <CalendarDays className="h-5 w-5 text-[color:var(--navy)]" />
                   </div>
-                  <div>
-                    <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                      {sessionHeading}
-                    </p>
-                    <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                      Review the session details below before you send the request.
-                    </p>
-                  </div>
+                  <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                    {sessionHeading}
+                  </p>
                 </div>
 
                 <Button
@@ -239,9 +233,6 @@ export function HeroBookingModal({
               <h3 className="text-[2rem] font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
                 School contact details
               </h3>
-              <p className="mt-2 text-base leading-8 text-[color:var(--text-soft)]">
-                Tell us who we should contact to confirm this request.
-              </p>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <Field label="School name">
@@ -274,16 +265,6 @@ export function HeroBookingModal({
               </div>
             </section>
 
-            <label className="mt-5 flex items-start gap-3 text-sm text-[color:var(--navy)]">
-              <input
-                type="checkbox"
-                name="marketingConsent"
-                defaultChecked
-                className="mt-1 h-4 w-4 rounded border-[color:var(--border-soft)]"
-              />
-              <span>Send me occasional NZ Esports school updates and resources.</span>
-            </label>
-
             <div className="mt-6 rounded-[24px] border border-[rgba(164,202,227,0.55)] bg-[linear-gradient(180deg,rgba(243,249,255,0.95),rgba(255,255,255,0.96))] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]">
               <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex items-center gap-4 text-[color:var(--navy)]">
@@ -293,8 +274,7 @@ export function HeroBookingModal({
                   <div>
                     <p className="text-[1.4rem] font-semibold tracking-[-0.04em]">{draftSummary}</p>
                     <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                      This is a request only. Our team will confirm availability before your
-                      booking is final.
+                      We&apos;ll confirm availability before your booking is final.
                     </p>
                   </div>
                 </div>
@@ -358,4 +338,3 @@ function SessionSummaryItem({
     </div>
   );
 }
-

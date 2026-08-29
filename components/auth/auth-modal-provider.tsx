@@ -2,18 +2,20 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
-  useSyncExternalStore,
   type ReactNode
 } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { SignupFormState } from "@/app/auth/actions";
 import { AuthModalHost } from "@/components/auth/auth-modal-host";
 import type { Region } from "@/lib/domain/types";
 import { PUBLIC_AUTH_QUERY_KEYS } from "@/lib/services/auth-public";
+import { clearGuestBookingDefaults } from "@/lib/services/guest-booking-defaults";
 
 export type AuthModalMode = "login" | "signup" | "forgot";
 export type AuthModalRole = "school" | "ambassador";
@@ -31,70 +33,7 @@ const AuthModalContext = createContext<AuthModalContextValue | null>(null);
 type AuthAction = (formData: FormData) => void | Promise<void>;
 type SignupAction = (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;
 
-const AUTH_URL_CHANGE_EVENT = "nz-esports-auth-url-change";
-const AUTH_URL_HISTORY_PATCH_FLAG = "__nzEsportsAuthHistoryPatched";
-
-function ensureAuthHistoryPatched() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const globalWindow = window as typeof window & {
-    [AUTH_URL_HISTORY_PATCH_FLAG]?: boolean;
-  };
-
-  if (globalWindow[AUTH_URL_HISTORY_PATCH_FLAG]) {
-    return;
-  }
-
-  const wrapHistoryMethod = (method: "pushState" | "replaceState") => {
-    const original = window.history[method];
-
-    window.history[method] = function patchedHistoryMethod(...args) {
-      const result = original.apply(this, args);
-      window.dispatchEvent(new Event(AUTH_URL_CHANGE_EVENT));
-      return result;
-    };
-  };
-
-  wrapHistoryMethod("pushState");
-  wrapHistoryMethod("replaceState");
-  globalWindow[AUTH_URL_HISTORY_PATCH_FLAG] = true;
-}
-
-function subscribeToAuthUrlChange(onStoreChange: () => void) {
-  if (typeof window === "undefined") {
-    return () => undefined;
-  }
-
-  ensureAuthHistoryPatched();
-
-  window.addEventListener("popstate", onStoreChange);
-  window.addEventListener(AUTH_URL_CHANGE_EVENT, onStoreChange);
-
-  return () => {
-    window.removeEventListener("popstate", onStoreChange);
-    window.removeEventListener(AUTH_URL_CHANGE_EVENT, onStoreChange);
-  };
-}
-
-function getAuthUrlSnapshot() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return window.location.search.replace(/^\?/, "");
-}
-
-export function AuthModalProvider({
-  children,
-  regions,
-  loginAction,
-  registerSchoolAction,
-  registerAmbassadorAction,
-  forgotPasswordAction,
-  authEnabled
-}: {
+type AuthModalProviderProps = {
   children: ReactNode;
   regions: Region[];
   loginAction: AuthAction;
@@ -102,15 +41,42 @@ export function AuthModalProvider({
   registerAmbassadorAction: SignupAction;
   forgotPasswordAction: AuthAction;
   authEnabled: boolean;
-}) {
-  const pathname = usePathname();
-  const paramsString = useSyncExternalStore(
-    subscribeToAuthUrlChange,
-    getAuthUrlSnapshot,
-    () => ""
+};
+
+export function AuthModalProvider(props: AuthModalProviderProps) {
+  return (
+    <Suspense fallback={<AuthModalProviderContent {...props} paramsString="" />}>
+      <AuthModalProviderFromUrl {...props} />
+    </Suspense>
   );
+}
+
+function AuthModalProviderFromUrl(props: AuthModalProviderProps) {
+  const searchParams = useSearchParams();
+
+  return <AuthModalProviderContent {...props} paramsString={searchParams.toString()} />;
+}
+
+function AuthModalProviderContent({
+  children,
+  regions,
+  loginAction,
+  registerSchoolAction,
+  registerAmbassadorAction,
+  forgotPasswordAction,
+  authEnabled,
+  paramsString
+}: AuthModalProviderProps & { paramsString: string }) {
+  const pathname = usePathname();
+  const router = useRouter();
 
   const searchParams = useMemo(() => new URLSearchParams(paramsString), [paramsString]);
+
+  useEffect(() => {
+    if (pathname.startsWith("/school") || searchParams.get("checkEmail") === "school") {
+      clearGuestBookingDefaults();
+    }
+  }, [pathname, searchParams]);
 
   const currentMode = (() => {
     const value = searchParams.get("auth");
@@ -144,7 +110,7 @@ export function AuthModalProvider({
       mode?: AuthModalMode;
       role?: AuthModalRole;
     }) => {
-      const params = new URLSearchParams(window.location.search.replace(/^\?/, ""));
+      const params = new URLSearchParams(paramsString);
 
       for (const key of PUBLIC_AUTH_QUERY_KEYS) {
         params.delete(key);
@@ -161,9 +127,9 @@ export function AuthModalProvider({
       const nextQuery = params.toString();
       const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
 
-      window.history.replaceState(window.history.state, "", nextUrl);
+      router.replace(nextUrl, { scroll: false });
     },
-    [pathname]
+    [paramsString, pathname, router]
   );
 
   const openAuth = useCallback(

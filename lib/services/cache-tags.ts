@@ -7,3 +7,6 @@ export const PLATFORM_DATA_TAG = "platform-data";
 // Public site reference data: presentations, regions, homepage sections,
 // testimonials, availability windows.
 export const PUBLIC_CONTENT_TAG = "public-content";
+
+// Public booking calendar data, including dates with existing active sessions.
+export const AVAILABILITY_DATA_TAG = "availability-data";

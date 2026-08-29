@@ -25,6 +25,7 @@ import { logoutAction } from "@/app/auth/actions";
 import {
   markNotificationReadAction,
   requestSchoolBookingChangeAction,
+  requestSchoolSessionRescheduleAction,
   saveSchoolProfileAction,
   submitSchoolReviewAction
 } from "@/app/portal/actions";
@@ -42,12 +43,14 @@ import { SchoolFeedbackForm } from "@/components/site/school-feedback-form";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
 import { requirePortalAccess } from "@/lib/services/auth";
+import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import { isDeliveredSession } from "@/lib/services/dashboard-insights";
 import { getSchoolPortalData, loadUserNotifications } from "@/lib/services/portal";
 import { cn, formatShortDate, formatTime, formatWeekdayDate } from "@/lib/utils";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { StatusBadge, schoolBookingStatusLabel } from "@/components/ui/status-badge";
 
 const navItems = [
   { href: "/school", label: "Overview", icon: School2 },
@@ -71,6 +74,14 @@ function overviewResourceUrl(resource: OverviewResource) {
 function isOverviewVideoResource(resource: OverviewResource) {
   return resource.type === "youtube" || resource.type === "video" || Boolean(resource.youtubeUrl);
 }
+
+const reschedulableStatuses = new Set([
+  "requested",
+  "tentative",
+  "applied",
+  "ambassador_assigned",
+  "confirmed"
+]);
 
 export default async function SchoolPortalPage({
   params,
@@ -109,8 +120,7 @@ export default async function SchoolPortalPage({
   });
   const activeStatuses = new Set([
     "tentative",
-    "ambassador_needed",
-    "ambassador_applied",
+    "applied",
     "ambassador_assigned",
     "confirmed",
     "reschedule_requested"
@@ -165,6 +175,16 @@ export default async function SchoolPortalPage({
     route.startsWith("bookings/") && slug?.length === 2
       ? schoolBookings.find((booking) => booking.id === slug[1])
       : null;
+  const rescheduleBooking =
+    slug?.length === 5 &&
+    slug[0] === "bookings" &&
+    slug[2] === "sessions" &&
+    slug[4] === "reschedule"
+      ? schoolBookings.find((booking) => booking.id === slug[1])
+      : null;
+  const rescheduleSession = rescheduleBooking?.sessions.find(
+    (session) => session.id === slug?.[3]
+  );
   const reviewSessionRow = route.startsWith("review/")
     ? sessionRows.find((row) => row.session.id === slug?.[1])
     : null;
@@ -181,7 +201,7 @@ export default async function SchoolPortalPage({
     route === ""
       ? `Welcome back, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
-        ? "Track tentative and confirmed bookings"
+        ? "Track pending and confirmed bookings"
         : route.startsWith("resources")
           ? "Resources"
           : route.startsWith("reviews")
@@ -190,7 +210,7 @@ export default async function SchoolPortalPage({
               ? "Your school profile"
               : route.startsWith("review")
                 ? "Leave session feedback"
-                : "School workspace";
+                : "School portal";
 
   return (
     <main className="min-h-screen">
@@ -256,6 +276,9 @@ export default async function SchoolPortalPage({
                       </span>
                       <StatusBadge
                         value={whatsNext.isDelivered ? "completed" : whatsNext.session.status}
+                        label={schoolBookingStatusLabel(
+                          whatsNext.isDelivered ? "completed" : whatsNext.session.status
+                        )}
                       />
                     </div>
                     <div className="mt-5 flex flex-wrap gap-3">
@@ -275,16 +298,16 @@ export default async function SchoolPortalPage({
                           <Star className="h-4 w-4" />
                           Leave review
                         </ButtonLink>
-                      ) : (
+                      ) : reschedulableStatuses.has(whatsNext.session.status) ? (
                         <ButtonLink
-                          href={`/school/bookings/${whatsNext.bookingId}/reschedule`}
+                          href={`/school/bookings/${whatsNext.bookingId}/sessions/${whatsNext.session.id}/reschedule`}
                           variant="secondary"
                           className="min-h-[42px] rounded-[14px] px-4"
                         >
                           <CalendarClock className="h-4 w-4" />
                           Reschedule
                         </ButtonLink>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -373,6 +396,9 @@ export default async function SchoolPortalPage({
                             <td className="border-b border-[color:rgba(4,15,75,0.05)] px-3 py-3.5">
                               <StatusBadge
                                 value={row.isDelivered ? "completed" : row.session.status}
+                                label={schoolBookingStatusLabel(
+                                  row.isDelivered ? "completed" : row.session.status
+                                )}
                               />
                             </td>
                           </tr>
@@ -508,7 +534,7 @@ export default async function SchoolPortalPage({
               <SchoolStatTile
                 icon={<Hourglass className="h-5 w-5" />}
                 iconClassName="bg-[#fdf3dc] text-[#b7822c]"
-                label="Tentative"
+                label="Pending approval"
                 value={String(tentativeRows.length)}
               />
               <SchoolStatTile
@@ -551,6 +577,9 @@ export default async function SchoolPortalPage({
                       <span aria-hidden className="h-4 w-px bg-[rgba(4,15,75,0.14)]" />
                       <StatusBadge
                         value={whatsNext.isDelivered ? "completed" : whatsNext.session.status}
+                        label={schoolBookingStatusLabel(
+                          whatsNext.isDelivered ? "completed" : whatsNext.session.status
+                        )}
                       />
                       {whatsNext.session.assignedAmbassadorName ? (
                         <>
@@ -611,7 +640,10 @@ export default async function SchoolPortalPage({
                   {selectedBooking.primaryContactName} · {selectedBooking.primaryContactEmail}
                 </p>
               </div>
-              <StatusBadge value={selectedBooking.status} />
+              <StatusBadge
+                value={selectedBooking.status}
+                label={schoolBookingStatusLabel(selectedBooking.status)}
+              />
             </div>
 
             {selectedBooking.schoolNotes ? (
@@ -641,7 +673,10 @@ export default async function SchoolPortalPage({
                         Ambassador: {session.assignedAmbassadorName ?? "Pending assignment"}
                       </p>
                     </div>
-                    <StatusBadge value={session.status} />
+                    <StatusBadge
+                      value={session.status}
+                      label={schoolBookingStatusLabel(session.status)}
+                    />
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
                     {isDeliveredSession(session, now) ? (
@@ -658,19 +693,21 @@ export default async function SchoolPortalPage({
                       )
                     ) : session.status !== "cancelled" ? (
                       <>
-                        <ButtonLink
-                          href={`/school/bookings/${selectedBooking.id}/reschedule`}
-                          variant="secondary"
-                        >
-                          <CalendarClock className="h-4 w-4" />
-                          Reschedule
-                        </ButtonLink>
-                        <ButtonLink
-                          href={`/school/bookings/${selectedBooking.id}/cancel`}
-                          variant="danger"
-                        >
-                          Request cancellation
-                        </ButtonLink>
+                          {reschedulableStatuses.has(session.status) ? (
+                            <ButtonLink
+                              href={`/school/bookings/${selectedBooking.id}/sessions/${session.id}/reschedule`}
+                              variant="secondary"
+                            >
+                              <CalendarClock className="h-4 w-4" />
+                              Reschedule
+                            </ButtonLink>
+                          ) : null}
+                          <ButtonLink
+                            href={`/school/bookings/${selectedBooking.id}/cancel`}
+                            variant="danger"
+                          >
+                            Cancel booking
+                          </ButtonLink>
                       </>
                     ) : null}
                   </div>
@@ -680,22 +717,40 @@ export default async function SchoolPortalPage({
           </Card>
         ) : null}
 
-        {route.startsWith("bookings/") && route.endsWith("/reschedule") ? (
+        {rescheduleBooking && rescheduleSession ? (
           <Card className="rounded-[34px]">
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Request a reschedule
             </h2>
-            <form action={requestSchoolBookingChangeAction} className="mt-6 grid gap-4">
-              <input type="hidden" name="bookingRequestId" value={slug?.[1] ?? ""} />
-              <input type="hidden" name="intent" value="reschedule" />
-              <input type="hidden" name="returnTo" value="/school/bookings" />
-              <Input name="preferredDate" type="date" required />
+            <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
+              {rescheduleSession.presentationTitle} is currently scheduled for{" "}
+              {formatWeekdayDate(rescheduleSession.startsAt)} at{" "}
+              {formatTime(rescheduleSession.startsAt)}. Choose a preferred new date at least seven
+              days away.
+            </p>
+            <form action={requestSchoolSessionRescheduleAction} className="mt-6 grid gap-4">
+              <input type="hidden" name="bookingRequestId" value={rescheduleBooking.id} />
+              <input type="hidden" name="bookingSessionId" value={rescheduleSession.id} />
+              <input
+                type="hidden"
+                name="returnTo"
+                value={`/school/bookings/${rescheduleBooking.id}`}
+              />
+              <Input
+                name="preferredDate"
+                type="date"
+                min={minimumBookingDate()}
+                max={maximumBookingDate()}
+                required
+              />
               <Textarea
                 name="notes"
                 placeholder="Tell staff what changed and any preferred timing."
                 required
               />
-              <Button type="submit">Submit reschedule request</Button>
+              <PendingSubmitButton type="submit" pendingLabel="Submitting request...">
+                Submit reschedule request
+              </PendingSubmitButton>
             </form>
           </Card>
         ) : null}
@@ -703,7 +758,7 @@ export default async function SchoolPortalPage({
         {route.startsWith("bookings/") && route.endsWith("/cancel") ? (
           <Card className="rounded-[34px]">
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              Request cancellation
+              Cancel booking
             </h2>
             <form action={requestSchoolBookingChangeAction} className="mt-6 grid gap-4">
               <input type="hidden" name="bookingRequestId" value={slug?.[1] ?? ""} />
@@ -711,12 +766,16 @@ export default async function SchoolPortalPage({
               <input type="hidden" name="returnTo" value="/school/bookings" />
               <Textarea
                 name="reason"
-                placeholder="Share the reason for the cancellation request."
+                placeholder="Share the reason for the cancellation."
                 required
               />
-              <Button type="submit" variant="danger">
-                Submit cancellation request
-              </Button>
+              <PendingSubmitButton
+                type="submit"
+                variant="danger"
+                pendingLabel="Cancelling booking..."
+              >
+                Cancel booking
+              </PendingSubmitButton>
             </form>
           </Card>
         ) : null}
@@ -1064,10 +1123,6 @@ export default async function SchoolPortalPage({
                   <h2 className="text-3xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                     {portal.school.name}
                   </h2>
-                  <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                    Keep your school details up to date — the NZ Esports team sees these on
-                    your school record.
-                  </p>
                 </div>
               </div>
 
@@ -1101,7 +1156,6 @@ export default async function SchoolPortalPage({
 
                 <ProfileSection
                   title="Contact details"
-                  hint="Used by the NZ Esports team to reach you about bookings. Changing the contact email here doesn't change the email you log in with."
                 >
                   <div className="grid gap-4 md:grid-cols-3">
                     <ProfileField label="Contact name">
@@ -1123,7 +1177,7 @@ export default async function SchoolPortalPage({
 
                 <ProfileSection
                   title="Notes for the NZ Esports team"
-                  hint="Availability windows, best days for assemblies, site access instructions — anything that helps us plan visits."
+                  hint="Instructions for site access, school specific information, anything that helps us plan visits."
                 >
                   <Textarea
                     name="profileNotes"
@@ -1392,6 +1446,7 @@ function ProfileField({ label, children }: { label: string; children: ReactNode 
 
 function getSchoolNotice(searchParams: Record<string, string | string[] | undefined>) {
   const requested = readSearchParam(searchParams, "requested");
+  const cancelled = readSearchParam(searchParams, "cancelled");
   const submitted = readSearchParam(searchParams, "submitted");
   const saved = readSearchParam(searchParams, "saved");
   const error = readSearchParam(searchParams, "error");
@@ -1404,8 +1459,12 @@ function getSchoolNotice(searchParams: Record<string, string | string[] | undefi
     return "Reschedule request sent. Staff will review availability and follow up.";
   }
 
+  if (cancelled === "1") {
+    return "Booking cancelled. We have emailed your confirmation and notified the delivery team.";
+  }
+
   if (requested === "cancel") {
-    return "Cancellation request sent. Staff will confirm the next step with you.";
+    return "Booking cancelled.";
   }
 
   if (submitted === "review") {

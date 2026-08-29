@@ -14,6 +14,7 @@ const env = {
   brevoApiKey: process.env.BREVO_API_KEY,
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || "info@esf.nz",
   brevoSenderName: process.env.BREVO_SENDER_NAME || "NZ Esports",
+  brevoContactEmail: process.env.BREVO_CONTACT_EMAIL || "schools@esf.nz",
   // Brevo contact list that opted-in teachers/school contacts are added to.
   brevoTeacherListId: Number(process.env.BREVO_TEACHER_LIST_ID || 15),
   cronSecret: process.env.CRON_SECRET,

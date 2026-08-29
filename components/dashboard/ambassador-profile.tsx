@@ -239,9 +239,6 @@ export function AmbassadorProfileWorkspace({
         <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           Update your portal photo
         </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-7 text-[color:var(--text-soft)]">
-          Upload a square profile image. You can scale and reposition it before saving.
-        </p>
         <div className="mt-5">
           <SchoolLogoUploader
             currentLogoUrl={ambassador.imageUrl}
@@ -250,7 +247,6 @@ export function AmbassadorProfileWorkspace({
             uploadLabel="Upload profile image"
             chooseLabel="Choose profile image"
             emptyLabel={initials || "A"}
-            helperText="Square image used across your dashboard profile."
           />
         </div>
       </section>
@@ -598,20 +594,38 @@ export function AmbassadorProfileWorkspace({
                   ) : (
                     <span
                       key={day.key}
+                      title={value || "Unavailable"}
                       className={cn(
-                        "px-1 py-3 text-[11px] leading-4",
+                        "min-h-11 px-1 py-3 text-[11px] leading-4",
                         value
-                          ? "font-medium text-[#1e4fae]"
-                          : "text-[color:var(--text-soft)]"
+                          ? "bg-[#dff4e5] text-[#117a2e]"
+                          : "bg-[#f1f5f9] text-[#64748b]"
                       )}
                     >
                       <input type="hidden" name={`availability-${day.key}`} value={value} />
-                      {value || "Unavailable"}
+                      <span className="sr-only">
+                        {day.label}: {value ? `Available, ${value}` : "Unavailable"}
+                      </span>
                     </span>
                   );
                 })}
               </div>
             </div>
+            {!editing.preferences ? (
+              <div
+                className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[color:var(--text-soft)]"
+                aria-label="Availability legend"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm border border-[#b9e2c7] bg-[#dff4e5]" />
+                  Available
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 rounded-sm border border-[#dbe3ec] bg-[#f1f5f9]" />
+                  Unavailable
+                </span>
+              </div>
+            ) : null}
             <p className="mt-2.5 flex items-center gap-2 rounded-[12px] bg-[#eef4fd] px-3 py-2 text-xs text-[#1e4fae]">
               <Info className="h-3.5 w-3.5 shrink-0" />
               All times shown are in NZST.
@@ -797,13 +811,13 @@ function ProfileField({
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-[rgba(4,15,75,0.06)] py-3 last:border-0">
-      <span className="flex shrink-0 items-center gap-2.5 text-sm text-[color:var(--text-soft)]">
+    <div className="grid min-w-0 grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-center gap-4 border-b border-[rgba(4,15,75,0.06)] py-3 last:border-0">
+      <span className="flex min-w-0 items-center gap-2.5 text-sm text-[color:var(--text-soft)]">
         <span className="text-[color:var(--navy)]">{icon}</span>
         {label}
       </span>
       {name ? <input type="hidden" name={name} value={value} /> : null}
-      <span className="min-w-0 text-right text-sm font-medium leading-6 text-[color:var(--navy)]">
+      <span className="min-w-0 break-words text-right text-sm font-medium leading-6 text-[color:var(--navy)] [overflow-wrap:anywhere]">
         {(displayValue ?? value) || <span className="font-normal text-[color:var(--text-soft)]">Not set yet</span>}
       </span>
     </div>

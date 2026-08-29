@@ -11,13 +11,14 @@ import {
   UsersRound
 } from "lucide-react";
 
-import bookingPlatformVisual from "@/public/media/booking-platform.png";
+import schoolPresentationAudienceVisual from "@/public/media/school-3.webp";
+import schoolPresentationActivityVisual from "@/public/media/school-4.webp";
+import schoolPresentationVisual from "@/public/media/school-5.webp";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
 import { ButtonLink } from "@/components/ui/button";
 import { StarRating } from "@/components/ui/star-rating";
-import { config } from "@/lib/env";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import {
   listHomepageSections,
@@ -57,7 +58,7 @@ const howItWorks = [
 const highlights = [
   { label: "Free Nationwide Sessions", icon: Globe },
   { label: "10 Minute Delivery", icon: Clock3 },
-  { label: "All Year Groups", icon: GraduationCap }
+  { label: "Ages 8 - 18", icon: GraduationCap }
 ];
 
 export default async function HomePage() {
@@ -68,7 +69,6 @@ export default async function HomePage() {
     listPublicTestimonials(8),
     loadAvailabilityConfig()
   ]);
-  const showDemoFeedbackNote = !config.isSupabaseConfigured;
   const homepageSectionMap = new Map(
     homepageSections.map((section) => [section.sectionKey, section])
   );
@@ -87,8 +87,7 @@ export default async function HomePage() {
         <div className="site-shell relative">
           <div className="hero-grid items-center">
             <div className="max-w-3xl self-center py-4">
-              <span className="section-kicker">School presentations</span>
-              <h1 className="mt-6 text-5xl font-semibold leading-[0.97] tracking-[-0.06em] text-[color:var(--navy)] md:text-7xl">
+              <h1 className="text-5xl font-semibold leading-[0.97] tracking-[-0.06em] text-[color:var(--navy)] md:text-7xl">
                 {heroSection?.title ? (
                   renderHeroTitle(heroSection.title)
                 ) : (
@@ -111,7 +110,16 @@ export default async function HomePage() {
                 </p>
               )}
 
-              <div className="mt-7 flex flex-wrap gap-3">
+              <div className="mt-7">
+                <BookPresentationButton
+                  className="min-h-[50px] rounded-[17px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_30px_rgba(24,168,59,0.26)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                >
+                  Book Now
+                  <ArrowRight className="h-4 w-4" />
+                </BookPresentationButton>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-3">
                 {highlights.map(({ label, icon: Icon }) => (
                   <div
                     key={label}
@@ -212,12 +220,6 @@ export default async function HomePage() {
             <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
               A quick look at the feedback schools share after our presentations.
             </p>
-            {showDemoFeedbackNote ? (
-              <p className="mt-4 inline-flex max-w-xl rounded-[18px] border border-[rgba(4,15,75,0.08)] bg-white/80 px-4 py-3 text-sm text-[color:var(--navy)]">
-                Representative feedback examples are shown in demo mode until live review data
-                is connected.
-              </p>
-            ) : null}
           </div>
 
           <div className="homepage-gap mt-8 grid xl:grid-cols-4">
@@ -300,7 +302,7 @@ export default async function HomePage() {
                 <ArrowRight className="h-4 w-4" />
               </BookPresentationButton>
               <ButtonLink
-                href="mailto:schools@esf.nz"
+                href="/contact"
                 variant="secondary"
                 className="min-h-[46px] rounded-[16px] border-[rgba(20,146,56,0.4)] bg-transparent px-5 py-2.5 text-[#117a2e] shadow-none hover:bg-[rgba(24,168,59,0.06)]"
               >
@@ -330,23 +332,46 @@ function renderHeroTitle(title: string) {
 
 function HeroVisual() {
   return (
-    <div className="relative">
+    <div className="relative mx-auto h-[clamp(390px,52vw,550px)] w-full max-w-[720px]">
       <div className="absolute -left-8 top-20 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(24,168,59,0.18),transparent_68%)]" />
       <div className="absolute right-0 top-8 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(175,213,237,0.36),transparent_70%)]" />
+      <div className="absolute -right-3 top-0 h-36 w-44 opacity-40 [background-image:radial-gradient(rgba(4,15,75,0.28)_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
+      <div className="absolute bottom-[16%] right-[4%] h-24 w-32 rotate-6 rounded-[28px] bg-[rgba(24,168,59,0.2)]" />
 
-      <Image
-        src={bookingPlatformVisual}
-        alt="An NZ Esports presenter delivering a session to a classroom of students"
-        priority
-        className="relative mx-auto h-auto w-full max-w-[680px] object-contain drop-shadow-[0_30px_60px_rgba(11,24,77,0.16)]"
-      />
+      <div className="absolute left-[2%] top-[3%] w-[82%] -rotate-[1.5deg] overflow-hidden rounded-[32px] border border-white/90 bg-white p-1.5 shadow-[0_30px_65px_rgba(11,24,77,0.2)] sm:rounded-[38px] sm:p-2">
+        <Image
+          src={schoolPresentationAudienceVisual}
+          alt="An NZ Esports presenter speaking to students about digital wellbeing"
+          priority
+          sizes="(min-width: 1024px) 42vw, (min-width: 640px) 70vw, 82vw"
+          className="aspect-[4/3] h-auto w-full rounded-[26px] object-cover object-left sm:rounded-[31px]"
+        />
+      </div>
 
-      <div className="relative -mt-24 ml-auto mr-1 max-w-[230px] rounded-[20px] border border-white/55 bg-white/60 p-4 shadow-[0_16px_36px_rgba(11,24,77,0.14)] backdrop-blur-sm md:mr-4">
+      <div className="absolute right-[1%] top-[31%] z-20 w-[58%] rotate-[1.5deg] overflow-hidden rounded-[26px] border-2 border-[rgba(24,168,59,0.72)] bg-white p-1 shadow-[0_24px_54px_rgba(11,24,77,0.24)] sm:rounded-[32px] sm:p-1.5">
+        <Image
+          src={schoolPresentationVisual}
+          alt="Students raising their hands during an NZ Esports school presentation"
+          sizes="(min-width: 1024px) 29vw, (min-width: 640px) 48vw, 58vw"
+          className="aspect-[3/2] h-auto w-full rounded-[21px] object-cover object-center sm:rounded-[26px]"
+        />
+      </div>
+
+      <div className="absolute bottom-[2%] left-[8%] z-30 w-[52%] -rotate-2 overflow-hidden rounded-[26px] border border-white bg-white p-1.5 shadow-[0_26px_58px_rgba(11,24,77,0.24)] sm:rounded-[32px] sm:p-2">
+        <Image
+          src={schoolPresentationActivityVisual}
+          alt="Students taking part in an interactive NZ Esports presentation activity"
+          sizes="(min-width: 1024px) 26vw, (min-width: 640px) 44vw, 52vw"
+          className="aspect-[3/2] h-auto w-full rounded-[20px] object-cover object-center sm:rounded-[25px]"
+        />
+      </div>
+
+      <div className="absolute bottom-[4%] right-[1%] z-40 max-w-[220px] rounded-[20px] border border-white/80 bg-white/90 p-4 shadow-[0_18px_40px_rgba(11,24,77,0.18)] backdrop-blur-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
           Presentation impact
         </p>
-        <p className="mt-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-[color:var(--navy)]">
-          Clear, engaging sessions schools can trust.
+        <p className="mt-2 text-base font-semibold leading-6 tracking-[-0.03em] text-[color:var(--navy)] sm:text-lg">
+          Life lessons on digital wellbeing from the experts
         </p>
       </div>
     </div>

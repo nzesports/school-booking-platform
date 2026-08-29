@@ -36,8 +36,6 @@ export function AmbassadorApplicationWithdrawDialog({
         ? createPortal(
             <BookingDialogShell
               title="Withdraw application"
-              kicker="Open booking"
-              description="Let the NZ Esports team know why you are stepping back from this application."
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[680px]"

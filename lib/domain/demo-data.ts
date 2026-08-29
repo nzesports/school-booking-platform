@@ -297,7 +297,7 @@ export const bookingRequests: BookingRequestView[] = [
     primaryContactName: "Rina Patel",
     primaryContactEmail: "rina@southcoast.school.nz",
     regionSlug: "south-auckland",
-    status: "ambassador_needed",
+    status: "tentative",
     source: "staff",
     createdAt: "2026-06-05T04:20:00.000Z",
     sessions: [
@@ -311,7 +311,7 @@ export const bookingRequests: BookingRequestView[] = [
         endsAt: "2026-06-24T10:20:00.000Z",
         yearLevels: "Years 8 to 10",
         expectedStudentCount: 150,
-        status: "ambassador_needed",
+        status: "tentative",
         reportStatus: "not_submitted",
         paymentStatus: "not_eligible"
       }

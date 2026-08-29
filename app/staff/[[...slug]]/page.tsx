@@ -39,6 +39,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
@@ -158,7 +159,7 @@ export default async function StaffPortalPage({
                           ? "Your profile"
                         : route === "activity"
                           ? "Unread activity and approval notifications"
-                          : "Staff operations workspace";
+                          : "Staff portal";
 
   return (
     <main className="min-h-screen">
@@ -221,6 +222,7 @@ export default async function StaffPortalPage({
               basePath="/staff"
               bookings={filteredDashboard.bookings}
               schools={portal.schools}
+              regions={portal.regions}
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
               activeView={activeBookingView}
@@ -308,7 +310,17 @@ export default async function StaffPortalPage({
             </div>
             <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <Card className="rounded-[34px]">
-              <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
+              <div className="flex items-start gap-4">
+                {selectedAmbassador.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedAmbassador.imageUrl}
+                    alt={`${selectedAmbassador.name} profile photo`}
+                    className="h-24 w-24 rounded-[24px] object-cover"
+                  />
+                ) : null}
+                <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
+              </div>
               <div className="mt-6 grid gap-5 md:grid-cols-2">
                 <InfoBlock label="Status" value={titleCase(selectedAmbassador.status)} />
                 <InfoBlock label="Primary region" value={selectedAmbassador.regionSlug} />
@@ -357,36 +369,39 @@ export default async function StaffPortalPage({
                       <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                       <input type="hidden" name="status" value="inactive" />
                       <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                      <button
+                      <PendingSubmitButton
                         type="submit"
+                        pendingLabel="Restricting access..."
                         className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
                       >
                         Temporarily restrict access
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   ) : (
                     <form action={reviewAmbassadorAction}>
                       <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                       <input type="hidden" name="status" value="approved" />
                       <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                      <button
+                      <PendingSubmitButton
                         type="submit"
+                        pendingLabel="Restoring access..."
                         className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                       >
                         Restore access
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   )}
                   <form action={reviewAmbassadorAction}>
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="declined" />
                     <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Removing ambassador..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
                     >
                       Remove ambassador
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               </Card>
@@ -402,23 +417,25 @@ export default async function StaffPortalPage({
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="approved" />
                     <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Approving ambassador..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                     >
                       Approve ambassador
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                   <form action={reviewAmbassadorAction}>
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="declined" />
                     <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Declining application..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
                     >
                       Decline application
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               </Card>
@@ -866,6 +883,24 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
   const error = readSearchParam(searchParams, "error");
   const saved = readSearchParam(searchParams, "saved");
   const withdrawal = readSearchParam(searchParams, "withdrawal");
+  const resolved = readSearchParam(searchParams, "resolved");
+
+  if (resolved === "approve" || resolved === "decline") {
+    return {
+      tone: "success" as const,
+      message:
+        resolved === "approve"
+          ? "Reschedule approved. The session time and calendar have been updated."
+          : "Reschedule declined. The original session time remains in place."
+    };
+  }
+
+  if (error?.includes("reschedule")) {
+    return {
+      tone: "error" as const,
+      message: "The reschedule could not be resolved. Review the date and time, then try again."
+    };
+  }
 
   if (withdrawal === "approved") {
     return {
@@ -906,7 +941,7 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
     return {
       tone: "error" as const,
       message:
-        "The file could not be uploaded. Check that Supabase storage admin access is configured and try again."
+        "The file could not be uploaded. Check the file and try again, or contact the platform administrator."
     };
   }
 

@@ -39,7 +39,7 @@ function mapPresentationRecord(record: Record<string, unknown>): PresentationTyp
     fullDescription: (record.full_description as string | null) ?? "",
     contentSnippet: (record.content_snippet as string | null) ?? undefined,
     durationMinutes: Number(record.duration_minutes ?? 45),
-    yearLevels: (record.year_levels as string | null) ?? "Years 7 to 13",
+    yearLevels: String(record.year_levels ?? "").trim() || "Years 7 to 13",
     deliveryFormats: (record.delivery_formats as string[] | null) ?? [],
     learningOutcomes: splitContentLines(record.learning_outcomes),
     requiredEquipment: splitContentLines(record.required_equipment),

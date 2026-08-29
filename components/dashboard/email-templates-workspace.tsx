@@ -116,10 +116,8 @@ export function EmailTemplatesWorkspace({
       <p className="flex items-start gap-2.5 rounded-[16px] bg-[#eef4fd] px-4 py-3 text-sm font-medium leading-6 text-[#1e4fae]">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          Every email is wrapped in the NZ Esports branded header and footer automatically.
-          The <strong>confirm your email</strong> and <strong>reset your password</strong>{" "}
-          emails are sent by Supabase Auth and are customised in the Supabase dashboard
-          (Authentication → Emails), not here.
+          Every email includes the NZ Esports header and footer. Account confirmation and
+          password reset emails are managed separately.
         </span>
       </p>
 
@@ -408,9 +406,7 @@ export function EmailTemplatesWorkspace({
       {createOpen
         ? createPortal(
             <BookingDialogShell
-              kicker="Email templates"
               title="Create a new template"
-              description="The template key is generated from the name. Emails only send when a platform event uses that key — custom templates are ready for future events."
               onClose={() => setCreateOpen(false)}
               maxWidthClassName="max-w-[760px]"
               overlayClassName="z-[80]"

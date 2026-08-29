@@ -1,5 +1,6 @@
 "use server";
 
+import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -11,6 +12,12 @@ import {
 } from "@/lib/services/email-triggers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
+import {
+  deletePublicAsset,
+  uploadPublicAvatar,
+  validatePublicAvatarFile
+} from "@/lib/services/storage";
 import { splitCommaList } from "@/lib/utils";
 
 const loginSchema = z.object({
@@ -253,6 +260,8 @@ export async function registerSchoolAccountAction(
     }).catch(() => {});
   }
 
+  updateTag(PLATFORM_DATA_TAG);
+
   if (data.session) {
     redirect("/school");
   }
@@ -308,6 +317,26 @@ export async function registerAmbassadorAccountAction(
     };
   }
 
+  const photo = formData.get("photo");
+
+  if (!(photo instanceof File)) {
+    return {
+      error: "Choose a public profile photo to continue.",
+      values,
+      attempt
+    };
+  }
+
+  try {
+    validatePublicAvatarFile(photo);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Choose a valid public profile photo.",
+      values,
+      attempt
+    };
+  }
+
   const { error, data } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
@@ -342,6 +371,50 @@ export async function registerAmbassadorAccountAction(
       attempt
     };
   }
+
+  const userId = data.user?.id;
+
+  if (!userId) {
+    return {
+      error: "We couldn't create that account right now. Please try again.",
+      values,
+      attempt
+    };
+  }
+
+  const admin = createAdminClient();
+  let uploadedStoragePath: string | null = null;
+
+  try {
+    if (!admin) {
+      throw new Error("Profile photo storage is not configured.");
+    }
+
+    const upload = await uploadPublicAvatar(photo, userId);
+    uploadedStoragePath = upload.storagePath;
+    const { error: profileError } = await admin
+      .from("profiles")
+      .update({ avatar_url: upload.publicUrl })
+      .eq("id", userId);
+
+    if (profileError) {
+      throw profileError;
+    }
+  } catch {
+    if (uploadedStoragePath) {
+      await deletePublicAsset(uploadedStoragePath).catch(() => {});
+    }
+
+    await admin?.auth.admin.deleteUser(userId).catch(() => {});
+
+    return {
+      error: "We couldn't save your required profile photo, so the application wasn't created. Please try again.",
+      values,
+      attempt
+    };
+  }
+
+  updateTag(PLATFORM_DATA_TAG);
 
   void sendAmbassadorApplicationReceivedEmail({
     ambassadorEmail: parsed.data.email,

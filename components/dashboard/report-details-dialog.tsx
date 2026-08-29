@@ -91,7 +91,6 @@ export function ReportDetailsButton({
       {open
         ? createPortal(
             <BookingDialogShell
-              kicker="Session report"
               title={`${report.presentationTitle} at ${report.schoolName}`}
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[880px]"
@@ -129,9 +128,6 @@ export function ReportDetailsButton({
                 </OverviewTile>
                 <OverviewTile icon={<Building2 className="h-4 w-4" />} label="School roll size">
                   {report.schoolRollSize ? String(report.schoolRollSize) : "Not recorded"}
-                </OverviewTile>
-                <OverviewTile icon={<Flag className="h-4 w-4" />} label="First presentation to this school">
-                  {yesNo(report.firstPresentationToSchool)}
                 </OverviewTile>
                 <OverviewTile icon={<Trophy className="h-4 w-4" />} label="Students competed in an event">
                   {yesNo(report.studentsCompetedInEsports)}

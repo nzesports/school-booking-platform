@@ -5,13 +5,11 @@ export type ProfileStatus = "active" | "inactive";
 export type BookingStatus =
   | "requested"
   | "tentative"
-  | "ambassador_needed"
-  | "ambassador_applied"
+  | "applied"
   | "ambassador_assigned"
   | "confirmed"
   | "withdrawal_requested"
   | "reschedule_requested"
-  | "cancel_requested"
   | "cancelled"
   | "completed_pending_report"
   | "report_submitted"
@@ -211,6 +209,7 @@ export interface BookingSessionView {
   expectedStudentCount: number;
   actualStudentCount?: number;
   status: BookingStatus;
+  assignedAmbassadorId?: string;
   assignedAmbassadorName?: string;
   assignedAmbassadorEmail?: string;
   assignedAmbassadorPhone?: string;
@@ -222,16 +221,21 @@ export interface BookingSessionView {
   bookingStatus?: BookingStatus;
   withdrawalReason?: string;
   withdrawalRequestedAt?: string;
+  rescheduleRequestedDate?: string;
+  rescheduleRequestNotes?: string;
+  rescheduleRequestedAt?: string;
+  reschedulePreviousStatus?: BookingStatus;
 }
 
 export interface BookingRequestView {
   id: string;
+  referenceCode?: string;
   schoolName: string;
   primaryContactName: string;
   primaryContactEmail: string;
   regionSlug: string;
   status: BookingStatus;
-  source: "public" | "staff" | "ambassador";
+  source: "public" | "staff" | "ambassador" | "ambassador_booked";
   schoolNotes?: string;
   internalNotes?: string;
   createdAt: string;
@@ -257,6 +261,15 @@ export interface BookingRequestInput {
   schoolNotes?: string;
   marketingConsent: boolean;
   sessions: BookingSessionDraft[];
+  submittedByUserId?: string;
+}
+
+export interface BookingContactDefaults {
+  schoolName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  regionSlug: string;
 }
 
 export interface AvailabilitySlot {

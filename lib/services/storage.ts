@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 const PRIVATE_ALLOWED = new Map([
   ["pdf", "application/pdf"],
@@ -53,6 +54,31 @@ function validateUpload(file: File, allowed: Map<string, string>) {
   }
 
   return contentType;
+}
+
+export function validatePublicAvatarFile(file: File) {
+  if (!file.name || file.size === 0) {
+    throw new Error("Choose a profile photo to continue.");
+  }
+
+  if (file.size > MAX_AVATAR_BYTES) {
+    throw new Error("Profile photos must be 5MB or smaller.");
+  }
+
+  const extension = fileExtension(file.name);
+  const allowedTypes = new Map([
+    ["png", "image/png"],
+    ["jpg", "image/jpeg"],
+    ["jpeg", "image/jpeg"],
+    ["webp", "image/webp"]
+  ]);
+  const expectedType = allowedTypes.get(extension);
+
+  if (!expectedType || file.type !== expectedType) {
+    throw new Error("Profile photos must be JPG, PNG, or WebP files.");
+  }
+
+  return expectedType;
 }
 
 export async function uploadPrivateResourceFile(file: File, prefix = "resource-library") {
@@ -105,6 +131,43 @@ export async function uploadPublicAsset(file: File, prefix = "content") {
     storagePath,
     publicUrl: data.publicUrl
   };
+}
+
+export async function uploadPublicAvatar(file: File, userId: string) {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    throw new Error("Supabase admin storage access is not configured.");
+  }
+
+  const contentType = validatePublicAvatarFile(file);
+  const storagePath = buildStoragePath(`ambassador-avatars/${userId}`, file.name);
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const { error } = await admin.storage.from("public-assets").upload(storagePath, buffer, {
+    contentType,
+    upsert: false
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data } = admin.storage.from("public-assets").getPublicUrl(storagePath);
+
+  return {
+    storagePath,
+    publicUrl: data.publicUrl
+  };
+}
+
+export async function deletePublicAsset(storagePath: string) {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return;
+  }
+
+  await admin.storage.from("public-assets").remove([storagePath]);
 }
 
 export async function createSignedResourceUrl(storagePath?: string | null, expiresInSeconds = 60 * 60) {

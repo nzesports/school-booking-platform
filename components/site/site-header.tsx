@@ -15,7 +15,7 @@ const navItems = [
   { href: "/#how-it-works", label: "How It Works" },
   { href: "/#resources", label: "Resources" },
   { href: "/#about", label: "About" },
-  { href: "/#contact", label: "Contact" }
+  { href: "/contact", label: "Contact" }
 ];
 
 export function SiteHeader() {

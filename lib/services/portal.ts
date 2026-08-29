@@ -143,6 +143,8 @@ export type SchoolPortalData = {
 
 export type AmbassadorPortalData = {
   ambassador: AmbassadorProfile;
+  schools: School[];
+  presentations: PresentationType[];
   openSessions: BookingSessionView[];
   assignedSessions: BookingSessionView[];
   reports: ReportSummary[];
@@ -178,7 +180,7 @@ async function loadPlatformDataUncached() {
   const bookingWindowIso = bookingWindowStart.toISOString();
   const bookingSessionSelectBase =
     "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador";
-  const bookingSessionSelectWithWithdrawals = `${bookingSessionSelectBase}, withdrawal_reason, withdrawal_requested_at`;
+  const bookingSessionSelectWithWithdrawals = `${bookingSessionSelectBase}, withdrawal_reason, withdrawal_requested_at, reschedule_requested_date, reschedule_request_notes, reschedule_requested_at, reschedule_previous_status`;
 
   const [
     profilesResult,
@@ -221,7 +223,7 @@ async function loadPlatformDataUncached() {
     admin
       .from("booking_requests")
       .select(
-        "id, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id"
+        "id, reference_code, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id"
       )
       .gte("created_at", bookingWindowIso)
       .order("created_at", { ascending: false }),
@@ -290,7 +292,8 @@ async function loadPlatformDataUncached() {
   ]);
   const shouldRetrySessionsWithoutWithdrawals =
     sessionsResult.error?.message?.includes("withdrawal_reason") ||
-    sessionsResult.error?.message?.includes("withdrawal_requested_at");
+    sessionsResult.error?.message?.includes("withdrawal_requested_at") ||
+    sessionsResult.error?.message?.includes("reschedule_");
   const fallbackSessionsResult = shouldRetrySessionsWithoutWithdrawals
     ? await admin
         .from("booking_sessions")
@@ -501,6 +504,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
         ? Number(session.actual_student_count)
         : undefined,
       status: effectiveStatus,
+      assignedAmbassadorId: (session.assigned_ambassador_id as string | null) ?? undefined,
       assignedAmbassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
       assignedAmbassadorEmail: (ambassadorUser?.email as string | undefined) ?? undefined,
       assignedAmbassadorPhone: (ambassadorUser?.phone as string | undefined) ?? undefined,
@@ -511,7 +515,16 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       bookingStatus:
         (requestStatusById.get(bookingId) as BookingSessionView["bookingStatus"]) ?? undefined,
       withdrawalReason: (withdrawalFields.withdrawal_reason as string | null) ?? undefined,
-      withdrawalRequestedAt: (withdrawalFields.withdrawal_requested_at as string | null) ?? undefined
+      withdrawalRequestedAt: (withdrawalFields.withdrawal_requested_at as string | null) ?? undefined,
+      rescheduleRequestedDate:
+        (withdrawalFields.reschedule_requested_date as string | null) ?? undefined,
+      rescheduleRequestNotes:
+        (withdrawalFields.reschedule_request_notes as string | null) ?? undefined,
+      rescheduleRequestedAt:
+        (withdrawalFields.reschedule_requested_at as string | null) ?? undefined,
+      reschedulePreviousStatus:
+        (withdrawalFields.reschedule_previous_status as BookingSessionView["reschedulePreviousStatus"]) ??
+        undefined
     };
 
     sessionsByBookingId.set(bookingId, [...(sessionsByBookingId.get(bookingId) ?? []), mappedSession]);
@@ -524,6 +537,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
 
     return {
       id: request.id as string,
+      referenceCode: (request.reference_code as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
       primaryContactName: (contact?.full_name as string | undefined) ?? "Primary contact",
       primaryContactEmail: (contact?.email as string | undefined) ?? "",
@@ -1225,7 +1239,10 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
       : null,
     bookings: mappedBookings.filter((booking) => {
       const request = data.bookingRequests.find((item) => item.id === booking.id);
-      return schoolIds.includes(request?.school_id as string);
+      return (
+        schoolIds.includes(request?.school_id as string) ||
+        request?.submitted_by_user_id === userId
+      );
     }),
     resources: (await mapResources(data)).filter(
       (resource) => resource.audiences.includes("school") && resource.isActive
@@ -1240,9 +1257,11 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
   if (!data || !userId) {
     return {
       ambassador: demoAmbassadors[0],
+      schools: demoSchools,
+      presentations: demoPresentations,
       openSessions: demoBookingRequests.flatMap((booking) =>
         booking.sessions.filter((session) =>
-          ["ambassador_needed", "ambassador_applied"].includes(session.status)
+          ["tentative", "applied"].includes(session.status)
         )
       ),
       assignedSessions: demoBookingRequests.flatMap((booking) =>
@@ -1281,10 +1300,11 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
   const openSessions = bookings.flatMap((booking) =>
     booking.sessions
       .filter((session) =>
-        ["ambassador_needed", "ambassador_applied"].includes(session.status)
+        ["tentative", "applied"].includes(session.status)
       )
       .map((session) => ({
         ...session,
+        applicants: undefined,
         myApplicationStatus: myApplicationStatusBySessionId.get(session.id)
       }))
   );
@@ -1297,10 +1317,13 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
 
       return rawAmbassador?.user_id === userId;
     })
+    .map((session) => ({ ...session, applicants: undefined }))
   );
 
   return {
     ambassador: ambassador ?? demoAmbassadors[0],
+    schools: mapSchools(data).filter((school) => school.status === "active"),
+    presentations: mapPresentations(data).filter((presentation) => presentation.active),
     openSessions,
     assignedSessions,
     reports: rawAmbassador

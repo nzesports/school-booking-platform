@@ -1,14 +1,16 @@
 "use client";
 
-import { CirclePlus, NotebookPen } from "lucide-react";
+import { CirclePlus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
+import { SchoolCombobox } from "@/components/dashboard/school-combobox";
 import { Button } from "@/components/ui/button";
 import type {
   AmbassadorProfile,
   PresentationType,
+  Region,
   School
 } from "@/lib/domain/types";
 import type {
@@ -22,6 +24,7 @@ const fieldClassName =
 export function ManualBookingDialog({
   basePath,
   schools,
+  regions,
   presentations,
   ambassadors,
   activeView,
@@ -30,6 +33,7 @@ export function ManualBookingDialog({
 }: {
   basePath: string;
   schools: School[];
+  regions: Region[];
   presentations: PresentationType[];
   ambassadors: AmbassadorProfile[];
   activeView: BookingLifecycleView;
@@ -57,16 +61,10 @@ export function ManualBookingDialog({
         ? createPortal(
             <BookingDialogShell
               title="Log booking"
-              kicker="Manual entry"
               description="Record a phone booking or an already-delivered session without sending the school through the public form."
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[980px]"
-              headerAside={
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-[color:var(--green-soft)] text-[#117a2e] shadow-[0_12px_26px_rgba(24,168,59,0.16)]">
-                  <NotebookPen className="h-5 w-5" />
-                </span>
-              }
             >
               <form action={action} className="mt-7 grid gap-4">
                 <input
@@ -75,16 +73,7 @@ export function ManualBookingDialog({
                   value={`${basePath}/bookings?status=${activeView}&range=${range}`}
                 />
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <Field label="School">
-                    <select name="schoolId" required className={fieldClassName}>
-                      <option value="">Select a school</option>
-                      {schools.map((school) => (
-                        <option key={school.id} value={school.id}>
-                          {school.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                  <SchoolCombobox schools={schools} regions={regions} />
                   <Field label="Presentation">
                     <select name="presentationTypeId" required className={fieldClassName}>
                       <option value="">Select a presentation</option>
@@ -117,7 +106,7 @@ export function ManualBookingDialog({
                   <Field label="Status">
                     <select name="status" defaultValue="confirmed" className={fieldClassName}>
                       <option value="tentative">Tentative</option>
-                      <option value="ambassador_needed">Ambassador needed</option>
+                      <option value="applied">Applied</option>
                       <option value="ambassador_assigned">Ambassador assigned</option>
                       <option value="confirmed">Confirmed</option>
                       <option value="completed_pending_report">Delivered, report needed</option>

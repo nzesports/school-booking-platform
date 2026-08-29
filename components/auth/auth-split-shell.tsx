@@ -49,7 +49,7 @@ export function AuthSplitShell({
             <div className="grid lg:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.68fr)]">
               <aside className="relative overflow-hidden border-b border-[rgba(4,15,75,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(238,247,252,0.92))] p-6 md:p-7 lg:border-b-0 lg:border-r lg:p-8">
                 <div className="relative z-10 flex h-full flex-col">
-                  <BrandLockup subtitle="Secure portals" />
+                  <BrandLockup />
 
                   {heroEyebrow ? (
                     <span className="section-kicker mt-7 w-fit">{heroEyebrow}</span>

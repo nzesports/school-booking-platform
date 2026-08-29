@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { CalendarDays, Clock3, MapPin, MonitorPlay, Plus, Trash2, UsersRound } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import beroccaLogo from "@/public/media/berocca-logo.png";
 
@@ -17,7 +17,10 @@ import type { PresentationType, Region } from "@/lib/domain/types";
 import {
   BOOKING_WINDOW_DAYS,
   type AvailabilityConfig,
+  bookingDateState,
   isBookableDate,
+  maximumBookingDate,
+  minimumBookingDate,
   nextBookableDates
 } from "@/lib/services/availability";
 import { resolveTypedTimeInWindow } from "@/lib/services/time-slots";
@@ -45,7 +48,8 @@ export function HeroBookingWidget({
   const bookingModal = useBookingModal();
   const dates = nextBookableDates(BOOKING_WINDOW_DAYS, availabilityConfig);
   const firstDate = dates.includes(initialDate ?? "") ? (initialDate as string) : dates[0] ?? "";
-  const maxBookableDate = dates[dates.length - 1] ?? firstDate;
+  const minBookableDate = minimumBookingDate();
+  const maxBookableDate = maximumBookingDate();
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
   const preferredInitialTime = (initialTime ? resolveTypedTimeInWindow(initialTime) : null) ?? {
@@ -73,16 +77,12 @@ export function HeroBookingWidget({
         ? "rounded-[30px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(255,255,255,0.96))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] md:p-5"
         : "mt-8 rounded-[30px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.8),rgba(255,255,255,0.92))] p-4 shadow-[0_24px_54px_rgba(11,24,77,0.1)] md:p-5 lg:p-6";
 
-  const kickerText = mode === "compact" ? "Book this presentation" : "Plan your visit";
-  const helperText = useMemo(
-    () =>
-      mode === "page"
-        ? "Choose your sessions here, then confirm everything in the request form."
-        : mode === "compact"
-          ? "Pick a date, time, and region, then send your request."
-          : "Book your school presentation",
-    [mode]
-  );
+  const headingText =
+    mode === "page"
+      ? "Choose your sessions"
+      : mode === "compact"
+        ? "Book this presentation"
+        : "Book your school presentation";
   // Date and Time always share a row below the wide four-column layout;
   // Presentation and Region take the full row there.
   const fieldsGridClassName =
@@ -106,25 +106,17 @@ export function HeroBookingWidget({
   const canLaunchRequest = canOpenReview && Boolean(bookingModal);
 
   return (
-    <div id="regions" className={shellClassName}>
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-          {kickerText}
-        </p>
-        <p className="text-2xl font-bold tracking-[-0.03em] text-[color:var(--navy)] md:text-[1.7rem]">
-          {helperText}
-        </p>
-        {mode === "page" ? (
-          <p className="max-w-3xl text-sm leading-7 text-[color:var(--text-soft)]">
-            Pick the topic, date, time, and region for each session. Choose from the available
-            10-minute slots between 8:00am and 4:00pm, then continue once each session is
-            ready to send.
-          </p>
-        ) : null}
-      </div>
+    <div id="regions" className={cn(shellClassName, "relative scroll-mt-24")}>
+      <span id="plan-your-visit" className="pointer-events-none absolute -top-24" aria-hidden="true" />
+      <h2 className="text-2xl font-bold tracking-[-0.03em] text-[color:var(--navy)] md:text-[1.7rem]">
+        {headingText}
+      </h2>
 
       <div className="mt-6 grid gap-3">
         {sessions.map((session, index) => {
+          const selectedPresentation = presentations.find(
+            (presentation) => presentation.slug === session.presentationSlug
+          );
           return (
             <div
               key={session.id}
@@ -135,14 +127,9 @@ export function HeroBookingWidget({
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-[0_10px_22px_rgba(11,24,77,0.06)]">
                     <UsersRound className="h-4 w-4 text-[color:var(--navy)]" />
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                      Session {index + 1}
-                    </p>
-                    <p className="text-sm text-[color:var(--text-soft)]">
-                      Add the topic, date, time, and region for this session.
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-[color:var(--navy)]">
+                    Session {index + 1}
+                  </p>
                 </div>
 
                 {sessions.length > 1 ? (
@@ -165,42 +152,50 @@ export function HeroBookingWidget({
                   label="Presentation"
                   className={fullRowFieldClassName}
                 >
-                  <Select
-                    value={session.presentationSlug}
-                    onChange={(event) =>
-                      setSessions((current) =>
-                        current.map((item) => {
-                          if (item.id !== session.id) {
-                            return item;
-                          }
+                  <div>
+                    <Select
+                      value={session.presentationSlug}
+                      onChange={(event) =>
+                        setSessions((current) =>
+                          current.map((item) => {
+                            if (item.id !== session.id) {
+                              return item;
+                            }
 
-                          const presentation = presentations.find(
-                            (entry) => entry.slug === event.target.value
-                          );
+                            const presentation = presentations.find(
+                              (entry) => entry.slug === event.target.value
+                            );
 
-                          return {
-                            ...item,
-                            presentationSlug: event.target.value,
-                            yearLevels: presentation?.yearLevels ?? item.yearLevels
-                          };
-                        })
-                      )
-                    }
-                  >
-                    {presentations.map((presentation) => (
-                      <option key={presentation.id} value={presentation.slug}>
-                        {presentation.title}
-                      </option>
-                    ))}
-                  </Select>
+                            return {
+                              ...item,
+                              presentationSlug: event.target.value,
+                              yearLevels: presentation?.yearLevels?.trim() || item.yearLevels
+                            };
+                          })
+                        )
+                      }
+                    >
+                      {presentations.map((presentation) => (
+                        <option key={presentation.id} value={presentation.slug}>
+                          {presentation.title}
+                        </option>
+                      ))}
+                    </Select>
+                    {selectedPresentation?.shortSummary ? (
+                      <p className="mt-2 text-xs leading-5 text-[color:var(--text-soft)]">
+                        {selectedPresentation.shortSummary}
+                      </p>
+                    ) : null}
+                  </div>
                 </Field>
 
                 <Field icon={<CalendarDays className="h-4 w-4" />} label="Date">
                   <BookingDatePicker
                     value={session.date}
-                    minDate={firstDate}
+                    minDate={minBookableDate}
                     maxDate={maxBookableDate}
                     isDateBookable={(date) => isBookableDate(date, availabilityConfig)}
+                    getDateState={(date) => bookingDateState(date, availabilityConfig)}
                     onChange={(nextDate) =>
                       setSessions((current) =>
                         current.map((item) =>
@@ -300,7 +295,15 @@ export function HeroBookingWidget({
             type="button"
             variant="secondary"
             onClick={() => {
+              if (sessions.length >= 5) {
+                return;
+              }
+
               setSessions((current) => {
+                if (current.length >= 5) {
+                  return current;
+                }
+
                 const previous = current[current.length - 1];
                 const presentation =
                   presentations.find((item) => item.slug === previous?.presentationSlug) ??
@@ -322,9 +325,10 @@ export function HeroBookingWidget({
               setNextSessionNumber((current) => current + 1);
             }}
             className="rounded-full px-5 py-2.5 text-sm"
+            disabled={sessions.length >= 5}
           >
             <Plus className="h-4 w-4" />
-            Add another session
+            {sessions.length >= 5 ? "Maximum 5 sessions" : "Add another session"}
           </Button>
 
           <Button
@@ -347,11 +351,6 @@ export function HeroBookingWidget({
         </div>
       </div>
 
-      {!canOpenReview ? (
-        <p className="mt-3 text-sm text-[color:var(--text-soft)]">
-          Choose a time and region for each session before continuing.
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -408,7 +407,7 @@ function createDraftSession({
     timeText,
     regionSlug,
     customRegion,
-    yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
+    yearLevels: presentation?.yearLevels?.trim() || "Years 7 to 8",
     // 0 renders as an empty required field, so schools must enter their own count.
     expectedStudentCount: 0
   };

@@ -2,7 +2,7 @@ import { revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 import { config } from "@/lib/env";
-import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
+import { AVAILABILITY_DATA_TAG, PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import {
   sendFeedbackRequestEmail,
   sendSessionReminderEmail
@@ -23,8 +23,7 @@ const DELIVERABLE_STATUSES = ["confirmed", "ambassador_assigned"];
 // Session statuses that keep a booking request open.
 const ACTIVE_SESSION_STATUSES = [
   "tentative",
-  "ambassador_needed",
-  "ambassador_applied",
+  "applied",
   "ambassador_assigned",
   "confirmed",
   "withdrawal_requested",
@@ -112,7 +111,7 @@ export async function GET(request: NextRequest) {
     const [{ data: booking }, { data: school }, { data: presentation }] = await Promise.all([
       admin
         .from("booking_requests")
-        .select("id, primary_contact_id")
+        .select("id, reference_code, primary_contact_id")
         .eq("id", session.booking_request_id)
         .maybeSingle(),
       admin.from("schools").select("name").eq("id", session.school_id).maybeSingle(),
@@ -161,7 +160,7 @@ export async function GET(request: NextRequest) {
         .from("booking_requests")
         .update({ status: "completed_pending_report" })
         .eq("id", bookingId)
-        .in("status", ["confirmed", "ambassador_assigned", "ambassador_needed", "tentative"]);
+        .in("status", ["confirmed", "ambassador_assigned", "applied", "tentative"]);
     }
   }
 
@@ -194,7 +193,7 @@ export async function GET(request: NextRequest) {
     const [{ data: booking }, { data: school }, { data: presentation }] = await Promise.all([
       admin
         .from("booking_requests")
-        .select("id, primary_contact_id")
+        .select("id, reference_code, primary_contact_id")
         .eq("id", session.booking_request_id)
         .maybeSingle(),
       admin.from("schools").select("name").eq("id", session.school_id).maybeSingle(),
@@ -220,6 +219,7 @@ export async function GET(request: NextRequest) {
         sessionDate: formatDateTime(session.starts_at as string),
         presentationTitle: (presentation?.title as string | null) ?? "your presentation",
         bookingId: session.booking_request_id as string,
+        referenceCode: (booking?.reference_code as string | null) ?? undefined,
         bookingSessionId: session.id as string
       }).catch(() => null);
 
@@ -233,6 +233,7 @@ export async function GET(request: NextRequest) {
     // Route handlers can't use updateTag (server-action only); "max" expires
     // the tagged entries so the next portal render refetches.
     revalidateTag(PLATFORM_DATA_TAG, "max");
+    revalidateTag(AVAILABILITY_DATA_TAG, "max");
   }
 
   return NextResponse.json({ completedSessions, emailsSent, remindersSent });

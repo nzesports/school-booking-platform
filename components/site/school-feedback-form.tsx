@@ -167,25 +167,17 @@ export function SchoolFeedbackForm({
             </div>
           </FeedbackSection>
 
-          <FeedbackSection step={6} title="Stay connected" className="border-b-0">
-            <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-[color:var(--border-soft)]">
-              <div className="grid gap-3 lg:pr-7">
-                <p className="text-sm font-semibold text-[color:var(--navy)]">
-                  Would you like us to add you to our mailing list?
-                </p>
-                <YesNoField name="mailingListOptIn" />
-              </div>
-              <label className="flex items-center gap-3 text-sm font-medium text-[color:var(--navy)] lg:pl-7">
-                <input
-                  type="checkbox"
-                  name="isPublic"
-                  defaultChecked
-                  required
-                  className="h-5 w-5 rounded border-[color:var(--border-soft)] accent-[color:var(--green)]"
-                />
-                Staff can consider this for public testimonials after review.
-              </label>
-            </div>
+          <FeedbackSection step={6} title="Testimonial permission" className="border-b-0">
+            <label className="flex items-center gap-3 text-sm font-medium text-[color:var(--navy)]">
+              <input
+                type="checkbox"
+                name="isPublic"
+                defaultChecked
+                required
+                className="h-5 w-5 rounded border-[color:var(--border-soft)] accent-[color:var(--green)]"
+              />
+              Staff can consider this for public testimonials after review.
+            </label>
           </FeedbackSection>
 
           <div className="flex justify-end border-t border-[color:var(--border-soft)] bg-[rgba(248,252,255,0.78)] px-6 py-5 md:px-7">

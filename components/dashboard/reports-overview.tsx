@@ -1,7 +1,6 @@
 import {
   ClipboardCheck,
   HeartHandshake,
-  School2,
   Star,
   Trophy,
   UsersRound
@@ -50,11 +49,6 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
     .filter((value): value is number => value !== null);
   const overall = average(overallValues);
 
-  const withFirst = reports.filter((r) => r.firstPresentationToSchool !== undefined);
-  const firstPct = percentage(
-    withFirst.filter((r) => r.firstPresentationToSchool).length,
-    withFirst.length
-  );
   const withCompeted = reports.filter((r) => r.studentsCompetedInEsports !== undefined);
   const competedPct = percentage(
     withCompeted.filter((r) => r.studentsCompetedInEsports).length,
@@ -79,7 +73,7 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
         A rolled-up view of how presentations are landing, straight from ambassador reports.
       </p>
 
-      <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-5">
+      <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
         <OverviewTile
           icon={<ClipboardCheck className="h-5 w-5" />}
           iconClassName="bg-[#e8f1fd] text-[#2563eb]"
@@ -91,12 +85,6 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
           iconClassName="bg-[#ece9ff] text-[#5b4fc0]"
           label="Students reached"
           value={totalAttendees.toLocaleString("en-NZ")}
-        />
-        <OverviewTile
-          icon={<School2 className="h-5 w-5" />}
-          iconClassName="bg-[#eaf8ee] text-[#117a2e]"
-          label="First-time schools"
-          value={firstPct === null ? "—" : `${firstPct}%`}
         />
         <OverviewTile
           icon={<Trophy className="h-5 w-5" />}

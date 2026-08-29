@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  ClipboardList,
   Eye,
   Globe2,
   LayoutList,
@@ -25,12 +24,12 @@ import {
   MapPin,
   Search,
   School2,
-  Trash2,
   UserRound,
   X
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
@@ -40,14 +39,15 @@ import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 const PAGE_SIZE = 4;
 
 const BOOKING_STATUS_OPTIONS = [
+  ["requested", "Requested"],
   ["tentative", "Tentative"],
-  ["ambassador_needed", "Ambassador needed"],
+  ["applied", "Applied"],
   ["ambassador_assigned", "Ambassador assigned"],
   ["confirmed", "Confirmed"],
   ["reschedule_requested", "Reschedule requested"],
-  ["cancel_requested", "Cancel requested"],
   ["completed_pending_report", "Delivered, report needed"],
   ["report_submitted", "Report submitted"],
+  ["payment_pending", "Payment pending"],
   ["paid", "Paid"],
   ["closed", "Closed"],
   ["cancelled", "Cancelled"],
@@ -59,14 +59,14 @@ const BOOKING_STATUS_OPTIONS = [
 const COMPLETION_STATUSES = new Set([
   "completed_pending_report",
   "report_submitted",
+  "payment_pending",
   "paid",
   "closed"
 ]);
 
 const statusPillStyles: Record<string, string> = {
   tentative: "bg-[#fff5df] text-[#9a5a00]",
-  ambassador_needed: "bg-[#fff5df] text-[#9a5a00]",
-  ambassador_applied: "bg-[#e8f1fd] text-[#1e4fae]",
+  applied: "bg-[#e8f1fd] text-[#1e4fae]",
   ambassador_assigned: "bg-[#e8f1fd] text-[#1e4fae]",
   withdrawal_requested: "bg-[#fff5df] text-[#9a5a00]",
   confirmed: "bg-[#eaf8ee] text-[#117a2e]",
@@ -77,7 +77,6 @@ const statusPillStyles: Record<string, string> = {
   cancelled: "bg-[#fdecec] text-[#b3372e]",
   declined: "bg-[#fdecec] text-[#b3372e]",
   reschedule_requested: "bg-[#fff5df] text-[#9a5a00]",
-  cancel_requested: "bg-[#fdecec] text-[#b3372e]",
   requested: "bg-[#fff5df] text-[#9a5a00]"
 };
 
@@ -101,12 +100,12 @@ function calendarTone(status: string): CalendarTone {
     return "green";
   }
 
-  if (["cancelled", "declined", "cancel_requested"].includes(status)) {
+  if (["cancelled", "declined"].includes(status)) {
     return "red";
   }
 
   if (
-    ["tentative", "ambassador_needed", "reschedule_requested", "withdrawal_requested", "requested"].includes(status)
+    ["tentative", "reschedule_requested", "withdrawal_requested", "requested"].includes(status)
   ) {
     return "amber";
   }
@@ -132,6 +131,44 @@ export function StatusPill({ value }: { value: string }) {
   );
 }
 
+function AutoSaveBookingStatus({
+  currentStatus,
+  options
+}: {
+  currentStatus: string;
+  options: ReadonlyArray<readonly [string, string]>;
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <label className="grid justify-items-start gap-1 lg:justify-items-end">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+        Booking status
+      </span>
+      <select
+        name="status"
+        defaultValue={currentStatus}
+        disabled={pending}
+        aria-busy={pending}
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+        className={cn(
+          "min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none",
+          pending && "cursor-wait opacity-60"
+        )}
+      >
+        {options.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <span className="sr-only" aria-live="polite">
+        {pending ? "Saving booking status" : ""}
+      </span>
+    </label>
+  );
+}
+
 export function BookingsExplorer({
   bookings,
   allBookings,
@@ -142,9 +179,9 @@ export function BookingsExplorer({
   ambassadors,
   presentationTitles,
   updateStatusAction,
-  removeInternalNoteAction,
   assignAmbassadorAction,
   resolveWithdrawalAction,
+  resolveRescheduleAction,
   initialQuery,
   initialBookingId
 }: {
@@ -157,9 +194,9 @@ export function BookingsExplorer({
   ambassadors: Array<{ id: string; name: string }>;
   presentationTitles: string[];
   updateStatusAction: (formData: FormData) => void | Promise<void>;
-  removeInternalNoteAction: (formData: FormData) => void | Promise<void>;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
+  resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   initialQuery?: string;
   initialBookingId?: string;
 }) {
@@ -170,9 +207,7 @@ export function BookingsExplorer({
   const initialBookingIndex = initialBookingId
     ? bookings.findIndex((booking) => booking.id === initialBookingId)
     : -1;
-  const [viewMode, setViewMode] = useState<"calendar" | "list">(
-    initialQuery || initialBookingIndex >= 0 ? "list" : "calendar"
-  );
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("list");
   const [query, setQuery] = useState(initialQuery ?? "");
   const [regionFilter, setRegionFilter] = useState("all");
   const [presentationFilter, setPresentationFilter] = useState("all");
@@ -203,6 +238,7 @@ export function BookingsExplorer({
     const normalized = query.trim().toLowerCase();
     const haystack = [
       booking.schoolName,
+      booking.referenceCode ?? "",
       booking.primaryContactName,
       booking.primaryContactEmail,
       booking.sessions.map((session) => session.presentationTitle).join(" ")
@@ -368,6 +404,7 @@ export function BookingsExplorer({
           entries={calendarSessions}
           updateStatusAction={updateStatusAction}
           resolveWithdrawalAction={resolveWithdrawalAction}
+          resolveRescheduleAction={resolveRescheduleAction}
           returnTo={`${returnTo}#bookings-panel`}
         />
       ) : (
@@ -397,11 +434,6 @@ export function BookingsExplorer({
                 !COMPLETION_STATUSES.has(value) ||
                 value === booking.status
             );
-            const internalNotes = (booking.internalNotes ?? "")
-              .split(/\r?\n/)
-              .map((note) => note.trim())
-              .filter(Boolean);
-
             return (
               <section
                 key={booking.id}
@@ -428,6 +460,11 @@ export function BookingsExplorer({
                           <h3 className="truncate text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
                             {booking.schoolName}
                           </h3>
+                          {booking.referenceCode ? (
+                            <p className="mt-1 text-xs font-semibold text-[color:var(--text-soft)]">
+                              Reference {booking.referenceCode}
+                            </p>
+                          ) : null}
                           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--text-soft)]">
                             <span className="inline-flex min-w-0 items-center gap-1">
                               <UserRound className="h-3.5 w-3.5 shrink-0" />
@@ -450,7 +487,14 @@ export function BookingsExplorer({
 
                     <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap lg:justify-end">
                       <div className="grid justify-items-start gap-1.5 lg:justify-items-end">
-                        <StatusPill value={booking.status} />
+                        <form action={updateStatusAction}>
+                          <input type="hidden" name="bookingRequestId" value={booking.id} />
+                          <input type="hidden" name="returnTo" value={cardReturnTo} />
+                          <AutoSaveBookingStatus
+                            currentStatus={booking.status}
+                            options={statusOptions}
+                          />
+                        </form>
                         <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[color:var(--text-soft)]">
                           <CalendarDays className="h-3.5 w-3.5" />
                           Requested {formatShortDate(booking.createdAt)}
@@ -470,86 +514,6 @@ export function BookingsExplorer({
 
                 {open ? (
                   <>
-                    <form
-                      action={updateStatusAction}
-                      className="surface-panel grid items-center gap-3 rounded-none border-t-0 px-4 py-3 md:px-5 lg:grid-cols-[minmax(180px,0.9fr)_minmax(190px,1fr)_minmax(240px,1.6fr)_auto]"
-                    >
-                      <input type="hidden" name="bookingRequestId" value={booking.id} />
-                      <input type="hidden" name="returnTo" value={cardReturnTo} />
-                      <div className="flex items-center gap-3 border-b border-[color:var(--border-soft)] pb-3 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-5">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e8f1fd] text-[#2563eb]">
-                          <ClipboardList className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <p className="text-xs font-semibold text-[color:var(--navy)]">Booking status</p>
-                          <p className="text-[11px] leading-4 text-[color:var(--text-soft)]">
-                            Update the overall status for this booking request.
-                          </p>
-                        </div>
-                      </div>
-                      <label className="grid gap-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                          Booking status
-                        </span>
-                        <select
-                          name="status"
-                          defaultValue={booking.status}
-                          className="min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none"
-                        >
-                          {statusOptions.map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                          Internal note (optional)
-                        </span>
-                        <input
-                          name="reason"
-                          placeholder="Add an internal note..."
-                          className="min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs text-[color:var(--navy)] outline-none"
-                        />
-                      </label>
-                      <button
-                        type="submit"
-                        className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-[10px] border border-[#2563eb] bg-[#2563eb] px-4 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(37,99,235,0.2)] transition hover:bg-[#1d4fd7]"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Update status
-                      </button>
-                      {internalNotes.length ? (
-                        <div className="rounded-[10px] border border-[color:var(--border-soft)] bg-[#f8fbff] px-3 py-2 text-[11px] leading-4 text-[color:var(--text-soft)] lg:col-start-3 lg:col-end-5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--navy)]">
-                            Saved internal notes
-                          </p>
-                          <div className="mt-1.5 grid gap-1.5">
-                            {internalNotes.map((note, index) => (
-                              <div
-                                key={`${booking.id}-internal-note-${index}`}
-                                className="flex items-start gap-2 rounded-[8px] bg-white px-2.5 py-1.5 text-[color:var(--navy)]"
-                              >
-                                <p className="min-w-0 flex-1">{note}</p>
-                                <button
-                                  type="submit"
-                                  formAction={removeInternalNoteAction}
-                                  name="noteIndex"
-                                  value={String(index)}
-                                  aria-label="Remove internal note"
-                                  title="Remove note"
-                                  className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#b3372e] transition hover:bg-[#fdecec]"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </form>
-
                     <div className="surface-panel rounded-t-none rounded-b-[18px] border-t-0 p-4">
                       <p className="flex items-center gap-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                         <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
@@ -615,6 +579,7 @@ export function BookingsExplorer({
                                   <AmbassadorSearchSelect
                                     ambassadors={ambassadors}
                                     applicants={session.applicants ?? []}
+                                    assignedId={session.assignedAmbassadorId}
                                     assignedName={session.assignedAmbassadorName}
                                   />
                                   <button
@@ -645,6 +610,7 @@ export function BookingsExplorer({
                                   }
                                   updateStatusAction={updateStatusAction}
                                   resolveWithdrawalAction={resolveWithdrawalAction}
+                                  resolveRescheduleAction={resolveRescheduleAction}
                                   returnTo={cardReturnTo}
                                 />
                               </td>
@@ -786,11 +752,13 @@ function BookingsCalendar({
   entries,
   updateStatusAction,
   resolveWithdrawalAction,
+  resolveRescheduleAction,
   returnTo
 }: {
   entries: Array<{ session: BookingSessionView; schoolName: string }>;
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
+  resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   returnTo: string;
 }) {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
@@ -805,7 +773,7 @@ function BookingsCalendar({
   const legend: Array<{ tone: CalendarTone; label: string }> = [
     { tone: "green", label: "Confirmed / delivered" },
     { tone: "blue", label: "Assigned / applied" },
-    { tone: "amber", label: "Tentative / needs ambassador" },
+    { tone: "amber", label: "Tentative / awaiting assignment" },
     { tone: "red", label: "Cancelled" }
   ];
 
@@ -912,6 +880,7 @@ function BookingsCalendar({
                         unstyled
                         updateStatusAction={updateStatusAction}
                         resolveWithdrawalAction={resolveWithdrawalAction}
+                        resolveRescheduleAction={resolveRescheduleAction}
                         returnTo={returnTo}
                         className={cn(
                           "w-full truncate rounded-[8px] border px-1.5 py-1 text-left text-[11px] font-semibold leading-4 transition",
@@ -947,16 +916,18 @@ function BookingsCalendar({
 function AmbassadorSearchSelect({
   ambassadors,
   applicants,
+  assignedId,
   assignedName
 }: {
   ambassadors: Array<{ id: string; name: string }>;
   applicants: Array<{ id: string; name: string }>;
+  assignedId?: string;
   assignedName?: string;
 }) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [text, setText] = useState(assignedName ?? "");
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(assignedId ?? "");
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
@@ -1071,12 +1042,17 @@ function AmbassadorSearchSelect({
         />
         {text ? (
           <button
-            type="button"
+            type={assignedName ? "submit" : "button"}
+            name={assignedName ? "ambassadorProfileId" : undefined}
+            value={assignedName ? "" : undefined}
             onClick={() => {
-              setText("");
-              setSelectedId("");
+              if (!assignedName) {
+                setText("");
+                setSelectedId("");
+              }
             }}
-            aria-label="Clear ambassador"
+            aria-label={assignedName ? "Unassign ambassador" : "Clear ambassador"}
+            title={assignedName ? "Unassign ambassador" : "Clear ambassador"}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[color:var(--text-soft)] transition hover:bg-[#f1f5f9] hover:text-[color:var(--navy)]"
           >
             <X className="h-3 w-3" />

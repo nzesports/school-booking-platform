@@ -131,13 +131,15 @@ export function BookingDatePicker({
   value,
   onChange,
   isDateBookable,
+  getDateState,
   minDate,
   maxDate,
   className
 }: {
   value: string;
   onChange: (date: string) => void;
-  isDateBookable: (date: string) => boolean;
+  isDateBookable?: (date: string) => boolean;
+  getDateState?: (date: string) => "available" | "limited" | "unavailable";
   minDate: string;
   maxDate: string;
   className?: string;
@@ -229,7 +231,11 @@ export function BookingDatePicker({
                 {days.map((day) => {
                   const iso = format(day, "yyyy-MM-dd");
                   const inMonth = isSameMonth(day, viewMonth);
-                  const bookable = iso >= minDate && iso <= maxDate && isDateBookable(iso);
+                  const state =
+                    getDateState?.(iso) ??
+                    (isDateBookable?.(iso) === false ? "unavailable" : "available");
+                  const bookable = iso >= minDate && iso <= maxDate && state !== "unavailable";
+                  const limited = bookable && state === "limited";
                   const selected = selectedDate ? isSameDay(day, selectedDate) : false;
 
                   return (
@@ -237,29 +243,42 @@ export function BookingDatePicker({
                       key={iso}
                       type="button"
                       disabled={!bookable}
+                      aria-label={`${format(day, "d MMMM yyyy")}${limited ? ", limited availability" : !bookable ? ", unavailable" : ""}`}
                       onClick={() => {
                         onChange(iso);
                         closePopover();
                       }}
                       className={cn(
-                        "flex h-9 w-full items-center justify-center rounded-full text-sm transition",
+                        "relative flex h-9 w-full items-center justify-center rounded-full text-sm transition",
                         inMonth ? "text-[color:var(--text-dark)]" : "text-[color:var(--text-soft)]",
                         bookable
                           ? "hover:bg-[rgba(24,168,59,0.12)]"
                           : "cursor-not-allowed opacity-30",
+                        limited && "bg-[#fff5df] text-[#8a5a00] ring-1 ring-inset ring-[#efcf8d]",
                         selected &&
                           "bg-[color:var(--green)] font-semibold text-white hover:bg-[color:var(--green)]"
                       )}
                     >
                       {format(day, "d")}
+                      {limited && !selected ? (
+                        <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-[#d78a13]" />
+                      ) : null}
                     </button>
                   );
                 })}
               </div>
 
-              <p className="mt-3 text-xs text-[color:var(--text-soft)]">
-                Weekends and public holidays are unavailable.
-              </p>
+              <div className="mt-3 grid gap-2 text-xs text-[color:var(--text-soft)]">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[color:var(--green)]" />Available</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#d78a13]" />Limited</span>
+                  <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#aeb6c4]" />Unavailable</span>
+                </div>
+                <p>
+                  Bookings require seven days&apos; notice. Weekends and public holidays are
+                  unavailable.
+                </p>
+              </div>
             </div>,
             document.body
           )

@@ -3,6 +3,7 @@ import { addDays, addMinutes, format, isAfter, isBefore, set } from "date-fns";
 import type { AvailabilitySlot } from "@/lib/domain/types";
 
 export const BOOKING_WINDOW_DAYS = 365;
+export const MIN_BOOKING_LEAD_DAYS = 7;
 
 export type AvailabilityRuleConfig = {
   dayOfWeek: number;
@@ -20,7 +21,10 @@ export type AvailabilityOverrideConfig = {
 export type AvailabilityConfig = {
   rules: AvailabilityRuleConfig[];
   overrides: AvailabilityOverrideConfig[];
+  limitedDates?: string[];
 };
+
+export type BookingDateState = "available" | "limited" | "unavailable";
 
 const holidayDates = new Set([
   "2026-01-01",
@@ -91,6 +95,68 @@ export function isBookableDate(dateString: string, config?: AvailabilityConfig) 
   return day !== 0 && day !== 6;
 }
 
+export function isBookableSessionTime(
+  dateString: string,
+  startTime: string,
+  endTime: string,
+  config?: AvailabilityConfig
+) {
+  if (!isBookableDate(dateString, config)) {
+    return false;
+  }
+
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(endTime);
+
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) {
+    return false;
+  }
+
+  const rules = getRulesForDate(new Date(`${dateString}T00:00:00`), config);
+
+  if (rules.length === 0) {
+    return startMinutes >= 8 * 60 && endMinutes <= 16 * 60;
+  }
+
+  return rules.some(
+    (rule) =>
+      startMinutes >= timeToMinutes(rule.startTime) && endMinutes <= timeToMinutes(rule.endTime)
+  );
+}
+
+function nzDateString(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(value);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export function minimumBookingDate(now = new Date()) {
+  const nzToday = new Date(`${nzDateString(now)}T12:00:00`);
+  return format(addDays(nzToday, MIN_BOOKING_LEAD_DAYS), "yyyy-MM-dd");
+}
+
+export function maximumBookingDate(now = new Date()) {
+  const nzToday = new Date(`${nzDateString(now)}T12:00:00`);
+  return format(addDays(nzToday, BOOKING_WINDOW_DAYS), "yyyy-MM-dd");
+}
+
+export function bookingDateState(dateString: string, config?: AvailabilityConfig): BookingDateState {
+  if (!isWithinBookingWindow(dateString) || !isBookableDate(dateString, config)) {
+    return "unavailable";
+  }
+
+  return config?.limitedDates?.includes(dateString) ? "limited" : "available";
+}
+
+export function isWithinBookingWindow(dateString: string, now = new Date()) {
+  return dateString >= minimumBookingDate(now) && dateString <= maximumBookingDate(now);
+}
+
 export function buildAvailabilitySlots(dateString: string, config?: AvailabilityConfig): AvailabilitySlot[] {
   if (!isBookableDate(dateString, config)) {
     return [];
@@ -132,12 +198,13 @@ export function buildAvailabilitySlots(dateString: string, config?: Availability
 export function nextBookableDates(daysAhead = 21, config?: AvailabilityConfig) {
   const dates: string[] = [];
   const now = new Date();
+  const earliestDate = minimumBookingDate(now);
 
-  for (let offset = 1; offset <= daysAhead; offset += 1) {
-    const date = addDays(now, offset);
+  for (let offset = MIN_BOOKING_LEAD_DAYS; offset <= daysAhead; offset += 1) {
+    const date = addDays(new Date(`${nzDateString(now)}T12:00:00`), offset);
     const day = format(date, "yyyy-MM-dd");
 
-    if (isBookableDate(day, config) && isBefore(now, date)) {
+    if (day >= earliestDate && isBookableDate(day, config) && isBefore(now, date)) {
       dates.push(day);
     }
   }

@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ComponentProps } from "react";
 
 import beroccaLogo from "@/public/media/berocca-logo.png";
 import nzEsportsLogo from "@/public/media/nz-esports-logo-black.png";
@@ -9,19 +10,30 @@ export function BrandLockup({
   className,
   subtitle,
   compact = false,
-  size = "default"
+  size = "default",
+  href = "/",
+  ariaLabel,
+  target,
+  rel
 }: {
   className?: string;
   subtitle?: string;
   compact?: boolean;
   size?: "default" | "nav" | "footer";
+  href?: ComponentProps<typeof Link>["href"];
+  ariaLabel?: string;
+  target?: ComponentProps<typeof Link>["target"];
+  rel?: string;
 }) {
   const isNav = size === "nav";
   const isFooter = size === "footer";
 
   return (
     <Link
-      href="/"
+      href={href}
+      aria-label={ariaLabel}
+      target={target}
+      rel={rel}
       className={cn(
         "inline-flex items-center",
         isNav ? "gap-3.5 md:gap-4" : isFooter ? "gap-3.5" : "gap-3",

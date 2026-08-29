@@ -50,7 +50,10 @@ async function getGraphToken() {
   return payload.access_token;
 }
 
-export async function createOutlookCalendarEvent(input: CalendarEventInput) {
+export async function syncOutlookCalendarEvent(
+  input: CalendarEventInput,
+  externalEventId?: string | null
+) {
   if (!config.isMicrosoftGraphConfigured) {
     return {
       id: `calendar-${randomUUID()}`,
@@ -62,10 +65,13 @@ export async function createOutlookCalendarEvent(input: CalendarEventInput) {
   const userId = encodeURIComponent(config.microsoftUserId as string);
   const calendarId = encodeURIComponent(config.microsoftCalendarId as string);
 
+  const eventPath = externalEventId
+    ? `/events/${encodeURIComponent(externalEventId)}`
+    : "/events";
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${userId}/calendars/${calendarId}/events`,
+    `https://graph.microsoft.com/v1.0/users/${userId}/calendars/${calendarId}${eventPath}`,
     {
-      method: "POST",
+      method: externalEventId ? "PATCH" : "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
@@ -99,10 +105,14 @@ export async function createOutlookCalendarEvent(input: CalendarEventInput) {
     };
   }
 
-  const payload = (await response.json()) as { id: string };
+  const payload = externalEventId ? { id: externalEventId } : ((await response.json()) as { id: string });
 
   return {
     id: payload.id,
     status: "synced" as const
   };
+}
+
+export async function createOutlookCalendarEvent(input: CalendarEventInput) {
+  return syncOutlookCalendarEvent(input);
 }

@@ -80,14 +80,15 @@ export async function sendBookingRequestReceivedEmail(opts: {
   contactName: string;
   schoolName: string;
   bookingId: string;
+  referenceCode?: string;
 }) {
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
-  const bookingId = escapeHtml(opts.bookingId);
+  const referenceCode = escapeHtml(opts.referenceCode ?? opts.bookingId);
   const template = await renderTemplate("booking_request_received", {
     contactName: opts.contactName,
     schoolName: opts.schoolName,
-    bookingId: opts.bookingId
+    bookingId: opts.referenceCode ?? opts.bookingId
   });
   const result = await sendTransactionalEmail({
     templateKey: "booking_request_received",
@@ -98,7 +99,7 @@ export async function sendBookingRequestReceivedEmail(opts: {
       `
       <p>Hi ${contactName},</p>
       <p>Thank you for your booking request for <strong>${schoolName}</strong>.</p>
-      <p>Your reference number is <strong>${bookingId}</strong>.</p>
+      <p>Your optional support reference is <strong>${referenceCode}</strong>.</p>
       <p>Our team will be in touch within 2 business days to confirm your session.</p>
       <p>If you want to access the school portal, sign up with this same email address after
       verification and your school contact record will be linked automatically.</p>
@@ -148,6 +149,7 @@ export async function sendBookingConfirmedEmail(opts: {
   sessionDate: string;
   presentationTitle: string;
   bookingId?: string;
+  referenceCode?: string;
   bookingSessionId?: string;
   sessionStartsAt?: string;
   sessionEndsAt?: string;
@@ -164,7 +166,7 @@ export async function sendBookingConfirmedEmail(opts: {
       schoolName: opts.schoolName,
       sessionDate: opts.sessionDate,
       presentationTitle: opts.presentationTitle,
-      bookingId: opts.bookingId ?? "",
+      bookingId: opts.referenceCode ?? "",
       bookingSessionId: opts.bookingSessionId ?? ""
     },
     { calendarLinks }
@@ -179,6 +181,7 @@ export async function sendBookingConfirmedEmail(opts: {
       <p>Hi ${contactName},</p>
       <p>Great news: your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> is now confirmed.</p>
+      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>We'll send you a reminder closer to the date.</p>
     `
@@ -253,6 +256,7 @@ export async function sendBookingRescheduledEmail(opts: {
   sessionDate: string;
   presentationTitle: string;
   bookingId?: string;
+  referenceCode?: string;
   bookingSessionId?: string;
   sessionStartsAt?: string;
   sessionEndsAt?: string;
@@ -268,7 +272,8 @@ export async function sendBookingRescheduledEmail(opts: {
       contactName: opts.contactName,
       schoolName: opts.schoolName,
       sessionDate: opts.sessionDate,
-      presentationTitle: opts.presentationTitle
+      presentationTitle: opts.presentationTitle,
+      bookingId: opts.referenceCode ?? ""
     },
     { calendarLinks }
   );
@@ -283,6 +288,7 @@ export async function sendBookingRescheduledEmail(opts: {
       <p>Your reschedule request has been sorted — the <strong>${presentationTitle}</strong>
       session for <strong>${schoolName}</strong> is now confirmed for
       <strong>${sessionDate}</strong>.</p>
+      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>We'll send a reminder closer to the day.</p>
     `
@@ -304,6 +310,7 @@ export async function sendSessionReminderEmail(opts: {
   sessionDate: string;
   presentationTitle: string;
   bookingId?: string;
+  referenceCode?: string;
   bookingSessionId?: string;
 }) {
   const contactName = escapeHtml(opts.contactName);
@@ -314,7 +321,8 @@ export async function sendSessionReminderEmail(opts: {
     contactName: opts.contactName,
     schoolName: opts.schoolName,
     sessionDate: opts.sessionDate,
-    presentationTitle: opts.presentationTitle
+    presentationTitle: opts.presentationTitle,
+    bookingId: opts.referenceCode ?? ""
   });
   const result = await sendTransactionalEmail({
     templateKey: "school_session_reminder",
@@ -326,6 +334,7 @@ export async function sendSessionReminderEmail(opts: {
       <p>Hi ${contactName},</p>
       <p>A quick reminder that the <strong>${presentationTitle}</strong> session at
       <strong>${schoolName}</strong> is coming up on <strong>${sessionDate}</strong>.</p>
+      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       <p>Handy checklist: projector or screen ready, microphone if the space needs one,
       and let the office know our ambassador is visiting.</p>
     `
@@ -438,6 +447,7 @@ export async function sendBookingCancelledEmail(opts: {
   sessionDate: string;
   presentationTitle: string;
   bookingId?: string;
+  referenceCode?: string;
   bookingSessionId?: string;
 }) {
   const contactName = escapeHtml(opts.contactName);
@@ -449,7 +459,7 @@ export async function sendBookingCancelledEmail(opts: {
     schoolName: opts.schoolName,
     sessionDate: opts.sessionDate,
     presentationTitle: opts.presentationTitle,
-    bookingId: opts.bookingId ?? "",
+    bookingId: opts.referenceCode ?? "",
     bookingSessionId: opts.bookingSessionId ?? ""
   });
   const result = await sendTransactionalEmail({
@@ -462,6 +472,7 @@ export async function sendBookingCancelledEmail(opts: {
       <p>Hi ${contactName},</p>
       <p>Your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> has been cancelled.</p>
+      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       <p>If this was unexpected, reply to this email and our team will help.</p>
     `
   });

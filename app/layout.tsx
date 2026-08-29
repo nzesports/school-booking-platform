@@ -9,7 +9,6 @@ import {
   registerAmbassadorAccountAction,
   registerSchoolAccountAction
 } from "@/app/auth/actions";
-import { DemoModeBanner } from "@/components/site/demo-mode-banner";
 import { AppChrome } from "@/components/site/app-chrome";
 import { config } from "@/lib/env";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
@@ -60,7 +59,6 @@ export default async function RootLayout({
       className={`${quicksand.variable} ${rozhaOne.variable} ${lilitaOne.variable}`}
     >
       <body className="min-h-screen bg-[var(--page-background)] text-[color:var(--text-dark)] antialiased">
-        <DemoModeBanner />
         <AppChrome
           presentations={presentations}
           regions={regions}

@@ -79,7 +79,6 @@ export function SchoolReviewSubmissionButton({
       {open
         ? createPortal(
             <BookingDialogShell
-              kicker="Feedback submission"
               title={review.presentationTitle}
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[820px]"

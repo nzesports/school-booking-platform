@@ -1,7 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, type ReactNode } from "react";
-import { CheckCircle2, School, UserRound, X } from "lucide-react";
+import Image from "next/image";
+import {
+  useActionState,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode
+} from "react";
+import { Camera, X } from "lucide-react";
 
 import type { SignupFormState } from "@/app/auth/actions";
 import {
@@ -17,6 +25,11 @@ import { Select } from "@/components/ui/select";
 import { TagMultiSelect } from "@/components/ui/tag-multi-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Region } from "@/lib/domain/types";
+import {
+  getGuestBookingDefaultsSnapshot,
+  parseGuestBookingDefaults,
+  subscribeToGuestBookingDefaults
+} from "@/lib/services/guest-booking-defaults";
 import { cn } from "@/lib/utils";
 
 const loginMessages: Record<string, string> = {
@@ -32,7 +45,7 @@ const loginMessages: Record<string, string> = {
   "email-exists":
     "That email address already has an account. Log in below, or use “Forgot password” if you need to reset it.",
   "profile-missing": "Your account exists, but the portal profile is missing. Please contact support.",
-  "supabase-unavailable": "Authentication is not configured yet in this environment."
+  "supabase-unavailable": "Sign in is temporarily unavailable. Please try again later."
 };
 
 const signupMessages: Record<string, string> = {
@@ -41,13 +54,13 @@ const signupMessages: Record<string, string> = {
   "invalid-ambassador-signup":
     "Please complete every ambassador field and make sure the passwords match.",
   "signup-failed": "We couldn't create that account right now. Please try again.",
-  "supabase-unavailable": "Authentication is not configured yet in this environment."
+  "supabase-unavailable": "Sign up is temporarily unavailable. Please try again later."
 };
 
 const forgotMessages: Record<string, string> = {
   "invalid-email": "Please enter a valid email address.",
   "reset-failed": "We couldn't send that reset email. Please try again.",
-  "supabase-unavailable": "Authentication is not configured yet in this environment."
+  "supabase-unavailable": "Password reset is temporarily unavailable. Please try again later."
 };
 
 type AuthAction = (formData: FormData) => void | Promise<void>;
@@ -142,15 +155,8 @@ export function AuthModalHost({
       >
         <aside className="relative overflow-hidden border-b border-[rgba(4,15,75,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(238,247,252,0.94))] p-6 md:p-7 lg:border-b-0 lg:border-r lg:p-8 xl:p-10">
           <div className="relative z-10 flex h-full flex-col">
-            <BrandLockup subtitle="Secure portals" />
-            <span className="section-kicker mt-7 w-fit">
-              {mode === "login"
-                ? "Portal access"
-                : mode === "forgot"
-                  ? "Password recovery"
-                  : "Portal onboarding"}
-            </span>
-            <div className="mt-5 max-w-xl">
+            <BrandLockup />
+            <div className="mt-7 max-w-xl">
               <h2 className="max-w-[12ch] text-[2.5rem] font-semibold leading-[0.98] tracking-[-0.06em] text-[color:var(--navy)] md:text-[3rem]">
                 {mode === "login"
                   ? "Log back into NZ Esports."
@@ -274,29 +280,20 @@ function UnavailablePanel({
 }) {
   const heading =
     mode === "signup"
-      ? "Portal sign up is not connected yet."
+      ? "Sign up is temporarily unavailable."
       : mode === "forgot"
-        ? "Password reset is not connected yet."
-        : "Portal login is not connected yet.";
+        ? "Password reset is temporarily unavailable."
+        : "Sign in is temporarily unavailable.";
 
   return (
     <>
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-        Authentication setup
-      </p>
-      <h3 className="mt-2 text-[2.15rem] font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-[2.35rem]">
+      <h3 className="text-[2.15rem] font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-[2.35rem]">
         {heading}
       </h3>
       <p className="mt-2 max-w-2xl text-[0.98rem] leading-7 text-[color:var(--text-soft)]">
-        This local environment is still missing the Supabase authentication keys, so public portal
-        sign up, login, and password recovery are paused for now.
+        Please try again later or contact the NZ Esports team if you need help accessing your
+        account.
       </p>
-
-      <Banner tone="error">
-        Add <code className="font-semibold">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-        <code className="font-semibold">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> to enable the
-        live auth flow.
-      </Banner>
 
       <div className="mt-6 flex flex-wrap gap-3">
         <button
@@ -346,10 +343,12 @@ function LoginPanel({
       ) : null}
       {query.checkEmail ? (
         <Banner tone="success">
-          Check your inbox to verify your {query.checkEmail} account before signing in.
+          {query.checkEmail === "ambassador"
+            ? "Your ambassador application was received. Verify your email using the link we sent, then our staff will review your application and contact you with the outcome."
+            : `Check your inbox to verify your ${query.checkEmail} account before signing in.`}
         </Banner>
       ) : null}
-      {query.application ? (
+      {query.application && query.checkEmail !== "ambassador" ? (
         <Banner tone="success">
           Your ambassador application has been received and sent to the staff review queue.
         </Banner>
@@ -431,6 +430,15 @@ function SignupPanel({
   const isAmbassador = role === "ambassador";
   const [schoolState, schoolFormAction] = useActionState(registerSchoolAction, null);
   const [ambassadorState, ambassadorFormAction] = useActionState(registerAmbassadorAction, null);
+  const guestDefaultsSnapshot = useSyncExternalStore(
+    subscribeToGuestBookingDefaults,
+    getGuestBookingDefaultsSnapshot,
+    () => null
+  );
+  const guestDefaults = useMemo(
+    () => parseGuestBookingDefaults(guestDefaultsSnapshot),
+    [guestDefaultsSnapshot]
+  );
   const formError = (isAmbassador ? ambassadorState : schoolState)?.error ?? null;
 
   return (
@@ -446,25 +454,8 @@ function SignupPanel({
       <p className="mt-2 max-w-2xl text-[0.98rem] leading-7 text-[color:var(--text-soft)]">
         {isAmbassador
           ? "Ambassador accounts require staff or admin approval before access is unlocked."
-          : "Choose the account type that best fits your role to continue."}
+          : "Create your school account to manage bookings and resources."}
       </p>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <RoleCard
-          active={!isAmbassador}
-          title="School account"
-          description="Direct portal access after verification."
-          icon={<School className="h-6 w-6" />}
-          onClick={() => openRole("school")}
-        />
-        <RoleCard
-          active={isAmbassador}
-          title="Ambassador application"
-          description="Requires staff or admin approval before entry."
-          icon={<UserRound className="h-6 w-6" />}
-          onClick={() => openRole("ambassador")}
-        />
-      </div>
 
       {formError ? (
         <Banner tone="error">{formError}</Banner>
@@ -479,6 +470,7 @@ function SignupPanel({
           className="mt-5 grid gap-4"
         >
           <input type="hidden" name="returnTo" value={returnTo} />
+          <AmbassadorPhotoField />
           <div className="grid gap-4 md:grid-cols-2">
             <AuthField label="Full name">
               <Input
@@ -582,10 +574,20 @@ function SignupPanel({
           >
             Submit ambassador application
           </SubmitButton>
+          <p className="text-center text-sm text-[color:var(--text-soft)]">
+            Applying for a school instead?{" "}
+            <button
+              type="button"
+              onClick={() => openRole("school")}
+              className="font-semibold text-[color:var(--navy)]"
+            >
+              Create a school account
+            </button>
+          </p>
         </form>
       ) : (
         <form
-          key={`school-${schoolState?.attempt ?? 0}`}
+          key={`school-${schoolState?.attempt ?? 0}-${guestDefaults ? "guest" : "blank"}`}
           action={schoolFormAction}
           className="mt-5 grid gap-4"
         >
@@ -595,7 +597,7 @@ function SignupPanel({
               <Input
                 name="schoolName"
                 placeholder="e.g. Harbour Secondary College"
-                defaultValue={schoolState?.values.schoolName ?? ""}
+                defaultValue={schoolState?.values.schoolName ?? guestDefaults?.schoolName ?? ""}
                 required
               />
             </AuthField>
@@ -603,7 +605,7 @@ function SignupPanel({
               <Input
                 name="contactName"
                 placeholder="e.g. Jules Morgan"
-                defaultValue={schoolState?.values.contactName ?? ""}
+                defaultValue={schoolState?.values.contactName ?? guestDefaults?.contactName ?? ""}
                 required
               />
             </AuthField>
@@ -612,7 +614,7 @@ function SignupPanel({
                 name="email"
                 type="email"
                 placeholder="e.g. jules@school.nz"
-                defaultValue={schoolState?.values.email ?? ""}
+                defaultValue={schoolState?.values.email ?? guestDefaults?.contactEmail ?? ""}
                 required
               />
             </AuthField>
@@ -620,7 +622,7 @@ function SignupPanel({
               <Input
                 name="phone"
                 placeholder="e.g. +64 21 555 123"
-                defaultValue={schoolState?.values.phone ?? ""}
+                defaultValue={schoolState?.values.phone ?? guestDefaults?.contactPhone ?? ""}
                 required
               />
             </AuthField>
@@ -628,7 +630,7 @@ function SignupPanel({
               <Select
                 name="regionSlug"
                 required
-                defaultValue={schoolState?.values.regionSlug || ""}
+                defaultValue={schoolState?.values.regionSlug || guestDefaults?.regionSlug || ""}
               >
                 <option value="" disabled>
                   Select your region
@@ -668,6 +670,16 @@ function SignupPanel({
           >
             Create school account
           </SubmitButton>
+          <p className="text-center text-sm text-[color:var(--text-soft)]">
+            Want to deliver sessions?{" "}
+            <button
+              type="button"
+              onClick={() => openRole("ambassador")}
+              className="font-semibold text-[color:var(--navy)]"
+            >
+              Ambassador application
+            </button>
+          </p>
         </form>
       )}
 
@@ -752,54 +764,49 @@ function ForgotPasswordPanel({
   );
 }
 
-function RoleCard({
-  active,
-  title,
-  description,
-  icon,
-  onClick
-}: {
-  active: boolean;
-  title: string;
-  description: string;
-  icon: ReactNode;
-  onClick: () => void;
-}) {
+function AmbassadorPhotoField() {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "relative flex min-h-[112px] items-center gap-4 rounded-[22px] border px-4 py-4 text-left transition",
-        active
-          ? "border-[rgba(24,168,59,0.45)] bg-[linear-gradient(135deg,rgba(234,248,238,0.86),rgba(238,247,252,0.92))] shadow-[0_16px_32px_rgba(11,24,77,0.08)]"
-          : "border-[color:rgba(4,15,75,0.1)] bg-white/78 hover:bg-white"
-      )}
-    >
-      <div
-        className={cn(
-          "inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full",
-          active
-            ? "bg-[linear-gradient(135deg,rgba(234,248,238,1),rgba(175,213,237,0.42))] text-[color:var(--green)]"
-            : "bg-[rgba(238,247,252,0.9)] text-[color:var(--navy)]"
-        )}
-      >
-        {icon}
-      </div>
-      <div className="pr-8">
-        <p className="text-base font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-          {title}
-        </p>
-        <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{description}</p>
-      </div>
-      <span className="absolute right-4 top-4">
-        {active ? (
-          <CheckCircle2 className="h-5 w-5 text-[color:var(--green)]" />
-        ) : (
-          <span className="block h-5 w-5 rounded-full border border-[rgba(4,15,75,0.22)]" />
-        )}
+    <label className="grid gap-3 rounded-[22px] border border-[color:var(--border-soft)] bg-white/86 p-4">
+      <span className="text-sm font-medium text-[color:var(--navy)]">
+        Public profile photo <span className="text-[#b42318]">*</span>
       </span>
-    </button>
+      <span className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <span className="relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-[color:var(--blue-soft)] text-[color:var(--navy)]">
+          {previewUrl ? (
+            <Image src={previewUrl} alt="Profile photo preview" fill unoptimized className="object-cover" />
+          ) : (
+            <Camera className="h-8 w-8" />
+          )}
+        </span>
+        <span className="grid flex-1 gap-2">
+          <input
+            name="photo"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            required
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              setPreviewUrl(file ? URL.createObjectURL(file) : null);
+            }}
+            className="block w-full text-sm text-[color:var(--text-soft)] file:mr-3 file:rounded-full file:border-0 file:bg-[color:var(--navy)] file:px-4 file:py-2 file:font-semibold file:text-white"
+          />
+          <span className="text-xs leading-5 text-[color:var(--text-soft)]">
+            JPG, PNG, or WebP, up to 5MB. This photo will be public and may appear on your
+            ambassador profile and school-facing presentation materials.
+          </span>
+        </span>
+      </span>
+    </label>
   );
 }
 

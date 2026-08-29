@@ -20,10 +20,13 @@ const WEBSITE_URL = "https://www.nzesports.org.nz/";
 // Wraps every outgoing email body in the NZ Esports branded shell: logo
 // header with the School Presentations pill, white content card, and a footer
 // with the logo, social icons, Berocca partner block, website/platform links,
-// and the unsubscribe option. Table layout + inline styles only — email
+// and an optional unsubscribe control. Table layout + inline styles only — email
 // clients strip stylesheets — and all imagery is hosted https with fixed
 // pixel widths so nothing gets blocked or clipped.
-export function renderBrandedEmail(bodyHtml: string) {
+export function renderBrandedEmail(
+  bodyHtml: string,
+  { includeUnsubscribe = true }: { includeUnsubscribe?: boolean } = {}
+) {
   const platformUrl = config.siteUrl;
   const unsubscribeHref = `mailto:${config.brevoSenderEmail}?subject=Unsubscribe`;
 
@@ -136,8 +139,12 @@ ${socialIcons}
                   <a href="${WEBSITE_URL}" style="color:#13a64a; text-decoration:underline;">nzesports.org.nz</a>
                   &nbsp;·&nbsp;
                   <a href="${platformUrl}" style="color:#13a64a; text-decoration:underline;">Booking platform</a>
-                  &nbsp;·&nbsp;
-                  <a href="${unsubscribeHref}" style="color:#7a8798; text-decoration:underline;">Unsubscribe</a>
+                  ${
+                    includeUnsubscribe
+                      ? `&nbsp;·&nbsp;
+                  <a href="${unsubscribeHref}" style="color:#7a8798; text-decoration:underline;">Unsubscribe</a>`
+                      : ""
+                  }
                 </p>
 
                 <p style="margin:0 auto; max-width:500px; font-size:12px; line-height:1.6; color:#7a8798; text-align:center;">

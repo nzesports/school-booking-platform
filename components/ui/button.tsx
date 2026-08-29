@@ -48,15 +48,35 @@ export function ButtonLink({
   className,
   children,
   variant = "primary",
+  href,
   ...props
 }: ButtonLinkProps) {
+  const classes = cn(
+    "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)]",
+    variants[variant],
+    className
+  );
+
+  if (typeof href === "string" && /^(mailto|tel):/i.test(href)) {
+    return (
+      <a
+        href={href}
+        className={classes}
+        onClick={props.onClick}
+        target={props.target}
+        rel={props.rel}
+        title={props.title}
+        aria-label={props["aria-label"]}
+      >
+        {children}
+      </a>
+    );
+  }
+
   return (
     <Link
-      className={cn(
-        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)]",
-        variants[variant],
-        className
-      )}
+      href={href}
+      className={classes}
       {...props}
     >
       {children}

@@ -178,10 +178,6 @@ export function BookingRequestForm({
             </div>
           </div>
 
-          <label className="mt-6 flex items-start gap-3 rounded-[22px] border border-[color:var(--border-soft)] bg-white/88 px-4 py-4 text-sm text-[color:var(--text-soft)]">
-            <input type="checkbox" name="marketingConsent" defaultChecked className="mt-1" />
-            Keep me updated about future NZ Esports school opportunities and resources.
-          </label>
         </Card>
 
         <div className="grid gap-5">

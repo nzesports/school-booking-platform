@@ -2,11 +2,33 @@
 
 import { Bell, CircleCheck, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import type { PortalNotification } from "@/lib/domain/types";
 import { cn, formatDateTime } from "@/lib/utils";
+
+function notificationPanelStyle(button: HTMLButtonElement): CSSProperties {
+  const rect = button.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const width = Math.min(430, viewportWidth - 24);
+  const rightSideLeft = rect.right + 12;
+  const opensToRight = rightSideLeft + width <= viewportWidth - 12;
+  const left = opensToRight
+    ? rightSideLeft
+    : Math.max(12, Math.min(rect.left, viewportWidth - width - 12));
+  const bottom = opensToRight
+    ? Math.max(12, viewportHeight - rect.bottom)
+    : Math.max(12, viewportHeight - rect.top + 12);
+
+  return {
+    bottom,
+    left,
+    maxHeight: Math.max(220, Math.min(640, viewportHeight - bottom - 12)),
+    width
+  };
+}
 
 // Bell button that opens an in-place notification panel instead of navigating
 // away. Mark-as-read submits the existing server action and returns to the
@@ -15,15 +37,34 @@ export function NotificationsBell({
   notifications,
   markReadAction,
   currentPath,
-  viewAllHref
+  viewAllHref,
+  buttonClassName
 }: {
   notifications: PortalNotification[];
   markReadAction?: (formData: FormData) => void | Promise<void>;
   currentPath: string;
   viewAllHref?: string;
+  buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>();
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const unread = notifications.filter((notification) => !notification.readAt);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const updatePosition = () => {
+      if (buttonRef.current) {
+        setPanelStyle(notificationPanelStyle(buttonRef.current));
+      }
+    };
+
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
+  }, [open]);
 
   // Staff-targeted notification links are stored with /staff/ paths; admins
   // should stay inside their own portal.
@@ -33,12 +74,28 @@ export function NotificationsBell({
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+
+          if (buttonRef.current) {
+            setPanelStyle(notificationPanelStyle(buttonRef.current));
+          }
+          setOpen(true);
+        }}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         aria-label={
           unread.length > 0 ? `Notifications (${unread.length} unread)` : "Notifications"
         }
-        className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-[color:var(--border-soft)] bg-white/94 text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)] transition hover:bg-white"
+        className={cn(
+          "relative flex h-14 w-14 items-center justify-center rounded-2xl border border-[color:var(--border-soft)] bg-white/94 text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)] transition hover:bg-white",
+          buttonClassName
+        )}
       >
         <Bell className="h-5 w-5" />
         {unread.length > 0 ? (
@@ -57,9 +114,14 @@ export function NotificationsBell({
                 type="button"
                 aria-label="Close notifications"
                 onClick={() => setOpen(false)}
-                className="absolute inset-0 cursor-default bg-[rgba(4,15,75,0.12)]"
+                className="absolute inset-0 cursor-default bg-transparent"
               />
-              <div className="absolute right-3 top-3 flex max-h-[min(640px,calc(100vh-24px))] w-[min(430px,calc(100vw-24px))] flex-col overflow-hidden rounded-[24px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(247,250,252,0.99))] shadow-[0_30px_70px_rgba(11,24,77,0.24)] md:right-6 md:top-6">
+              <div
+                role="dialog"
+                aria-label="Notifications"
+                style={panelStyle}
+                className="absolute flex flex-col overflow-hidden rounded-[24px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(247,250,252,0.99))] shadow-[0_30px_70px_rgba(11,24,77,0.24)]"
+              >
                 <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border-soft)] px-5 py-4">
                   <p className="flex items-center gap-2.5 text-base font-semibold tracking-[-0.01em] text-[color:var(--navy)]">
                     <Bell className="h-4 w-4 text-[color:var(--green)]" />

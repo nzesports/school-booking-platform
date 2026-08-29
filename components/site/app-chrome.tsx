@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 
+import type { BookingFormState } from "@/app/actions";
 import type { SignupFormState } from "@/app/auth/actions";
 import { AuthModalProvider } from "@/components/auth/auth-modal-provider";
 import { BookingModalProvider } from "@/components/site/booking-modal-provider";
@@ -67,7 +68,7 @@ export function AppChrome({
   presentations: PresentationType[];
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
-  bookingAction: (formData: FormData) => void | Promise<void>;
+  bookingAction: (state: BookingFormState, formData: FormData) => Promise<BookingFormState>;
   subscribeAction: (formData: FormData) => void | Promise<void>;
   loginAction: (formData: FormData) => void | Promise<void>;
   registerSchoolAction: (state: SignupFormState, formData: FormData) => Promise<SignupFormState>;

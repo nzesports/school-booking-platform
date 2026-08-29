@@ -17,6 +17,7 @@ import {
   markNotificationReadAction,
   markTrainingCompleteAction,
   requestSessionWithdrawalAction,
+  saveAmbassadorBookingAction,
   saveAmbassadorProfileAction,
   submitAmbassadorReportAction,
   submitPaymentInvoiceAction,
@@ -24,6 +25,7 @@ import {
 } from "@/app/portal/actions";
 import { AmbassadorOpenSessionDialog } from "@/components/dashboard/ambassador-open-session-dialog";
 import { AmbassadorApplicationWithdrawDialog } from "@/components/dashboard/ambassador-application-withdraw-dialog";
+import { AmbassadorManualBookingDialog } from "@/components/dashboard/ambassador-manual-booking-dialog";
 import { AmbassadorWithdrawDialog } from "@/components/dashboard/ambassador-withdraw-dialog";
 import { AmbassadorProfileWorkspace } from "@/components/dashboard/ambassador-profile";
 import { AmbassadorReportForm } from "@/components/dashboard/ambassador-report-form";
@@ -184,7 +186,7 @@ export default async function AmbassadorPortalPage({
                         ? "Your upcoming presentation schedule"
                         : route === "completed"
                           ? "Completed Bookings"
-                        : "Ambassador workspace";
+                        : "Ambassador portal";
 
   const subheadline =
     route === ""
@@ -226,6 +228,22 @@ export default async function AmbassadorPortalPage({
           >
             {notice.message}
           </Card>
+        ) : null}
+
+        {route === "" ? (
+          <AmbassadorManualBookingDialog
+            schools={portal.schools.filter((school) => school.status === "active")}
+            regions={portal.regions}
+            presentations={portal.presentations
+              .filter((presentation) => presentation.active)
+              .map(({ id, title, durationMinutes, yearLevels }) => ({
+                id,
+                title,
+                durationMinutes,
+                yearLevels
+              }))}
+            action={saveAmbassadorBookingAction}
+          />
         ) : null}
 
         {route === "" ? (
@@ -271,7 +289,10 @@ export default async function AmbassadorPortalPage({
                             {session.expectedStudentCount} students · {session.regionSlug}
                           </p>
                         </div>
-                        <StatusBadge value={session.status} />
+                        <StatusBadge
+                          value={session.myApplicationStatus === "applied" ? "applied" : "tentative"}
+                          label={session.myApplicationStatus === "applied" ? "Applied" : "Open"}
+                        />
                       </div>
                       <div className="mt-4 flex flex-wrap gap-3">
                         <AmbassadorOpenSessionDialog
@@ -281,19 +302,6 @@ export default async function AmbassadorPortalPage({
                           returnTo="/ambassador"
                           className="min-h-[48px]"
                         />
-                        {session.myApplicationStatus === "applied" ? (
-                          <span className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-2.5 text-sm font-semibold text-[#1d6f35]">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Applied - in review
-                          </span>
-                        ) : null}
-                        {session.myApplicationStatus === "applied" ? (
-                          <AmbassadorApplicationWithdrawDialog
-                            sessionId={session.id}
-                            action={withdrawApplicationAction}
-                            returnTo="/ambassador"
-                          />
-                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -527,12 +535,17 @@ export default async function AmbassadorPortalPage({
         {route === "open-bookings" ? (
           <DataTable
             title="Open booking opportunities"
-            columns={["Presentation", "Schedule", "Region", "Status", "Action"]}
+            columns={["School", "Presentation", "Schedule", "Region", "Status", "Action"]}
             rows={portal.openSessions.map((session) => [
+              session.schoolName,
               session.presentationTitle,
               `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
               session.regionName ?? session.regionSlug,
-              <StatusBadge key={`${session.id}-status`} value={session.status} />,
+              <StatusBadge
+                key={`${session.id}-status`}
+                value={session.myApplicationStatus === "applied" ? "applied" : "tentative"}
+                label={session.myApplicationStatus === "applied" ? "Applied" : "Open"}
+              />,
               <div key={`${session.id}-action`} className="flex flex-wrap items-center gap-2">
                 <AmbassadorOpenSessionDialog
                   session={session}
@@ -541,20 +554,6 @@ export default async function AmbassadorPortalPage({
                   returnTo="/ambassador/open-bookings"
                   className="min-h-[40px] rounded-[14px] px-3 py-1.5 text-xs"
                 />
-                {session.myApplicationStatus === "applied" ? (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-3 py-1.5 text-xs font-semibold text-[#1d6f35]">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Applied
-                  </span>
-                ) : null}
-                {session.myApplicationStatus === "applied" ? (
-                  <AmbassadorApplicationWithdrawDialog
-                    sessionId={session.id}
-                    action={withdrawApplicationAction}
-                    returnTo="/ambassador/open-bookings"
-                    className="min-h-[34px] rounded-[12px] px-2.5 py-1 text-xs"
-                  />
-                ) : null}
               </div>
             ])}
           />
@@ -841,6 +840,7 @@ function getAmbassadorNotice(
   const requested = readSearchParam(searchParams, "requested");
   const withdrawn = readSearchParam(searchParams, "withdrawn");
   const completed = readSearchParam(searchParams, "completed");
+  const created = readSearchParam(searchParams, "created");
   const saved = readSearchParam(searchParams, "saved");
   const error = readSearchParam(searchParams, "error");
 
@@ -848,6 +848,13 @@ function getAmbassadorNotice(
     return {
       tone: "success",
       message: "Report submitted. Staff can now review the session and payment eligibility."
+    };
+  }
+
+  if (created === "ambassador-booking") {
+    return {
+      tone: "success",
+      message: "Booking logged and assigned to you. It is flagged as Ambassador Booked for the $300 payment rate."
     };
   }
 
@@ -889,6 +896,26 @@ function getAmbassadorNotice(
     return {
       tone: "error",
       message: "You've already applied for that session — staff are reviewing it now."
+    };
+  }
+
+  if (error === "invalid-ambassador-booking") {
+    return {
+      tone: "error",
+      message: "Check the booking details and try again. All required fields need a valid value."
+    };
+  }
+
+  if (
+    error === "booking-school-missing" ||
+    error === "booking-presentation-missing" ||
+    error === "booking-save-failed" ||
+    error === "booking-session-save-failed" ||
+    error === "ambassador-booking-profile-missing"
+  ) {
+    return {
+      tone: "error",
+      message: "That booking could not be saved. Refresh the page and try again."
     };
   }
 

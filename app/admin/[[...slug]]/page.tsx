@@ -58,6 +58,7 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
@@ -331,6 +332,7 @@ export default async function AdminPortalPage({
               basePath="/admin"
               bookings={filteredDashboard.bookings}
               schools={portal.schools}
+              regions={portal.regions}
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
               activeView={activeBookingView}
@@ -403,7 +405,17 @@ export default async function AdminPortalPage({
             </div>
             <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
             <Card className="rounded-[34px]">
-              <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
+              <div className="flex items-start gap-4">
+                {selectedAmbassador.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedAmbassador.imageUrl}
+                    alt={`${selectedAmbassador.name} profile photo`}
+                    className="h-24 w-24 rounded-[24px] object-cover"
+                  />
+                ) : null}
+                <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
+              </div>
               <div className="mt-6 grid gap-5 md:grid-cols-2">
                 <InfoBlock label="Status" value={titleCase(selectedAmbassador.status)} />
                 <InfoBlock label="Primary region" value={selectedAmbassador.regionSlug} />
@@ -452,36 +464,39 @@ export default async function AdminPortalPage({
                       <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                       <input type="hidden" name="status" value="inactive" />
                       <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                      <button
+                      <PendingSubmitButton
                         type="submit"
+                        pendingLabel="Restricting access..."
                         className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
                       >
                         Temporarily restrict access
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   ) : (
                     <form action={reviewAmbassadorAction}>
                       <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                       <input type="hidden" name="status" value="approved" />
                       <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                      <button
+                      <PendingSubmitButton
                         type="submit"
+                        pendingLabel="Restoring access..."
                         className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                       >
                         Restore access
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   )}
                   <form action={reviewAmbassadorAction}>
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="declined" />
                     <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Removing ambassador..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
                     >
                       Remove ambassador
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               </Card>
@@ -497,23 +512,25 @@ export default async function AdminPortalPage({
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="approved" />
                     <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Approving ambassador..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                     >
                       Approve ambassador
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                   <form action={reviewAmbassadorAction}>
                     <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
                     <input type="hidden" name="status" value="declined" />
                     <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <button
+                    <PendingSubmitButton
                       type="submit"
+                      pendingLabel="Declining application..."
                       className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
                     >
                       Decline application
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 </div>
               </Card>
@@ -1900,8 +1917,7 @@ function getEmailTemplatesNotice(
   if (saved === "template-created") {
     return {
       tone: "success",
-      message:
-        "Template created. It will send once a platform event is wired to its key — the built-in events use it automatically if the key matches."
+      message: "Template created."
     };
   }
 
@@ -1919,16 +1935,14 @@ function getEmailTemplatesNotice(
   if (error === "brevo-not-configured") {
     return {
       tone: "error",
-      message:
-        "Brevo isn't configured yet — add BREVO_API_KEY to .env.local and restart the server."
+      message: "Email sending is temporarily unavailable. Contact the platform administrator."
     };
   }
 
   if (error === "test-failed") {
     return {
       tone: "error",
-      message:
-        "The test send failed — check the sender is verified in Brevo, and see email_logs for the error."
+      message: "The test email could not be sent. Check the sender settings and try again."
     };
   }
 
@@ -2055,6 +2069,26 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
 function getContentNotice(searchParams: Record<string, string | string[] | undefined>) {
   const error = readSearchParam(searchParams, "error");
   const withdrawal = readSearchParam(searchParams, "withdrawal");
+  const resolved = readSearchParam(searchParams, "resolved");
+
+  if (resolved === "approve" || resolved === "decline") {
+    return {
+      scope: "booking" as const,
+      tone: "success" as const,
+      message:
+        resolved === "approve"
+          ? "Reschedule approved. The session time and calendar have been updated."
+          : "Reschedule declined. The original session time remains in place."
+    };
+  }
+
+  if (error?.includes("reschedule")) {
+    return {
+      scope: "booking" as const,
+      tone: "error" as const,
+      message: "The reschedule could not be resolved. Review the date and time, then try again."
+    };
+  }
 
   if (withdrawal === "approved") {
     return {

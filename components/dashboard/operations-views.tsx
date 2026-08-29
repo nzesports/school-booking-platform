@@ -11,7 +11,7 @@ import {
 import {
   assignAmbassadorAction,
   mergeSchoolAction,
-  removeBookingInternalNoteAction,
+  resolveSessionRescheduleAction,
   resolveSessionWithdrawalAction,
   saveManualBookingAction,
   saveManualSchoolAction,
@@ -25,6 +25,7 @@ import type {
   AmbassadorProfile,
   BookingRequestView,
   PresentationType,
+  Region,
   School
 } from "@/lib/domain/types";
 import {
@@ -40,6 +41,7 @@ export function BookingLifecyclePanel({
   basePath,
   bookings,
   schools,
+  regions,
   presentations,
   ambassadors,
   activeView,
@@ -50,6 +52,7 @@ export function BookingLifecyclePanel({
   basePath: string;
   bookings: BookingRequestView[];
   schools: School[];
+  regions: Region[];
   presentations: PresentationType[];
   ambassadors: AmbassadorProfile[];
   activeView: BookingLifecycleView;
@@ -70,6 +73,7 @@ export function BookingLifecyclePanel({
       <ManualBookingDialog
         basePath={basePath}
         schools={schools}
+        regions={regions}
         presentations={presentations}
         ambassadors={ambassadors}
         activeView={activeView}
@@ -128,9 +132,9 @@ export function BookingLifecyclePanel({
         }))}
         presentationTitles={presentations.map((presentation) => presentation.title)}
         updateStatusAction={updateBookingStatusAction}
-        removeInternalNoteAction={removeBookingInternalNoteAction}
         assignAmbassadorAction={assignAmbassadorAction}
         resolveWithdrawalAction={resolveSessionWithdrawalAction}
+        resolveRescheduleAction={resolveSessionRescheduleAction}
         initialQuery={initialQuery}
         initialBookingId={initialBookingId}
       />
@@ -357,10 +361,6 @@ export function SchoolDeliveryDatabase({
               placeholder="Anything useful for future bookings."
             />
           </Field>
-          <label className="flex items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-            <input type="checkbox" name="marketingConsent" />
-            Contact opted in to school resources and updates
-          </label>
           <button
             type="submit"
             className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
@@ -396,5 +396,3 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
-
-

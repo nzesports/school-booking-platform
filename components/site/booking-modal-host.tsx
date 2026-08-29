@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -18,20 +18,27 @@ import {
 } from "lucide-react";
 
 import beroccaLogo from "@/public/media/berocca-logo.png";
+
+import type { BookingFormState } from "@/app/actions";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { BookingDatePicker, BookingTimeCombobox } from "@/components/site/booking-field-pickers";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { isOtherRegionSlug, regionDisplayName } from "@/lib/domain/regions";
 import { cn } from "@/lib/utils";
-import type { PresentationType, Region } from "@/lib/domain/types";
+import type { BookingContactDefaults, PresentationType, Region } from "@/lib/domain/types";
+import { storeGuestBookingDefaults } from "@/lib/services/guest-booking-defaults";
 import {
   BOOKING_WINDOW_DAYS,
   type AvailabilityConfig,
+  bookingDateState,
   isBookableDate,
+  maximumBookingDate,
+  minimumBookingDate,
   nextBookableDates
 } from "@/lib/services/availability";
 import {
@@ -64,7 +71,7 @@ export function BookingModalHost({
   presentations: PresentationType[];
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (state: BookingFormState, formData: FormData) => Promise<BookingFormState>;
 }) {
   useEffect(() => {
     if (!request) {
@@ -126,7 +133,7 @@ function BookingModalFlow({
   presentations: PresentationType[];
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (state: BookingFormState, formData: FormData) => Promise<BookingFormState>;
   initialStep?: BookingStep;
   initialPresentationSlug?: string;
   initialRegionSlug?: string;
@@ -138,7 +145,8 @@ function BookingModalFlow({
   const dates = nextBookableDates(BOOKING_WINDOW_DAYS, availabilityConfig);
   const firstDate =
     dates.includes(initialDate ?? "") && initialDate ? initialDate : dates[0] ?? "";
-  const maxBookableDate = dates[dates.length - 1] ?? firstDate;
+  const minBookableDate = minimumBookingDate();
+  const maxBookableDate = maximumBookingDate();
   const initialPresentation =
     presentations.find((item) => item.slug === initialPresentationSlug) ?? presentations[0];
   const preferredInitialTime = (initialTime ? resolveTypedTimeInWindow(initialTime) : null) ?? {
@@ -150,7 +158,7 @@ function BookingModalFlow({
   const initialDraftSessions =
     initialSessions && initialSessions.length > 0
       ? hydrateInitialSessions({
-          sessions: initialSessions,
+          sessions: initialSessions.slice(0, 5),
           presentations,
           regions,
           dates,
@@ -182,6 +190,58 @@ function BookingModalFlow({
   const [nextSessionNumber, setNextSessionNumber] = useState(initialDraftSessions.length + 1);
   const [sessions, setSessions] = useState<HeroBookingDraftSession[]>(initialDraftSessions);
   const [isReturningToDetails, setIsReturningToDetails] = useState(false);
+  const [bookingState, bookingFormAction] = useActionState(action, null);
+  const [contactDefaultsLoading, setContactDefaultsLoading] = useState(true);
+  const [contactDetails, setContactDetails] = useState<BookingContactDefaults>({
+    schoolName: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+    regionSlug: ""
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isActive = true;
+
+    fetch("/api/booking/defaults", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Unable to load booking defaults.");
+        }
+
+        return response.json() as Promise<{ defaults: BookingContactDefaults | null }>;
+      })
+      .then(({ defaults }) => {
+        if (!defaults || !isActive) {
+          return;
+        }
+
+        setContactDetails(defaults);
+        setSessions((current) =>
+          current.map((session) =>
+            session.regionSlug || !defaults.regionSlug
+              ? session
+              : { ...session, regionSlug: defaults.regionSlug }
+          )
+        );
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setContactDefaultsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, []);
 
   const reviewSessions = normalizeSessions(sessions);
   const canContinueToReview = sessions.every(
@@ -195,15 +255,14 @@ function BookingModalFlow({
 
   return (
     <BookingDialogShell
-      kicker={step === "plan" ? "Book a presentation" : "Complete your booking"}
       title={
         step === "plan"
-          ? "Build your school booking in one popup flow."
+          ? "Book your school presentation"
           : "Review and send your booking request"
       }
       description={
         step === "plan"
-          ? "Choose the sessions you want first, then continue into the request form to submit the final school details."
+          ? undefined
           : "We'll check availability and confirm the session details with your school before anything is final."
       }
       onClose={onClose}
@@ -213,28 +272,13 @@ function BookingModalFlow({
     >
       {step === "plan" ? (
         <div className="mt-5 overflow-hidden rounded-[32px] border border-[rgba(164,202,227,0.48)] bg-[linear-gradient(180deg,rgba(248,252,255,0.96),rgba(255,255,255,0.98))] shadow-[0_30px_68px_rgba(11,24,77,0.12)]">
-          <div className="border-b border-[rgba(4,15,75,0.08)] px-5 py-5 md:px-7 lg:px-8">
-            <div className="flex flex-col gap-5 md:flex-row md:items-start">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[rgba(24,168,59,0.08)] text-[color:var(--green)] shadow-[inset_0_0_0_1px_rgba(24,168,59,0.08)]">
-                <CalendarDays className="h-7 w-7" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[2rem] font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                  Plan your visit
-                </h3>
-                <p className="mt-3 max-w-4xl text-base leading-8 text-[color:var(--text-soft)]">
-                  Pick the topic, date, time, and region for each session. Choose from the
-                  available 10-minute slots between 8:00am and 4:00pm, then continue once each
-                  session is ready.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="px-5 py-4 md:px-7 lg:px-8">
+          <div className="px-5 py-5 md:px-7 lg:px-8">
             <div className="grid gap-4">
             {sessions.map((session, index) => {
               const selectedDateIsBookable = isBookableDate(session.date, availabilityConfig);
+              const selectedPresentation = presentations.find(
+                (presentation) => presentation.slug === session.presentationSlug
+              );
 
               return (
                 <div
@@ -246,14 +290,9 @@ function BookingModalFlow({
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(164,202,227,0.28)] text-[color:var(--navy)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.62)]">
                         <UsersRound className="h-5 w-5" />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                          Session {index + 1}
-                        </p>
-                        <p className="mt-1 text-base text-[color:var(--text-soft)]">
-                          Add the topic, date, time, and region for this session.
-                        </p>
-                      </div>
+                      <p className="text-sm font-semibold text-[color:var(--navy)]">
+                        Session {index + 1}
+                      </p>
                     </div>
 
                     {sessions.length > 1 ? (
@@ -276,35 +315,43 @@ function BookingModalFlow({
                       label="Presentation"
                       className="sm:col-span-2 xl:col-span-1"
                     >
-                      <Select
-                        className="h-[56px] text-base"
-                        value={session.presentationSlug}
-                        onChange={(event) =>
-                          setSessions((current) =>
-                            current.map((item) => {
-                              if (item.id !== session.id) {
-                                return item;
-                              }
+                      <div>
+                        <Select
+                          className="h-[56px] text-base"
+                          value={session.presentationSlug}
+                          onChange={(event) =>
+                            setSessions((current) =>
+                              current.map((item) => {
+                                if (item.id !== session.id) {
+                                  return item;
+                                }
 
-                              const nextPresentation = presentations.find(
-                                (entry) => entry.slug === event.target.value
-                              );
+                                const nextPresentation = presentations.find(
+                                  (entry) => entry.slug === event.target.value
+                                );
 
-                              return {
-                                ...item,
-                                presentationSlug: event.target.value,
-                                yearLevels: nextPresentation?.yearLevels ?? item.yearLevels
-                              };
-                            })
-                          )
-                        }
-                      >
-                        {presentations.map((item) => (
-                          <option key={item.id} value={item.slug}>
-                            {item.title}
-                          </option>
-                        ))}
-                      </Select>
+                                return {
+                                  ...item,
+                                  presentationSlug: event.target.value,
+                                  yearLevels:
+                                    nextPresentation?.yearLevels?.trim() || item.yearLevels
+                                };
+                              })
+                            )
+                          }
+                        >
+                          {presentations.map((item) => (
+                            <option key={item.id} value={item.slug}>
+                              {item.title}
+                            </option>
+                          ))}
+                        </Select>
+                        {selectedPresentation?.shortSummary ? (
+                          <p className="mt-2 text-xs leading-5 text-[color:var(--text-soft)]">
+                            {selectedPresentation.shortSummary}
+                          </p>
+                        ) : null}
+                      </div>
                     </PlannerField>
 
                     <PlannerField icon={<CalendarDays className="h-4 w-4" />} label="Date">
@@ -312,9 +359,10 @@ function BookingModalFlow({
                         <BookingDatePicker
                           className="min-h-[56px] text-base"
                           value={session.date}
-                          minDate={firstDate}
+                          minDate={minBookableDate}
                           maxDate={maxBookableDate}
                           isDateBookable={(date) => isBookableDate(date, availabilityConfig)}
+                          getDateState={(date) => bookingDateState(date, availabilityConfig)}
                           onChange={(nextDate) =>
                             setSessions((current) =>
                               current.map((item) =>
@@ -323,9 +371,6 @@ function BookingModalFlow({
                             )
                           }
                         />
-                        <p className="mt-2 text-xs text-[color:var(--text-soft)]">
-                          Choose a weekday date up to 12 months in advance.
-                        </p>
                       </div>
                     </PlannerField>
 
@@ -427,7 +472,15 @@ function BookingModalFlow({
                 type="button"
                 variant="secondary"
                 onClick={() => {
+                  if (sessions.length >= 5) {
+                    return;
+                  }
+
                   setSessions((current) => {
+                    if (current.length >= 5) {
+                      return current;
+                    }
+
                     const previous = current[current.length - 1];
                     const nextPresentation =
                       presentations.find((item) => item.slug === previous?.presentationSlug) ??
@@ -448,9 +501,10 @@ function BookingModalFlow({
                   setNextSessionNumber((current) => current + 1);
                 }}
                 className="min-h-[54px] rounded-[18px] px-6 py-3 text-base"
+                disabled={sessions.length >= 5}
               >
                 <Plus className="h-4 w-4" />
-                Add another session
+                {sessions.length >= 5 ? "Maximum 5 sessions" : "Add another session"}
               </Button>
 
               <div className="flex flex-col gap-3 xl:items-end">
@@ -471,9 +525,6 @@ function BookingModalFlow({
                   {isReturningToDetails ? "Save and return to details" : "Continue to details"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-                <p className="text-sm text-[color:var(--text-soft)] xl:text-right">
-                  Next, you&apos;ll add your school details and submit your request.
-                </p>
               </div>
             </div>
           </div>
@@ -488,20 +539,20 @@ function BookingModalFlow({
                 <Image src={beroccaLogo} alt="Berocca" className="h-7 w-auto object-contain" />
               </div>
 
-              <div className="text-sm text-[color:var(--text-soft)] lg:text-right">
-                {!canContinueToReview ? (
-                  <span>Choose a time and region for each session before continuing.</span>
-                ) : isReturningToDetails ? (
-                  <span>Save your session updates here, then return to the school details form.</span>
-                ) : (
-                  <span>You&apos;ll be able to review and edit your selections in the next step.</span>
-                )}
-              </div>
             </div>
           </div>
         </div>
       ) : (
-        <form action={action} className="mt-7">
+        <form
+          action={bookingFormAction}
+          className="mt-7"
+          onSubmit={() => {
+            storeGuestBookingDefaults({
+              ...contactDetails,
+              regionSlug: reviewSessions[0]?.regionSlug ?? ""
+            });
+          }}
+        >
           <input type="hidden" name="sessionsCount" value={reviewSessions.length} />
           <input type="hidden" name="regionSlug" value={reviewSessions[0]?.regionSlug ?? ""} />
 
@@ -511,14 +562,9 @@ function BookingModalFlow({
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_14px_30px_rgba(11,24,77,0.08)]">
                   <CalendarDays className="h-5 w-5 text-[color:var(--navy)]" />
                 </div>
-                <div>
-                  <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                    {reviewSessions.length === 1 ? "Selected session" : "Selected sessions"}
-                  </p>
-                  <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                    Review the session details below before you send the request.
-                  </p>
-                </div>
+                <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                  {reviewSessions.length === 1 ? "Selected session" : "Selected sessions"}
+                </p>
               </div>
 
               <Button
@@ -589,18 +635,30 @@ function BookingModalFlow({
                           <UsersRound className="mt-0.5 h-5 w-5 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-[color:var(--text-soft)]">
-                              Expected students
+                              Expected students <RequiredMark />
                             </p>
                             <div className="mt-2 flex items-center gap-2">
                               <Input
                                 name={`session-${index}-expectedStudentCount`}
                                 type="number"
                                 min={1}
-                                defaultValue={
+                                value={
                                   session.expectedStudentCount > 0
                                     ? session.expectedStudentCount
                                     : ""
                                 }
+                                onChange={(event) => {
+                                  const expectedStudentCount = Number(event.target.value || 0);
+
+                                  setSessions((current) =>
+                                    current.map((item) =>
+                                      item.id === session.id
+                                        ? { ...item, expectedStudentCount }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                aria-label={`Expected students for session ${index + 1}`}
                                 placeholder="e.g. 120"
                                 required
                                 className="h-11 max-w-[128px] rounded-[14px] px-3 py-2"
@@ -655,22 +713,19 @@ function BookingModalFlow({
             <h3 className="text-[2rem] font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
               School contact details
             </h3>
-            <p className="mt-2 text-base leading-8 text-[color:var(--text-soft)]">
-              Tell us who we should contact to confirm this request.
-            </p>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <ContactField label="School name">
-                <Input name="schoolName" placeholder="Rangitoto College" required />
+              <ContactField label="School name" required>
+                <Input name="schoolName" placeholder="Rangitoto College" required disabled={contactDefaultsLoading} value={contactDetails.schoolName} onChange={(event) => setContactDetails((current) => ({ ...current, schoolName: event.target.value }))} />
               </ContactField>
-              <ContactField label="Primary contact name">
-                <Input name="contactName" placeholder="Jordan Smith" required />
+              <ContactField label="Primary contact name" required>
+                <Input name="contactName" placeholder="Jordan Smith" required disabled={contactDefaultsLoading} value={contactDetails.contactName} onChange={(event) => setContactDetails((current) => ({ ...current, contactName: event.target.value }))} />
               </ContactField>
-              <ContactField label="Primary contact email">
-                <Input name="contactEmail" type="email" placeholder="jordan@school.nz" required />
+              <ContactField label="Primary contact email" required>
+                <Input name="contactEmail" type="email" placeholder="jordan@school.nz" required disabled={contactDefaultsLoading} value={contactDetails.contactEmail} onChange={(event) => setContactDetails((current) => ({ ...current, contactEmail: event.target.value }))} />
               </ContactField>
-              <ContactField label="Primary contact phone">
-                <Input name="contactPhone" placeholder="+64 21 555 123" required />
+              <ContactField label="Primary contact phone" required>
+                <Input name="contactPhone" placeholder="+64 21 555 123" required disabled={contactDefaultsLoading} value={contactDetails.contactPhone} onChange={(event) => setContactDetails((current) => ({ ...current, contactPhone: event.target.value }))} />
               </ContactField>
             </div>
 
@@ -685,15 +740,17 @@ function BookingModalFlow({
             </div>
           </section>
 
-          <label className="mt-5 flex items-start gap-3 text-sm text-[color:var(--navy)]">
-            <input
-              type="checkbox"
-              name="marketingConsent"
-              defaultChecked
-              className="mt-1 h-4 w-4 rounded border-[color:var(--border-soft)]"
-            />
-            <span>Send me occasional NZ Esports school updates and resources.</span>
-          </label>
+          {contactDefaultsLoading ? (
+            <p className="mt-4 text-sm text-[color:var(--text-soft)]" aria-live="polite">
+              Loading saved school details...
+            </p>
+          ) : null}
+
+          {bookingState?.error ? (
+            <p className="mt-5 rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#9d2424]" role="alert">
+              {bookingState.error}
+            </p>
+          ) : null}
 
           <div className="mt-6 rounded-[24px] border border-[rgba(164,202,227,0.55)] bg-[linear-gradient(180deg,rgba(243,249,255,0.95),rgba(255,255,255,0.96))] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -704,12 +761,11 @@ function BookingModalFlow({
                 <div>
                   <p className="text-[1.4rem] font-semibold tracking-[-0.04em]">
                     {reviewSessions.length === 1
-                      ? "1 session draft ready"
-                      : `${reviewSessions.length} session draft ready`}
+                      ? "1 session ready"
+                      : `${reviewSessions.length} sessions ready`}
                   </p>
                   <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                    This is a request only. Our team will confirm availability before your
-                    booking is final.
+                    We&apos;ll confirm availability before your booking is final.
                   </p>
                 </div>
               </div>
@@ -726,10 +782,10 @@ function BookingModalFlow({
                 >
                   Back to booking
                 </Button>
-                <Button type="submit" className="min-h-[48px] rounded-[18px] px-6 py-2.5">
+                <PendingSubmitButton type="submit" pendingLabel="Sending request..." className="min-h-[48px] rounded-[18px] px-6 py-2.5" disabled={contactDefaultsLoading}>
                   <Send className="h-4 w-4" />
                   Send request
-                </Button>
+                </PendingSubmitButton>
               </div>
             </div>
           </div>
@@ -819,17 +875,25 @@ function PlannerField({
 
 function ContactField({
   label,
+  required = false,
   children
 }: {
   label: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-medium text-[color:var(--navy)]">{label}</span>
+      <span className="text-sm font-medium text-[color:var(--navy)]">
+        {label} {required ? <RequiredMark /> : null}
+      </span>
       {children}
     </label>
   );
+}
+
+function RequiredMark() {
+  return <span className="text-[#b42318]" aria-label="required">*</span>;
 }
 
 function SummaryItem({
@@ -881,7 +945,7 @@ function createDraftSession({
     timeText,
     regionSlug,
     customRegion,
-    yearLevels: presentation?.yearLevels ?? "Years 7 to 8",
+    yearLevels: presentation?.yearLevels?.trim() || "Years 7 to 8",
     // 0 renders as an empty required field, so schools must enter their own count.
     expectedStudentCount: 0
   };
@@ -947,5 +1011,3 @@ function normalizeSessions(current: HeroBookingDraftSession[]) {
     };
   });
 }
-
-

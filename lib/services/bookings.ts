@@ -7,7 +7,7 @@ import {
   getSchoolPortalData as getLiveSchoolPortalData,
   getStaffPortalData as getLiveStaffPortalData
 } from "@/lib/services/portal";
-import type { BookingRequestInput } from "@/lib/domain/types";
+import type { BookingContactDefaults, BookingRequestInput } from "@/lib/domain/types";
 import { sendBookingRequestReceivedEmail } from "@/lib/services/email-triggers";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
@@ -19,6 +19,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   if (!admin) {
     return {
       id: `booking-${randomUUID().slice(0, 8)}`,
+      referenceCode: String(Math.floor(100000 + Math.random() * 900000)),
       mode: "demo" as const
     };
   }
@@ -34,7 +35,14 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     .maybeSingle();
   const resolvedRegionId = (region?.id as string | undefined) ?? null;
 
-  const { data: existingSchool } = await admin
+  const linkedIdentity = input.submittedByUserId
+    ? await loadLinkedSchoolIdentity(input.submittedByUserId)
+    : null;
+  const usesLinkedSchool =
+    linkedIdentity && linkedIdentity.schoolName.trim().toLowerCase() === input.schoolName.trim().toLowerCase();
+  const { data: existingSchool } = usesLinkedSchool
+    ? { data: { id: linkedIdentity.schoolId } }
+    : await admin
     .from("schools")
     .select("id")
     .ilike("name", input.schoolName)
@@ -61,19 +69,28 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     schoolId = createdSchool.id as string;
   }
 
-  const { data: contact, error: contactError } = await admin
-    .from("school_contacts")
-    .insert({
-      school_id: schoolId,
-      full_name: input.contactName,
-      email: input.contactEmail,
-      phone: input.contactPhone,
-      is_primary: true,
-      can_access_portal: true,
-      marketing_consent: input.marketingConsent
-    })
-    .select("id")
-    .single();
+  const usesLinkedContact =
+    usesLinkedSchool &&
+    linkedIdentity &&
+    linkedIdentity.contactName.trim() === input.contactName.trim() &&
+    linkedIdentity.contactEmail.trim().toLowerCase() === input.contactEmail.trim().toLowerCase() &&
+    linkedIdentity.contactPhone.trim() === input.contactPhone.trim();
+  const contactResult = usesLinkedContact
+    ? { data: { id: linkedIdentity.contactId }, error: null }
+    : await admin
+        .from("school_contacts")
+        .insert({
+          school_id: schoolId,
+          full_name: input.contactName,
+          email: input.contactEmail,
+          phone: input.contactPhone,
+          is_primary: !usesLinkedSchool,
+          can_access_portal: !usesLinkedSchool,
+          marketing_consent: input.marketingConsent
+        })
+        .select("id")
+        .single();
+  const { data: contact, error: contactError } = contactResult;
 
   if (contactError) {
     throw contactError;
@@ -89,10 +106,11 @@ export async function submitBookingRequest(input: BookingRequestInput) {
       source: "public",
       school_notes: input.schoolNotes ?? null,
       marketing_consent: input.marketingConsent,
+      submitted_by_user_id: input.submittedByUserId ?? null,
       created_at: now,
       updated_at: now
     })
-    .select("id")
+    .select("id, reference_code")
     .single();
 
   if (bookingError) {
@@ -111,7 +129,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
       school_id: schoolId,
       region_id: resolvedRegionId,
       presentation_type_id: (presentationType?.id as string | undefined) ?? null,
-      status: "ambassador_needed",
+      status: "tentative",
       starts_at: nzDateTimeToIso(session.date, session.startTime),
       ends_at: nzDateTimeToIso(session.date, session.endTime),
       year_levels: session.yearLevels,
@@ -125,7 +143,8 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     actor_type: "school",
     details: {
       source: "public_form",
-      school_name: input.schoolName
+      school_name: input.schoolName,
+      submitted_by_user_id: input.submittedByUserId ?? null
     }
   });
 
@@ -133,7 +152,8 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     contactEmail: input.contactEmail,
     contactName: input.contactName,
     schoolName: input.schoolName,
-    bookingId: bookingRequest.id as string
+    bookingId: bookingRequest.id as string,
+    referenceCode: (bookingRequest.reference_code as string | null) ?? undefined
   }).catch(() => {});
   void notifyStaff({
     title: `New booking request from ${input.schoolName}`,
@@ -152,10 +172,108 @@ export async function submitBookingRequest(input: BookingRequestInput) {
 
   return {
     id: bookingRequest.id as string,
+    referenceCode: bookingRequest.reference_code as string,
     mode: "supabase" as const,
     regionSlug,
     schoolSlug
   };
+}
+
+type LinkedSchoolIdentity = BookingContactDefaults & {
+  schoolId: string;
+  contactId: string;
+};
+
+async function loadLinkedSchoolIdentity(userId: string): Promise<LinkedSchoolIdentity | null> {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return null;
+  }
+
+  const { data: mappings } = await admin
+    .from("school_contact_users")
+    .select("school_contact_id")
+    .eq("user_id", userId);
+  const contactIds = (mappings ?? []).map((mapping) => mapping.school_contact_id as string);
+
+  if (contactIds.length === 0) {
+    return null;
+  }
+
+  const { data: contacts } = await admin
+    .from("school_contacts")
+    .select("id, school_id, full_name, email, phone, is_primary")
+    .in("id", contactIds);
+  const contact = [...(contacts ?? [])].sort(
+    (a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary))
+  )[0];
+
+  if (!contact) {
+    return null;
+  }
+
+  const { data: school } = await admin
+    .from("schools")
+    .select("id, name, region_id")
+    .eq("id", contact.school_id)
+    .maybeSingle();
+
+  if (!school) {
+    return null;
+  }
+
+  const { data: region } = school.region_id
+    ? await admin.from("regions").select("slug").eq("id", school.region_id).maybeSingle()
+    : { data: null };
+
+  return {
+    schoolId: school.id as string,
+    contactId: contact.id as string,
+    schoolName: school.name as string,
+    contactName: (contact.full_name as string | null) ?? "",
+    contactEmail: (contact.email as string | null) ?? "",
+    contactPhone: (contact.phone as string | null) ?? "",
+    regionSlug: (region?.slug as string | null) ?? ""
+  };
+}
+
+export async function getBookingContactDefaults(userId: string) {
+  const identity = await loadLinkedSchoolIdentity(userId);
+
+  if (!identity) {
+    return null;
+  }
+
+  return {
+    schoolName: identity.schoolName,
+    contactName: identity.contactName,
+    contactEmail: identity.contactEmail,
+    contactPhone: identity.contactPhone,
+    regionSlug: identity.regionSlug
+  } satisfies BookingContactDefaults;
+}
+
+export async function getBookingConfirmation(bookingId: string) {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return null;
+  }
+
+  const { data } = await admin
+    .from("booking_requests")
+    .select("id, reference_code, submitted_by_user_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  return data
+    ? {
+        id: data.id as string,
+        referenceCode: data.reference_code as string,
+        submittedByUserId: (data.submitted_by_user_id as string | null) ?? null
+      }
+    : null;
 }
 
 export async function getSchoolPortalData() {

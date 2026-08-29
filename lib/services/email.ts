@@ -9,13 +9,15 @@ type EmailEventInput = {
   subject: string;
   html: string;
   cc?: string[];
+  replyTo?: { email: string; name?: string };
+  includeUnsubscribe?: boolean;
   attachments?: Array<{ name: string; contentBase64: string }>;
 };
 
 export async function sendTransactionalEmail(event: EmailEventInput) {
   // Keep attachment payloads out of the returned event so callers/logs
   // don't hold large base64 blobs.
-  const { attachments, cc, ...loggableEvent } = event;
+  const { attachments, cc, replyTo, includeUnsubscribe, ...loggableEvent } = event;
 
   if (!config.isBrevoConfigured) {
     return {
@@ -38,12 +40,17 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
       },
       to: [{ email: event.recipientEmail }],
       subject: event.subject,
-      // Every email ships inside the branded shell (logo header, footer with
-      // website/platform links and the unsubscribe option).
-      htmlContent: renderBrandedEmail(event.html),
-      headers: {
-        "List-Unsubscribe": `<mailto:${config.brevoSenderEmail}?subject=Unsubscribe>`
-      },
+      // Every email ships inside the branded shell. Inbound contact notices
+      // omit newsletter-only unsubscribe controls.
+      htmlContent: renderBrandedEmail(event.html, { includeUnsubscribe }),
+      ...(includeUnsubscribe === false
+        ? {}
+        : {
+            headers: {
+              "List-Unsubscribe": `<mailto:${config.brevoSenderEmail}?subject=Unsubscribe>`
+            }
+          }),
+      ...(replyTo ? { replyTo } : {}),
       // Brevo rejects empty arrays for these keys, so only include them when populated.
       ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
       ...(attachments && attachments.length > 0

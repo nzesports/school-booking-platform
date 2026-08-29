@@ -125,7 +125,6 @@ export function SchoolLogoUploader({
             </span>
           )}
         </div>
-        <p className="text-xs text-[color:var(--text-soft)]">Saved as a square image.</p>
       </div>
 
       <div className="grid content-start gap-4">

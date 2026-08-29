@@ -4,8 +4,6 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  ClipboardCheck,
   Clock3,
   GraduationCap,
   Info,
@@ -19,7 +17,9 @@ import { createPortal } from "react-dom";
 
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { BookingSessionView } from "@/lib/domain/types";
+import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import {
   buildIcsContent,
   googleCalendarUrl,
@@ -51,29 +51,17 @@ function formatNzTime(iso: string) {
   }).format(new Date(iso));
 }
 
-const BOOKING_REVIEW_STATUS_OPTIONS = [
-  ["tentative", "Tentative"],
-  ["ambassador_needed", "Ambassador needed"],
-  ["ambassador_assigned", "Ambassador assigned"],
-  ["confirmed", "Confirmed"],
-  ["reschedule_requested", "Reschedule requested"],
-  ["cancel_requested", "Cancel requested"],
-  ["completed_pending_report", "Delivered, report needed"],
-  ["report_submitted", "Report submitted"],
-  ["paid", "Paid"],
-  ["closed", "Closed"],
-  ["cancelled", "Cancelled"],
-  ["declined", "Declined"]
-] as const;
-
-// Statuses that mean "delivered" — hidden while the session is still ahead,
-// since a future session can't have been completed yet.
-const COMPLETION_STATUSES = new Set([
-  "completed_pending_report",
-  "report_submitted",
-  "paid",
-  "closed"
-]);
+function formatNzInputTime(iso: string) {
+  const parts = new Intl.DateTimeFormat("en-NZ", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: NZ_TIME_ZONE
+  }).formatToParts(new Date(iso));
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "08";
+  const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+  return `${hour}:${minute}`;
+}
 
 export function SessionDetailsButton({
   session,
@@ -82,6 +70,7 @@ export function SessionDetailsButton({
   unstyled = false,
   updateStatusAction,
   resolveWithdrawalAction,
+  resolveRescheduleAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -90,16 +79,11 @@ export function SessionDetailsButton({
   unstyled?: boolean;
   updateStatusAction?: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction?: (formData: FormData) => void | Promise<void>;
+  resolveRescheduleAction?: (formData: FormData) => void | Promise<void>;
   returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
-  // Future sessions can't be marked delivered — hide those status options.
-  const sessionEnded = new Date(session.endsAt).getTime() < new Date().getTime();
-  const statusOptions = BOOKING_REVIEW_STATUS_OPTIONS.filter(
-    ([value]) =>
-      sessionEnded || !COMPLETION_STATUSES.has(value) || value === session.bookingStatus
-  );
 
   const location = session.locationAddress || session.schoolAddress || session.schoolName;
   const calendarEvent: CalendarEventInput = {
@@ -158,7 +142,6 @@ export function SessionDetailsButton({
       {open
         ? createPortal(
             <BookingDialogShell
-              kicker="Booking details"
               title={session.presentationTitle}
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[700px]"
@@ -267,7 +250,7 @@ export function SessionDetailsButton({
                     </>
                   ) : (
                     <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-                      Contact details are shared once our team confirms the session.
+                      Contact details are shared once you are assigned to the session.
                     </p>
                   )}
                 </DetailTile>
@@ -345,6 +328,84 @@ export function SessionDetailsButton({
                 </div>
               ) : null}
 
+              {session.status === "reschedule_requested" && resolveRescheduleAction ? (
+                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                      <CalendarDays className="h-5 w-5" />
+                    </span>
+                    School reschedule request
+                  </p>
+                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                    Preferred date: {session.rescheduleRequestedDate ?? "Not provided"}
+                    {session.rescheduleRequestNotes
+                      ? ` — ${session.rescheduleRequestNotes}`
+                      : ""}
+                  </p>
+                  <form
+                    action={resolveRescheduleAction}
+                    className="mt-4 grid gap-3 sm:grid-cols-2"
+                  >
+                    <input type="hidden" name="bookingSessionId" value={session.id} />
+                    <input
+                      type="hidden"
+                      name="returnTo"
+                      value={returnTo ?? "/staff/bookings"}
+                    />
+                    <input type="hidden" name="decision" value="approve" />
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+                        Final date
+                      </span>
+                      <input
+                        name="finalDate"
+                        type="date"
+                        min={minimumBookingDate()}
+                        max={maximumBookingDate()}
+                        defaultValue={session.rescheduleRequestedDate}
+                        required
+                        className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+                        Final time
+                      </span>
+                      <input
+                        name="finalTime"
+                        type="time"
+                        defaultValue={formatNzInputTime(session.startsAt)}
+                        required
+                        className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                      />
+                    </label>
+                    <PendingSubmitButton
+                      type="submit"
+                      pendingLabel="Approving reschedule..."
+                      className="sm:col-span-2"
+                    >
+                      Approve with final date and time
+                    </PendingSubmitButton>
+                  </form>
+                  <form action={resolveRescheduleAction} className="mt-3">
+                    <input type="hidden" name="bookingSessionId" value={session.id} />
+                    <input
+                      type="hidden"
+                      name="returnTo"
+                      value={returnTo ?? "/staff/bookings"}
+                    />
+                    <input type="hidden" name="decision" value="decline" />
+                    <PendingSubmitButton
+                      type="submit"
+                      variant="secondary"
+                      pendingLabel="Declining reschedule..."
+                    >
+                      Decline and keep original time
+                    </PendingSubmitButton>
+                  </form>
+                </div>
+              ) : null}
+
               {session.status === "withdrawal_requested" && resolveWithdrawalAction ? (
                 <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
@@ -393,97 +454,6 @@ export function SessionDetailsButton({
                       </button>
                     </form>
                   </div>
-                </div>
-              ) : null}
-
-              {canReview && updateStatusAction ? (
-                <div className="mt-4 rounded-[22px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#1e4fae] shadow-[0_8px_20px_rgba(37,99,235,0.16)]">
-                        <ClipboardCheck className="h-5 w-5" />
-                      </span>
-                      Review booking
-                    </p>
-                    {session.bookingStatus ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--navy)] shadow-[0_6px_16px_rgba(11,24,77,0.08)]">
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 rounded-full",
-                            session.bookingStatus === "confirmed"
-                              ? "bg-[#18a83b]"
-                              : session.bookingStatus === "tentative"
-                                ? "bg-[#e8a13c]"
-                                : "bg-[#2563eb]"
-                          )}
-                        />
-                        Currently {session.bookingStatus.replace(/_/g, " ")}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {session.bookingStatus === "tentative" ? (
-                    <form action={updateStatusAction} className="mt-4">
-                      <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
-                      <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                      <input type="hidden" name="status" value="confirmed" />
-                      <input type="hidden" name="reason" value="Approved from booking details" />
-                      <button
-                        type="submit"
-                        className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.28)] transition hover:bg-[#128232] sm:w-auto"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        Approve booking
-                      </button>
-                    </form>
-                  ) : null}
-
-                  <form
-                    action={updateStatusAction}
-                    className="mt-4 grid items-end gap-3 sm:grid-cols-[minmax(0,200px)_minmax(0,1fr)_auto]"
-                  >
-                    <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
-                    <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                        Set status
-                      </span>
-                      <span className="relative block">
-                        <select
-                          name="status"
-                          defaultValue={session.bookingStatus ?? "tentative"}
-                          className="min-h-[44px] w-full appearance-none rounded-[12px] border border-[color:var(--border-soft)] bg-white pl-3 pr-9 text-sm font-semibold text-[color:var(--navy)] outline-none"
-                        >
-                          {statusOptions.map(([value, optionLabel]) => (
-                            <option key={value} value={value}>
-                              {optionLabel}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--text-soft)]" />
-                      </span>
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                        Internal note (optional)
-                      </span>
-                      <input
-                        name="reason"
-                        placeholder="Add an internal note..."
-                        className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="inline-flex min-h-[44px] items-center justify-center rounded-[12px] border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:bg-[#1d4fd7]"
-                    >
-                      Update status
-                    </button>
-                  </form>
-                  <p className="mt-2.5 text-xs text-[#1e4fae]">
-                    Status changes apply to the whole booking request and are recorded in the
-                    booking history.
-                  </p>
                 </div>
               ) : null}
 

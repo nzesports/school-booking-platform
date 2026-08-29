@@ -7,12 +7,10 @@ const toneMap: Record<string, string> = {
   submitted: "bg-[#eaf4ff] text-[#145ea8]",
   reviewed: "bg-[#ecf7f5] text-[#0f6b58]",
   tentative: "bg-[#fff3e2] text-[#a85a00]",
-  ambassador_needed: "bg-[#fff6d7] text-[#8a6a00]",
-  ambassador_applied: "bg-[#eef7fc] text-[#2a5f84]",
+  applied: "bg-[#eef7fc] text-[#2a5f84]",
   ambassador_assigned: "bg-[#eef7fc] text-[#2a5f84]",
   withdrawal_requested: "bg-[#fff3e2] text-[#a85a00]",
   cancelled: "bg-[#ffecec] text-[#b42318]",
-  cancel_requested: "bg-[#ffecec] text-[#b42318]",
   reschedule_requested: "bg-[#fff3e2] text-[#a85a00]",
   payment_pending: "bg-[#f1edff] text-[#5d41b8]",
   pending: "bg-[#f1edff] text-[#5d41b8]",
@@ -31,10 +29,20 @@ const toneMap: Record<string, string> = {
 
 type StatusValue = BookingStatus | PaymentStatus | ReportStatus | "restricted" | "completed";
 
-export function StatusBadge({ value }: { value: StatusValue }) {
+const schoolPendingStatuses = new Set([
+  "tentative",
+  "requested",
+  "applied"
+]);
+
+export function schoolBookingStatusLabel(value: string) {
+  return schoolPendingStatuses.has(value) ? "Pending approval" : value.replace(/_/g, " ");
+}
+
+export function StatusBadge({ value, label }: { value: StatusValue; label?: string }) {
   return (
     <Badge className={toneMap[value] ?? "bg-[color:var(--blue-soft)] text-[color:var(--navy)]"}>
-      {value.replace(/_/g, " ")}
+      {label ?? value.replace(/_/g, " ")}
     </Badge>
   );
 }

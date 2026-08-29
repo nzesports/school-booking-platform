@@ -40,15 +40,14 @@ const deliveredStatuses = new Set<BookingStatus>([
   "closed"
 ]);
 
-const cancelledStatuses = new Set<BookingStatus>(["cancel_requested", "cancelled", "declined"]);
+const cancelledStatuses = new Set<BookingStatus>(["cancelled", "declined"]);
 
 const actionStatuses = new Set<BookingStatus>([
   "requested",
   "tentative",
-  "ambassador_needed",
+  "applied",
   "withdrawal_requested",
   "reschedule_requested",
-  "cancel_requested",
   "completed_pending_report",
   "report_submitted",
   "payment_pending"
@@ -341,8 +340,8 @@ function buildFunnelMetrics(
 }
 
 export function buildSourceMetrics(bookings: BookingRequestView[]): DashboardMetric[] {
-  const sourceCount = (source: BookingRequestView["source"]) =>
-    bookings.filter((booking) => booking.source === source).length;
+  const sourceCount = (...sources: BookingRequestView["source"][]) =>
+    bookings.filter((booking) => sources.includes(booking.source)).length;
 
   return [
     {
@@ -362,10 +361,10 @@ export function buildSourceMetrics(bookings: BookingRequestView[]): DashboardMet
       tone: "blue"
     },
     {
-      label: "Ambassador-referred",
-      value: String(sourceCount("ambassador")),
-      trend: "Outreach attribution",
-      detail: "Staff logged with ambassador referral",
+      label: "Ambassador-sourced",
+      value: String(sourceCount("ambassador", "ambassador_booked")),
+      trend: "Bookings and referrals",
+      detail: "Created or referred by ambassadors",
       icon: "sparkles",
       tone: "amber"
     }

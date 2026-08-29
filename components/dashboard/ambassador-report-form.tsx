@@ -134,10 +134,6 @@ export function AmbassadorReportForm({
 
         <ReportSection title="About the session">
           <YesNoQuestion
-            name="firstPresentation"
-            question="Was this the first presentation you have delivered to this school? *"
-          />
-          <YesNoQuestion
             name="studentsCompeted"
             question="Did you have the students compete in an esports event? *"
           />

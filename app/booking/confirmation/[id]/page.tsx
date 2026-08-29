@@ -1,6 +1,8 @@
 import { AuthModalButton } from "@/components/auth/auth-modal-trigger";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { getAuthenticatedPortalUser } from "@/lib/services/auth";
+import { getBookingConfirmation } from "@/lib/services/bookings";
 
 export default async function BookingConfirmationPage({
   params
@@ -8,6 +10,12 @@ export default async function BookingConfirmationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const [user, booking] = await Promise.all([
+    getAuthenticatedPortalUser(),
+    getBookingConfirmation(id)
+  ]);
+  const isOwningSchoolUser =
+    user?.role === "school" && booking?.submittedByUserId === user.id;
 
   return (
     <main className="site-shell-narrow flex min-h-[65vh] items-center justify-center py-20">
@@ -16,20 +24,38 @@ export default async function BookingConfirmationPage({
           Booking request received
         </p>
         <h1 className="mt-4 text-5xl font-semibold text-[color:var(--navy)]">
-          Your tentative request is in.
+          Your request is pending approval.
         </h1>
         <p className="mt-5 text-lg leading-8 text-[color:var(--text-muted)]">
-          Reference <span className="font-semibold text-[color:var(--navy)]">{id}</span>. Staff
-          will review session availability, ambassador coverage, and next-step communications
-          before confirming.
+          Our team will review availability and confirm the next steps with your school.
         </p>
+        {!isOwningSchoolUser && booking?.referenceCode ? (
+          <p className="mt-4 text-base leading-7 text-[color:var(--text-muted)]">
+            Optional support reference:{" "}
+            <span className="font-semibold text-[color:var(--navy)]">
+              {booking.referenceCode}
+            </span>
+            . You only need this if you contact our team about the request.
+          </p>
+        ) : null}
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <AuthModalButton mode="signup" role="school">
-            Create an account to view your booking
-          </AuthModalButton>
-          <ButtonLink href="/" variant="secondary">
-            Back to homepage
-          </ButtonLink>
+          {isOwningSchoolUser ? (
+            <>
+              <ButtonLink href={`/school/bookings/${id}`}>View booking</ButtonLink>
+              <ButtonLink href="/school" variant="secondary">
+                Back to dashboard
+              </ButtonLink>
+            </>
+          ) : (
+            <>
+              <AuthModalButton mode="signup" role="school">
+                Create an account to view bookings
+              </AuthModalButton>
+              <ButtonLink href="/" variant="secondary">
+                Back to homepage
+              </ButtonLink>
+            </>
+          )}
         </div>
       </Card>
     </main>

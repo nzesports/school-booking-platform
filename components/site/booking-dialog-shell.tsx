@@ -18,7 +18,7 @@ export function BookingDialogShell({
   compact = false
 }: {
   title: string;
-  kicker: string;
+  kicker?: string;
   description?: string;
   onClose: () => void;
   children: ReactNode;
@@ -84,13 +84,16 @@ export function BookingDialogShell({
             </Button>
 
             <div className="pr-16 lg:pr-20">
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                {kicker}
-              </p>
+              {kicker ? (
+                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                  {kicker}
+                </p>
+              ) : null}
               <h2
                 id={titleId}
                 className={cn(
-                  "mt-2 font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--navy)]",
+                  "font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--navy)]",
+                  kicker && "mt-2",
                   compact
                     ? "text-[1.45rem] md:text-[1.8rem]"
                     : "max-w-[19ch] text-[2.2rem] leading-[0.98] tracking-[-0.06em] md:max-w-[23ch] md:text-[3rem] xl:max-w-none"

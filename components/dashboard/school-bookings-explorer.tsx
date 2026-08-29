@@ -4,7 +4,7 @@ import { CalendarDays, Info, Search } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { StatusBadge } from "@/components/ui/status-badge";
+import { StatusBadge, schoolBookingStatusLabel } from "@/components/ui/status-badge";
 import { ButtonLink } from "@/components/ui/button";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { cn, formatShortDate, formatTime } from "@/lib/utils";
@@ -18,12 +18,20 @@ export type SchoolSessionRow = {
 
 const FILTERS = [
   { value: "all", label: "All" },
-  { value: "tentative", label: "Tentative" },
+  { value: "tentative", label: "Pending approval" },
   { value: "confirmed", label: "Confirmed" },
   { value: "completed", label: "Completed" }
 ] as const;
 
 type FilterValue = (typeof FILTERS)[number]["value"];
+
+const reschedulableStatuses = new Set([
+  "requested",
+  "tentative",
+  "applied",
+  "ambassador_assigned",
+  "confirmed"
+]);
 
 function rowMatchesFilter(row: SchoolSessionRow, filter: FilterValue) {
   if (filter === "all") {
@@ -99,7 +107,7 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
 
         <p className="flex items-center gap-2 rounded-[12px] bg-[#eef4fd] px-3.5 py-2.5 text-sm font-medium text-[#1e4fae]">
           <Info className="h-4 w-4 shrink-0" />
-          Tentative bookings are awaiting confirmation from the NZ Esports delivery team.
+          Pending bookings are awaiting approval from the NZ Esports delivery team.
         </p>
       </div>
 
@@ -134,7 +142,12 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                   {formatShortDate(row.session.startsAt)} · {formatTime(row.session.startsAt)}
                 </td>
                 <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
-                  <StatusBadge value={row.isDelivered ? "completed" : row.session.status} />
+                  <StatusBadge
+                    value={row.isDelivered ? "completed" : row.session.status}
+                    label={schoolBookingStatusLabel(
+                      row.isDelivered ? "completed" : row.session.status
+                    )}
+                  />
                 </td>
                 <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
                   {row.session.assignedAmbassadorName ?? "Pending assignment"}
@@ -157,9 +170,9 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                         Leave review
                       </ButtonLink>
                     ) : null}
-                    {!row.isDelivered && row.session.status !== "cancelled" ? (
+                    {!row.isDelivered && reschedulableStatuses.has(row.session.status) ? (
                       <Link
-                        href={`/school/bookings/${row.bookingId}/reschedule`}
+                        href={`/school/bookings/${row.bookingId}/sessions/${row.session.id}/reschedule`}
                         className="text-[13px] font-semibold text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
                       >
                         Reschedule

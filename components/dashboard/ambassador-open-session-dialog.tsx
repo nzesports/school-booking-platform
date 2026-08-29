@@ -49,8 +49,7 @@ export function AmbassadorOpenSessionDialog({
         ? createPortal(
             <BookingDialogShell
               title={session.presentationTitle}
-              kicker="Open opportunity"
-              description="Review the privacy-safe session details before applying. School contact details stay hidden until staff confirm an assignment."
+              description="Review the privacy-safe session details before applying. School contact details stay hidden until you are assigned to the session."
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[860px]"

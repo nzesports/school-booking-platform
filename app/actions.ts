@@ -4,8 +4,15 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
+import { AVAILABILITY_DATA_TAG, PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
+import { getAuthenticatedPortalUser } from "@/lib/services/auth";
+import {
+  isBookableDate,
+  isBookableSessionTime,
+  isWithinBookingWindow
+} from "@/lib/services/availability";
+import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import { submitBookingRequest } from "@/lib/services/bookings";
 
 const bookingSchema = z.object({
@@ -51,7 +58,12 @@ function sanitizeReturnTo(path: string) {
     : "/#contact";
 }
 
-export async function submitBookingRequestAction(formData: FormData) {
+export type BookingFormState = { error: string } | null;
+
+export async function submitBookingRequestAction(
+  _previousState: BookingFormState,
+  formData: FormData
+): Promise<BookingFormState> {
   if (String(formData.get("website2") || "").trim()) {
     redirect("/booking/confirmation/received");
   }
@@ -72,7 +84,7 @@ export async function submitBookingRequestAction(formData: FormData) {
     .filter(Boolean)
     .join("\n");
 
-  const parsed = bookingSchema.parse({
+  const parsed = bookingSchema.safeParse({
     schoolName: formData.get("schoolName"),
     contactName: formData.get("contactName"),
     contactEmail: formData.get("contactEmail"),
@@ -97,9 +109,60 @@ export async function submitBookingRequestAction(formData: FormData) {
     }))
   });
 
-  const booking = await submitBookingRequest(parsed);
+  if (!parsed.success) {
+    const invalidPaths = parsed.error.issues.map((issue) => issue.path.join("."));
+
+    if (invalidPaths.some((path) => path.endsWith("expectedStudentCount"))) {
+      return { error: "Enter the expected number of students for every session." };
+    }
+
+    if (
+      invalidPaths.some((path) =>
+        ["schoolName", "contactName", "contactEmail", "contactPhone"].includes(path)
+      )
+    ) {
+      return { error: "Please complete the school contact details with a valid email and phone number." };
+    }
+
+    return { error: "Please review every session detail before sending your request." };
+  }
+
+  const availabilityConfig = await loadAvailabilityConfig();
+  const invalidDate = parsed.data.sessions.find(
+    (session) =>
+      !isWithinBookingWindow(session.date) ||
+      !isBookableDate(session.date, availabilityConfig) ||
+      !isBookableSessionTime(
+        session.date,
+        session.startTime,
+        session.endTime,
+        availabilityConfig
+      )
+  );
+
+  if (invalidDate) {
+    return {
+      error:
+        "One of your selected dates is no longer available. Choose a date at least seven days away and try again."
+    };
+  }
+
+  const user = await getAuthenticatedPortalUser();
+  let booking: Awaited<ReturnType<typeof submitBookingRequest>>;
+
+  try {
+    booking = await submitBookingRequest({
+      ...parsed.data,
+      submittedByUserId: user?.role === "school" ? user.id : undefined
+    });
+  } catch {
+    return { error: "We couldn't send your booking request. Please try again." };
+  }
+
   updateTag(PLATFORM_DATA_TAG);
+  updateTag(AVAILABILITY_DATA_TAG);
   revalidatePath("/staff");
+  revalidatePath("/school");
   redirect(`/booking/confirmation/${booking.id}`);
 }
 

@@ -47,7 +47,6 @@ export function AmbassadorWithdrawDialog({
         ? createPortal(
             <BookingDialogShell
               title="Request withdrawal"
-              kicker="Ambassador session"
               description="Tell the team why you need to withdraw. Staff must approve this before you are released from the session."
               onClose={() => setOpen(false)}
               compact

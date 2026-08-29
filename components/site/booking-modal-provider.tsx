@@ -12,6 +12,7 @@ import {
 
 import { BookingModalHost } from "@/components/site/booking-modal-host";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
+import type { BookingFormState } from "@/app/actions";
 import type { PresentationType, Region } from "@/lib/domain/types";
 import type { AvailabilityConfig } from "@/lib/services/availability";
 
@@ -43,7 +44,7 @@ export function BookingModalProvider({
   presentations: PresentationType[];
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (state: BookingFormState, formData: FormData) => Promise<BookingFormState>;
 }) {
   const nextIdRef = useRef(1);
   const [request, setRequest] = useState<BookingModalRequest | null>(null);

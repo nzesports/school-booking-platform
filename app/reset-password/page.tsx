@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 const messages: Record<string, string> = {
   "password-mismatch": "Make sure both password fields match and meet the minimum length.",
   "reset-failed": "We couldn't update your password. Please request a fresh reset link.",
-  "supabase-unavailable": "Authentication is not configured yet in this environment."
+  "supabase-unavailable": "Password reset is temporarily unavailable. Please try again later."
 };
 
 export default async function ResetPasswordPage({
