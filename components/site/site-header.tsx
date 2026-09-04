@@ -13,8 +13,8 @@ import { ButtonLink } from "@/components/ui/button";
 const navItems = [
   { href: "/#presentations", label: "Presentations" },
   { href: "/#how-it-works", label: "How It Works" },
-  { href: "/#resources", label: "Resources" },
-  { href: "/#about", label: "About" },
+  { href: "/resources", label: "Resources" },
+  { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" }
 ];
 

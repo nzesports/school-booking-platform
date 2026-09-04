@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import type { ResourceAudience } from "@/lib/domain/types";
+import { redirect } from "next/navigation";
 import {
   ArrowLeft,
   Bell,
@@ -6,24 +8,38 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   FolderKanban,
+  GraduationCap,
   MessageSquareText,
+  Plus,
   School2,
-  Settings,
+  Upload,
   UsersRound
 } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
 import {
+  connectAmbassadorPortalAccountAction,
+  deleteAmbassadorRecordAction,
   markNotificationReadAction,
   markReportReviewedAction,
+  logStaffFeedbackAction,
   reviewAmbassadorAction,
   reviewSchoolFeedbackAction,
+  saveManualBookingAction,
+  saveManualSchoolAction,
   savePlatformSettingsAction,
   savePortalProfileAction,
   saveResourceAction
 } from "@/app/portal/actions";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
 import { FeedbackHub } from "@/components/dashboard/feedback-hub";
+import {
+  AmbassadorProfileWorkspace,
+  AmbassadorsWorkspace,
+  type AmbassadorProfileSection,
+  type VolunteerDirectorySort,
+  type VolunteerDirectoryStatus
+} from "@/components/dashboard/ambassadors-workspace";
 import {
   BookingLifecyclePanel,
   SchoolDeliveryDatabase
@@ -37,9 +53,11 @@ import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
 import { SettingsWorkspace } from "@/components/dashboard/settings-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
+import { ManualSchoolDialog } from "@/components/dashboard/manual-school-dialog";
+import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialog";
+import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
@@ -47,29 +65,37 @@ import {
   dashboardRangeLabel,
   dashboardRangeOptions,
   readBookingLifecycleView,
+  readDashboardCustomRange,
   readDashboardRange
 } from "@/lib/services/dashboard-insights";
-import { getPaymentSettings } from "@/lib/services/invoices";
+import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getStaffPortalData } from "@/lib/services/portal";
 import {
   cn,
-  formatCurrency,
   formatDateTime,
   formatTime,
-  formatWeekdayDate,
-  titleCase
+  formatWeekdayDate
 } from "@/lib/utils";
 
 const navItems = [
   { href: "/staff", label: "Dashboard", icon: ClipboardCheck },
   { href: "/staff/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/staff/schools", label: "Schools", icon: School2 },
-  { href: "/staff/ambassadors", label: "Ambassadors", icon: UsersRound },
-  { href: "/staff/payments", label: "Payments", icon: CircleDollarSign },
   { href: "/staff/feedback", label: "Feedback", icon: MessageSquareText },
-  { href: "/staff/resources", label: "Resources", icon: FolderKanban },
-  { href: "/staff/profile", label: "Profile", icon: UsersRound },
-  { href: "/staff/settings", label: "Settings", icon: Settings }
+  {
+    href: "/staff/ambassadors",
+    label: "Ambassadors",
+    icon: UsersRound,
+    separatorBefore: true
+  },
+  { href: "/staff/payments", label: "Payments", icon: CircleDollarSign },
+  {
+    href: "/staff/training",
+    label: "Training",
+    icon: GraduationCap,
+    separatorBefore: true
+  },
+  { href: "/staff/materials", label: "Materials", icon: FolderKanban }
 ];
 
 export default async function StaffPortalPage({
@@ -82,9 +108,32 @@ export default async function StaffPortalPage({
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
+
+  if (route === "resources") {
+    redirect("/staff/training");
+  }
   const actor = await requirePortalAccess("staff");
   const portal = await getStaffPortalData(actor.id);
-  const dashboardRange = readDashboardRange(resolvedSearchParams.range);
+  const customRange = readDashboardCustomRange(
+    resolvedSearchParams.from,
+    resolvedSearchParams.to
+  );
+  const requestedDashboardRange =
+    route === "bookings"
+      ? "all"
+      : !resolvedSearchParams.range && (route === "reports" || route === "feedback")
+        ? "all"
+        : !resolvedSearchParams.range && route === ""
+          ? "year"
+          : readDashboardRange(resolvedSearchParams.range);
+  const dashboardRange =
+    requestedDashboardRange === "custom" && !customRange ? "year" : requestedDashboardRange;
+  const rawAnalyticsYear = Array.isArray(resolvedSearchParams.analyticsYear)
+    ? resolvedSearchParams.analyticsYear[0]
+    : resolvedSearchParams.analyticsYear;
+  const analyticsYear = /^\d{4}$/.test(rawAnalyticsYear ?? "")
+    ? Number(rawAnalyticsYear)
+    : undefined;
   const activeBookingView = readBookingLifecycleView(resolvedSearchParams.status);
   const filteredDashboard = buildFilteredDashboardData(
     portal.bookings,
@@ -92,7 +141,8 @@ export default async function StaffPortalPage({
     portal.ambassadors,
     portal.schoolReviews,
     dashboardRange,
-    portal.activityLogs
+    portal.activityLogs,
+    customRange
   );
   const isCreatingResource = route === "resources/new";
   const selectedResource =
@@ -107,7 +157,10 @@ export default async function StaffPortalPage({
         type: "pdf",
         category: "resource" as const,
         audience: "school" as const,
-        audiences: ["school" as const],
+        audiences: ["school"] as ResourceAudience[],
+        // School-audience resources are only visible to schools when sharing is
+        // public, so the editor defaults to a working combination.
+        sharingScope: "public" as const,
         tags: [],
         presentationTypeId: "",
         presentationSlug: undefined,
@@ -125,30 +178,89 @@ export default async function StaffPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
+  const ambassadorTab =
+    readSearchParam(resolvedSearchParams, "tab") === "applications"
+      ? ("applications" as const)
+      : ("profiles" as const);
+  const volunteerDirectoryStatus: VolunteerDirectoryStatus =
+    readSearchParam(resolvedSearchParams, "roster") === "inactive" ? "inactive" : "active";
+  const volunteerDirectoryQuery = readSearchParam(resolvedSearchParams, "q") ?? "";
+  const volunteerDirectorySort: VolunteerDirectorySort =
+    readSearchParam(resolvedSearchParams, "sort") === "desc" ? "desc" : "asc";
+  const ambassadorNotice = getAmbassadorNotice(resolvedSearchParams);
+  const requestedAmbassadorSection = readSearchParam(resolvedSearchParams, "section");
+  const ambassadorSection: AmbassadorProfileSection = [
+    "overview",
+    "presentations",
+    "reports",
+    "sourced",
+    "feedback",
+    "payments"
+  ].includes(requestedAmbassadorSection ?? "")
+    ? (requestedAmbassadorSection as AmbassadorProfileSection)
+    : "overview";
   const resourceNotice = getStaffContentNotice(resolvedSearchParams);
+  const reportNotice = getReportApprovalNotice(resolvedSearchParams);
   const paymentSettings = route === "payments" ? await getPaymentSettings() : null;
+  const reportedSessionIds = new Set(
+    portal.reports.map((report) => report.bookingSessionId).filter(Boolean)
+  );
+  const feedbackSessions = portal.bookings
+    .flatMap((booking) => booking.sessions)
+    .filter(
+      (session) =>
+        (session.status === "completed_pending_report" || session.status === "closed") &&
+        !reportedSessionIds.has(session.id) &&
+        session.reportStatus !== "submitted" &&
+        session.reportStatus !== "reviewed"
+    )
+    .sort(
+      (left, right) =>
+        new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime()
+    )
+    .map((session) => ({
+      id: session.id,
+      schoolName: session.schoolName,
+      presentationTitle: session.presentationTitle,
+      startsAt: session.startsAt,
+      yearLevels: session.yearLevels,
+      attendeeCount: session.actualStudentCount ?? session.expectedStudentCount,
+      contactName: session.contactName,
+      contactEmail: session.contactEmail,
+      assignedAmbassadorName: session.assignedAmbassadorName
+    }));
+  const feedbackSearchParams = new URLSearchParams({ range: dashboardRange });
+  if (customRange) {
+    feedbackSearchParams.set("from", customRange.from);
+    feedbackSearchParams.set("to", customRange.to);
+  }
+  const feedbackReturnTo = `/staff/feedback?${feedbackSearchParams.toString()}`;
 
   const headline =
     route === ""
       ? `Good morning, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
-        ? "Manage booking requests and session follow-up"
+        ? "Manage Bookings"
         : route === "calendar"
           ? "Track the live presentation schedule"
           : route === "schools"
-            ? "Review schools, regions, and rollout readiness"
+            ? "Review Schools"
             : route === "ambassadors"
-              ? "Review ambassador applications and availability"
+              ? "Manage ambassadors"
               : route.startsWith("ambassadors/")
-                ? "Review ambassador application"
+                ? selectedAmbassador?.status === "applied" || selectedAmbassador?.status === "declined"
+                  ? "Review ambassador application"
+                  : "Ambassador profile"
                 : route === "reports"
                   ? "School & ambassador feedback"
                   : route === "payments"
-                    ? "Track ambassador invoices and payments"
+                    ? "Track invoices and payments"
                   : route === "feedback"
                     ? "School & ambassador feedback"
-                    : route === "resources"
-                      ? "Manage school and ambassador resources"
+                    : route === "training"
+                      ? "Build ambassador training packs"
+                      : route === "materials"
+                        ? "Manage public materials"
                       : route === "resources/new"
                         ? "Create a new resource"
                         : route.startsWith("resources/")
@@ -169,13 +281,76 @@ export default async function StaffPortalPage({
         navItems={navItems}
         currentPath={`/staff${route ? `/${route}` : ""}`}
         headline={headline}
-        subheadline="Here’s what needs attention today across bookings, ambassador management, reporting, feedback, and resource operations."
-        dateLabel={dashboardRangeLabel(dashboardRange)}
-        rangeOptions={dashboardRangeOptions.map((option) => ({
-          ...option,
-          href: `/staff${route ? `/${route}` : ""}?range=${option.value}`
-        }))}
-        activeRange={dashboardRange}
+        dateLabel={
+          route === "" || route === "feedback"
+            ? dashboardRangeLabel(dashboardRange, customRange)
+            : undefined
+        }
+        rangeOptions={
+          route === "" || route === "feedback"
+            ? dashboardRangeOptions.map((option) => ({
+                ...option,
+                href: `${route === "feedback" ? "/staff/feedback" : "/staff"}?range=${option.value}${route === "" && analyticsYear ? `&analyticsYear=${analyticsYear}` : ""}`
+              }))
+            : undefined
+        }
+        activeRange={route === "" || route === "feedback" ? dashboardRange : undefined}
+        customRange={route === "" || route === "feedback" ? customRange : undefined}
+        headerAction={
+          route === "bookings" ? (
+            <ManualBookingDialog
+              basePath="/staff"
+              schools={portal.schools}
+              regions={portal.regions}
+              presentations={portal.presentations}
+              ambassadors={portal.ambassadors}
+              activeView={activeBookingView}
+              range="all"
+              action={saveManualBookingAction}
+            />
+          ) : route === "schools" ? (
+            <ManualSchoolDialog
+              regions={portal.regions
+                .filter((region) => region.isActive)
+                .map((region) => ({ id: region.id, name: region.name }))}
+              action={saveManualSchoolAction}
+              returnTo="/staff/schools"
+            />
+          ) : route === "feedback" ? (
+            <LogFeedbackDialog
+              sessions={feedbackSessions}
+              schoolNames={portal.schools.map((school) => school.name).sort()}
+              presentations={portal.presentations
+                .filter((presentation) => presentation.active)
+                .map((presentation) => ({
+                  id: presentation.id,
+                  title: presentation.title,
+                  yearLevels: presentation.yearLevels
+                }))}
+              defaultPresenterName={actor.fullName}
+              action={logStaffFeedbackAction}
+              returnTo={feedbackReturnTo}
+            />
+          ) : route === "materials" ? (
+            <ButtonLink
+              href="/staff/materials?upload=1"
+              variant="secondary"
+              className="border-[#d8c8f4] bg-[#f8f5ff] text-[#6941c6] shadow-none hover:bg-[#f1edfd]"
+            >
+              <Upload className="h-4 w-4" />
+              Upload material
+            </ButtonLink>
+          ) : route === "training" ? (
+            <ButtonLink
+              href="/staff/training?add=1"
+              variant="secondary"
+              className="border-[#bfe6d2] bg-[#eaf8ee] text-[#117a2e] shadow-none hover:bg-[#dff3e4]"
+            >
+              <Plus className="h-4 w-4" />
+              Add training resource
+            </ButtonLink>
+          ) : undefined
+        }
         activityHref="/staff/activity"
         notificationCount={
           portal.notifications.filter((notification) => !notification.readAt).length
@@ -183,6 +358,7 @@ export default async function StaffPortalPage({
         notifications={portal.notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
+        settingsHref="/staff/settings"
         profile={{
           name: actor.fullName,
           subtitle: actor.role === "super_admin" ? "Super Admin on staff view" : "Operations Team",
@@ -195,7 +371,9 @@ export default async function StaffPortalPage({
           <OperationsAnalytics
             basePath="/staff"
             range={dashboardRange}
-            periodLabel={dashboardRangeLabel(dashboardRange)}
+            customRange={customRange}
+            analyticsYear={analyticsYear}
+            periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
             bookings={portal.bookings}
             reports={portal.reports}
             schoolReviews={portal.schoolReviews}
@@ -203,6 +381,7 @@ export default async function StaffPortalPage({
             payments={portal.payments}
             schools={portal.schools}
             presentations={portal.presentations}
+            resources={portal.resources}
             regions={portal.regions}
             resourcesLiveCount={portal.resources.filter((resource) => resource.isActive).length}
             unreadActivityCount={
@@ -220,13 +399,12 @@ export default async function StaffPortalPage({
             ) : null}
             <BookingLifecyclePanel
               basePath="/staff"
-              bookings={filteredDashboard.bookings}
-              schools={portal.schools}
-              regions={portal.regions}
+              bookings={portal.bookings}
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
               activeView={activeBookingView}
-              range={dashboardRange}
+              range="all"
+              customRange={null}
               initialQuery={readSearchParam(resolvedSearchParams, "q")}
               initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
             />
@@ -258,49 +436,37 @@ export default async function StaffPortalPage({
         ) : null}
 
         {route === "ambassadors" ? (
-          <DataTable
-            title="Ambassador pipeline"
-            columns={["Name", "Region", "Travel", "Pending payout", "Status", "Action"]}
-            rows={portal.ambassadors.map((ambassador) => [
-              ambassador.name,
-              ambassador.regionSlug,
-              ambassador.openToTravel
-                ? ambassador.travelRegions.length > 0
-                  ? ambassador.travelRegions.join(", ")
-                  : "Open to travel"
-                : "Local only",
-              ambassador.pendingPaymentsCents > 0
-                ? formatCurrency(ambassador.pendingPaymentsCents)
-                : "—",
-              <StatusBadge
-                key={`${ambassador.id}-status`}
-                value={
-                  ambassador.status === "approved"
-                    ? "confirmed"
-                    : ambassador.status === "declined"
-                      ? "declined"
-                      : ambassador.status === "inactive"
-                        ? "restricted"
-                        : "tentative"
-                }
-              />,
-              <ButtonLink
-                key={`${ambassador.id}-action`}
-                href={`/staff/ambassadors/${ambassador.id}`}
-                variant="ghost"
-                className="min-h-[38px] rounded-[14px] px-3 py-1.5"
-              >
-                Review
-              </ButtonLink>
-            ])}
-          />
+          <div className="grid gap-4">
+            {ambassadorNotice ? (
+              <NoticeBanner tone={ambassadorNotice.tone}>{ambassadorNotice.message}</NoticeBanner>
+            ) : null}
+            <AmbassadorsWorkspace
+              ambassadors={portal.ambassadors}
+              bookings={portal.bookings}
+              reports={portal.reports}
+              schoolReviews={portal.schoolReviews}
+              payments={portal.payments}
+              activeTab={ambassadorTab}
+              directoryStatus={volunteerDirectoryStatus}
+              directoryQuery={volunteerDirectoryQuery}
+              directorySort={volunteerDirectorySort}
+              basePath="/staff/ambassadors"
+            />
+          </div>
         ) : null}
 
         {selectedAmbassador ? (
           <div className="grid gap-5">
+            {ambassadorNotice ? (
+              <NoticeBanner tone={ambassadorNotice.tone}>{ambassadorNotice.message}</NoticeBanner>
+            ) : null}
             <div>
               <ButtonLink
-                href="/staff/ambassadors"
+                href={`/staff/ambassadors?tab=${
+                  selectedAmbassador.status === "applied" || selectedAmbassador.status === "declined"
+                    ? "applications"
+                    : "profiles"
+                }`}
                 variant="ghost"
                 className="min-h-[42px] rounded-[14px] px-4 py-2"
               >
@@ -308,152 +474,36 @@ export default async function StaffPortalPage({
                 Back to ambassadors
               </ButtonLink>
             </div>
-            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-            <Card className="rounded-[34px]">
-              <div className="flex items-start gap-4">
-                {selectedAmbassador.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={selectedAmbassador.imageUrl}
-                    alt={`${selectedAmbassador.name} profile photo`}
-                    className="h-24 w-24 rounded-[24px] object-cover"
-                  />
-                ) : null}
-                <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
-              </div>
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <InfoBlock label="Status" value={titleCase(selectedAmbassador.status)} />
-                <InfoBlock label="Primary region" value={selectedAmbassador.regionSlug} />
-                <InfoBlock label="Email" value={selectedAmbassador.email} />
-                <InfoBlock
-                  label="Referred by"
-                  value={selectedAmbassador.referredBy ?? "Not provided"}
-                />
-                <InfoBlock
-                  label="Travel regions"
-                  value={
-                    selectedAmbassador.travelRegions.length > 0
-                      ? selectedAmbassador.travelRegions.join(", ")
-                      : selectedAmbassador.openToTravel
-                        ? "Open to travel"
-                        : "Local only"
-                  }
-                />
-                <InfoBlock
-                  label="Payments"
-                  value={`${formatCurrency(selectedAmbassador.paidPaymentsCents)} paid · ${formatCurrency(selectedAmbassador.pendingPaymentsCents)} pending`}
-                />
-              </div>
-              <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-                  Experience
-                </p>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {selectedAmbassador.experience ??
-                    "The application details are captured in the ambassador profile and can be expanded further as interviews are completed."}
-                </p>
-              </div>
-            </Card>
-
-            {selectedAmbassador.status === "approved" || selectedAmbassador.status === "inactive" ? (
-              <Card className="rounded-[34px]">
-                <SectionHeading kicker="Staff decision" title="Manage ambassador access" />
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {selectedAmbassador.status === "approved"
-                    ? "This ambassador is approved and active. You can temporarily restrict their platform access or remove them from the ambassador programme."
-                    : "This ambassador's access is temporarily restricted. Restore their access when they are ready to present again, or remove them from the programme."}
-                </p>
-                <div className="mt-6 grid gap-4">
-                  {selectedAmbassador.status === "approved" ? (
-                    <form action={reviewAmbassadorAction}>
-                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                      <input type="hidden" name="status" value="inactive" />
-                      <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                      <PendingSubmitButton
-                        type="submit"
-                        pendingLabel="Restricting access..."
-                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
-                      >
-                        Temporarily restrict access
-                      </PendingSubmitButton>
-                    </form>
-                  ) : (
-                    <form action={reviewAmbassadorAction}>
-                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                      <input type="hidden" name="status" value="approved" />
-                      <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                      <PendingSubmitButton
-                        type="submit"
-                        pendingLabel="Restoring access..."
-                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                      >
-                        Restore access
-                      </PendingSubmitButton>
-                    </form>
-                  )}
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="declined" />
-                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Removing ambassador..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                    >
-                      Remove ambassador
-                    </PendingSubmitButton>
-                  </form>
-                </div>
-              </Card>
-            ) : (
-              <Card className="rounded-[34px]">
-                <SectionHeading kicker="Staff decision" title="Approve or decline access" />
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  Approving this application unlocks ambassador portal access. Declining keeps the
-                  account out of the ambassador portal until staff revisits the application.
-                </p>
-                <div className="mt-6 grid gap-4">
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="approved" />
-                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Approving ambassador..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                    >
-                      Approve ambassador
-                    </PendingSubmitButton>
-                  </form>
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="declined" />
-                    <input type="hidden" name="returnTo" value={`/staff/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Declining application..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                    >
-                      Decline application
-                    </PendingSubmitButton>
-                  </form>
-                </div>
-              </Card>
-            )}
-            </div>
+            <AmbassadorProfileWorkspace
+              ambassador={selectedAmbassador}
+              bookings={portal.bookings}
+              reports={portal.reports}
+              schoolReviews={portal.schoolReviews}
+              payments={portal.payments}
+              basePath="/staff/ambassadors"
+              activeSection={ambassadorSection}
+              reviewAction={reviewAmbassadorAction}
+              connectAction={connectAmbassadorPortalAccountAction}
+              deleteAction={deleteAmbassadorRecordAction}
+            />
           </div>
         ) : null}
 
         {route === "reports" || route === "feedback" ? (
-          <FeedbackHub
-            reports={filteredDashboard.reports}
-            schoolReviews={filteredDashboard.schoolReviews}
-            reviewAction={markReportReviewedAction}
-            feedbackDecisionAction={reviewSchoolFeedbackAction}
-            returnTo="/staff/feedback"
-            reportsReturnTo="/staff/reports"
-            initialTab={route === "reports" ? "ambassador" : "school"}
-          />
+          <div className="grid gap-4">
+            {reportNotice ? (
+              <NoticeBanner tone={reportNotice.tone}>{reportNotice.message}</NoticeBanner>
+            ) : null}
+            <FeedbackHub
+              reports={filteredDashboard.reports}
+              schoolReviews={filteredDashboard.schoolReviews}
+              reviewAction={markReportReviewedAction}
+              feedbackDecisionAction={reviewSchoolFeedbackAction}
+              returnTo={feedbackReturnTo}
+              reportsReturnTo="/staff/reports"
+              initialTab={route === "reports" ? "ambassador" : "school"}
+            />
+          </div>
         ) : null}
 
         {route === "payments" ? (
@@ -467,19 +517,46 @@ export default async function StaffPortalPage({
         ) : null}
 
 
-        {route === "resources" ? (
+        {route === "training" ? (
           <div className="grid gap-4">
             {resourceNotice ? (
               <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
-              resources={portal.resources}
+              resources={portal.resources.filter((resource) => resource.category === "training")}
               presentations={portal.presentations.map((presentation) => ({
                 id: presentation.id,
                 title: presentation.title
               }))}
               action={saveResourceAction}
-              returnTo="/staff/resources"
+              returnTo="/staff/training"
+              mode="training"
+              initialTrainingView={
+                readSearchParam(resolvedSearchParams, "view") === "general" ? "general" : "packs"
+              }
+              initialTrainingPackId={readSearchParam(resolvedSearchParams, "pack")}
+              initialEditorOpen={readSearchParam(resolvedSearchParams, "add") === "1"}
+            />
+          </div>
+        ) : null}
+
+        {route === "materials" ? (
+          <div className="grid gap-4">
+            {resourceNotice ? (
+              <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
+            ) : null}
+            <ResourcesWorkspace
+              resources={portal.resources.filter(
+                (resource) => resource.category === "presentation_material"
+              )}
+              presentations={portal.presentations.map((presentation) => ({
+                id: presentation.id,
+                title: presentation.title
+              }))}
+              action={saveResourceAction}
+              returnTo="/staff/materials"
+              mode="materials"
+              initialEditorOpen={readSearchParam(resolvedSearchParams, "upload") === "1"}
             />
           </div>
         ) : null}
@@ -567,6 +644,7 @@ export default async function StaffPortalPage({
                   <Field label="Audiences">
                     <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm">
                       {[
+                        ["public", "Public website"],
                         ["school", "Schools"],
                         ["ambassador", "Ambassadors"],
                         ["staff", "Staff"]
@@ -577,7 +655,7 @@ export default async function StaffPortalPage({
                             name="audiences"
                             value={value}
                             defaultChecked={resourceEditor.audiences.includes(
-                              value as "school" | "ambassador" | "staff"
+                              value as "public" | "school" | "ambassador" | "staff"
                             )}
                           />
                           {label}
@@ -596,10 +674,55 @@ export default async function StaffPortalPage({
                       <option value="script">Script</option>
                       <option value="image">Image</option>
                       <option value="youtube">YouTube</option>
+                      <option value="link">External link</option>
                       <option value="file">Downloadable file</option>
                     </select>
                   </Field>
+                  <div className="lg:col-span-2">
+                    <Field label="Sharing permission">
+                      <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm sm:grid-cols-2">
+                        {[
+                          ["internal", "Internal", "NZ Esports use only. Not visible to schools."],
+                          ["public", "Public", "Approved to share with schools and the public site."]
+                        ].map(([value, label, detail]) => (
+                          <label key={value} className="flex items-start gap-2 text-[color:var(--navy)]">
+                            <input
+                              type="radio"
+                              name="sharingScope"
+                              value={value}
+                              defaultChecked={resourceEditor.sharingScope === value}
+                              className="mt-0.5"
+                            />
+                            <span>
+                              <span className="block font-semibold">{label}</span>
+                              <span className="mt-0.5 block text-xs font-normal text-[color:var(--text-soft)]">
+                                {detail}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs leading-5 text-[color:var(--text-soft)]">
+                        Public sharing is required for Schools to see this resource — internal
+                        resources stay hidden from school portals even when Schools is ticked.
+                      </p>
+                    </Field>
+                  </div>
                 </div>
+
+                <Field label="Shows under">
+                  <select
+                    name="category"
+                    defaultValue={resourceEditor.category}
+                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                  >
+                    <option value="resource">Resources — general reference material</option>
+                    <option value="training">Training — ambassador learning material</option>
+                    <option value="presentation_material">
+                      Presentation materials — ambassador session files
+                    </option>
+                  </select>
+                </Field>
 
                 <Field label="Tags">
                   <p className="text-xs text-[color:var(--text-soft)]">
@@ -612,7 +735,7 @@ export default async function StaffPortalPage({
                   />
                 </Field>
 
-                <Field label="Presentation link">
+                <Field label="Linked presentation">
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
@@ -625,6 +748,9 @@ export default async function StaffPortalPage({
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs leading-5 text-[color:var(--text-soft)]">
+                    Linked ambassador resources are automatically included in the Materials tab.
+                  </p>
                 </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -674,8 +800,14 @@ export default async function StaffPortalPage({
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
                         Current file
                       </p>
-                      <ButtonLink href={resourceEditor.downloadUrl} variant="secondary" className="mt-3">
-                        Download current asset
+                      <ButtonLink
+                        href={resourceEditor.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variant="secondary"
+                        className="mt-3"
+                      >
+                        Open current asset
                       </ButtonLink>
                     </div>
                   ) : null}
@@ -707,14 +839,23 @@ export default async function StaffPortalPage({
                     Settings
                   </p>
                   <div className="mt-4 grid gap-3">
-                    <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                      <input type="checkbox" name="isCurrent" defaultChecked={resourceEditor.isCurrent} />
-                      Mark as current version
-                    </label>
-                    <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                      <input type="checkbox" name="isActive" defaultChecked={resourceEditor.isActive} />
-                      Visible to selected audience
-                    </label>
+                    {[
+                      ["published", "Published", "Visible to selected audiences"],
+                      ["draft", "Draft", "Staff and Super Admin only"],
+                      ["archived", "Archived", "Staff and Super Admin only"]
+                    ].map(([value, label, detail]) => (
+                      <label key={value} className="flex items-start gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                        <input
+                          type="radio"
+                          name="lifecycle"
+                          value={value}
+                          defaultChecked={
+                            value === (!resourceEditor.isActive ? "draft" : resourceEditor.isCurrent ? "published" : "archived")
+                          }
+                        />
+                        <span><span className="block font-semibold">{label}</span><span className="mt-0.5 block text-xs text-[color:var(--text-soft)]">{detail}</span></span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -830,47 +971,6 @@ export default async function StaffPortalPage({
   );
 }
 
-function SectionHeading({
-  kicker,
-  title,
-  actionHref,
-  actionLabel
-}: {
-  kicker: string;
-  title: string;
-  actionHref?: string;
-  actionLabel?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-          {kicker}
-        </p>
-        <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-          {title}
-        </h2>
-      </div>
-      {actionHref && actionLabel ? (
-        <ButtonLink href={actionHref} variant="ghost">
-          {actionLabel}
-        </ButtonLink>
-      ) : null}
-    </div>
-  );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-        {label}
-      </p>
-      <p className="mt-2 text-sm leading-7 text-[color:var(--navy)]">{value}</p>
-    </div>
-  );
-}
-
 function readSearchParam(
   searchParams: Record<string, string | string[] | undefined>,
   key: string
@@ -879,9 +979,127 @@ function readSearchParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
+function getReportApprovalNotice(searchParams: Record<string, string | string[] | undefined>) {
+  if (readSearchParam(searchParams, "approved") === "report") {
+    return readSearchParam(searchParams, "financeEmail") === "failed"
+      ? {
+          tone: "error" as const,
+          message: "Report approved and the invoice number is safe, but the finance email failed. Retry it from Payments."
+        }
+      : { tone: "success" as const, message: "Report approved and sent to finance automatically." };
+  }
+
+  if (readSearchParam(searchParams, "error") === "payment-details-required") {
+    return {
+      tone: "error" as const,
+      message: "Approval is blocked until the ambassador saves a valid account name and bank account number. They have been notified."
+    };
+  }
+
+  if (readSearchParam(searchParams, "error") === "report-review-failed") {
+    return { tone: "error" as const, message: "The report could not be approved. Please try again." };
+  }
+
+  return null;
+}
+
+function getAmbassadorNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const reviewed = readSearchParam(searchParams, "reviewed");
+  const error = readSearchParam(searchParams, "error");
+  const deleted = readSearchParam(searchParams, "deleted");
+  const connected = readSearchParam(searchParams, "connected");
+
+  if (connected === "platform") {
+    return {
+      tone: "success" as const,
+      message:
+        "Portal invite sent. The login is connected to this volunteer profile, so their existing and future activity will stay together."
+    };
+  }
+
+  if (deleted === "application") {
+    return {
+      tone: "success" as const,
+      message: "Application and its unused account were permanently deleted."
+    };
+  }
+
+  if (deleted === "volunteer") {
+    return {
+      tone: "success" as const,
+      message: "Volunteer record was permanently deleted."
+    };
+  }
+
+  if (deleted === "application-history-preserved" || deleted === "volunteer-history-preserved") {
+    return {
+      tone: "success" as const,
+      message:
+        "The record was removed from the active directory and portal access was closed. Linked presentations, feedback, sourcing, and payment history were preserved."
+    };
+  }
+
+  if (reviewed === "approved") {
+    return {
+      tone: "success" as const,
+      message:
+        "Volunteer activated. Their history is unchanged, and portal access is open if an account is connected."
+    };
+  }
+
+  if (reviewed === "declined") {
+    return {
+      tone: "success" as const,
+      message:
+        "Application declined. It remains in Ambassador applications for a clear record, and portal access stays closed."
+    };
+  }
+
+  if (reviewed === "inactive") {
+    return {
+      tone: "success" as const,
+      message:
+        "Volunteer marked inactive. Their profile and full history have been kept, and portal access is closed if an account is connected."
+    };
+  }
+
+  if (error === "ambassador-email-in-use") {
+    return {
+      tone: "error" as const,
+      message:
+        "That email already belongs to a platform user. No records were merged; choose a different email or review the existing user first."
+    };
+  }
+
+  if (error === "ambassador-already-connected") {
+    return {
+      tone: "error" as const,
+      message: "This volunteer profile is already connected to a platform account."
+    };
+  }
+
+  if (
+    error === "invalid-review" ||
+    error === "review-failed" ||
+    error === "invalid-ambassador-delete" ||
+    error === "ambassador-delete-failed" ||
+    error === "invalid-ambassador-connect" ||
+    error === "ambassador-connect-failed" ||
+    error === "ambassador-not-found"
+  ) {
+    return {
+      tone: "error" as const,
+      message: "The ambassador record could not be updated. Please review it and try again."
+    };
+  }
+
+  return null;
+}
+
 function getStaffContentNotice(searchParams: Record<string, string | string[] | undefined>) {
   const error = readSearchParam(searchParams, "error");
   const saved = readSearchParam(searchParams, "saved");
+  const deleted = readSearchParam(searchParams, "deleted");
   const withdrawal = readSearchParam(searchParams, "withdrawal");
   const resolved = readSearchParam(searchParams, "resolved");
 
@@ -952,10 +1170,24 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
     };
   }
 
+  if (error === "resource-delete-failed") {
+    return {
+      tone: "error" as const,
+      message: "The resource could not be deleted. Please try again."
+    };
+  }
+
   if (saved === "resource") {
     return {
       tone: "success" as const,
       message: "Resource changes have been saved."
+    };
+  }
+
+  if (deleted === "resource") {
+    return {
+      tone: "success" as const,
+      message: "Resource deleted successfully."
     };
   }
 

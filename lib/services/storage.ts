@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
 
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 const PRIVATE_ALLOWED = new Map([
@@ -12,19 +12,34 @@ const PRIVATE_ALLOWED = new Map([
   ["pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
   ["doc", "application/msword"],
   ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
   ["txt", "text/plain"],
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
   ["jpeg", "image/jpeg"],
-  ["webp", "image/webp"]
+  ["webp", "image/webp"],
+  ["mp4", "video/mp4"],
+  ["mov", "video/quicktime"],
+  ["webm", "video/webm"],
+  ["zip", "application/zip"]
 ]);
 
 const PUBLIC_ALLOWED = new Map([
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
   ["jpeg", "image/jpeg"],
+  ["webp", "image/webp"]
+]);
+
+// Report media: presentation photos/videos plus signed media release forms.
+// These can contain identifiable students, so they live in the private
+// `report-media` bucket and are only served through the auth-gated
+// /portal/report-media/[mediaId] route.
+const REPORT_MEDIA_ALLOWED = new Map([
+  ["png", "image/png"],
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
   ["webp", "image/webp"],
-  // Report media: presentation photos/videos plus signed media release forms.
   ["mp4", "video/mp4"],
   ["mov", "video/quicktime"],
   ["webm", "video/webm"],
@@ -43,7 +58,7 @@ function buildStoragePath(prefix: string, fileName: string) {
 
 function validateUpload(file: File, allowed: Map<string, string>) {
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("Upload exceeds the 25MB limit.");
+    throw new Error("Upload exceeds the 40MB limit.");
   }
 
   const extension = fileExtension(file.name);
@@ -104,6 +119,56 @@ export async function uploadPrivateResourceFile(file: File, prefix = "resource-l
     storagePath,
     publicUrl: null
   };
+}
+
+export async function uploadPrivateReportMedia(file: File, prefix = "report-media") {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    throw new Error("Supabase admin storage access is not configured.");
+  }
+
+  const contentType = validateUpload(file, REPORT_MEDIA_ALLOWED);
+  const storagePath = buildStoragePath(prefix, file.name);
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const { error } = await admin.storage.from("report-media").upload(storagePath, buffer, {
+    contentType,
+    upsert: false
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    storagePath,
+    publicUrl: null
+  };
+}
+
+export async function createSignedReportMediaUrl(
+  storagePath?: string | null,
+  expiresInSeconds = 60 * 60
+) {
+  if (!storagePath) {
+    return null;
+  }
+
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return null;
+  }
+
+  const { data, error } = await admin.storage
+    .from("report-media")
+    .createSignedUrl(storagePath, expiresInSeconds);
+
+  if (error) {
+    return null;
+  }
+
+  return data.signedUrl;
 }
 
 export async function uploadPublicAsset(file: File, prefix = "content") {
@@ -170,7 +235,21 @@ export async function deletePublicAsset(storagePath: string) {
   await admin.storage.from("public-assets").remove([storagePath]);
 }
 
-export async function createSignedResourceUrl(storagePath?: string | null, expiresInSeconds = 60 * 60) {
+export async function deletePrivateResourceFile(storagePath: string) {
+  const admin = createAdminClient();
+
+  if (!admin) {
+    return;
+  }
+
+  await admin.storage.from("resources").remove([storagePath]);
+}
+
+export async function createSignedResourceUrl(
+  storagePath?: string | null,
+  expiresInSeconds = 60 * 60,
+  download?: boolean | string
+) {
   if (!storagePath) {
     return null;
   }
@@ -181,7 +260,9 @@ export async function createSignedResourceUrl(storagePath?: string | null, expir
     return null;
   }
 
-  const { data, error } = await admin.storage.from("resources").createSignedUrl(storagePath, expiresInSeconds);
+  const { data, error } = await admin.storage
+    .from("resources")
+    .createSignedUrl(storagePath, expiresInSeconds, download ? { download } : undefined);
 
   if (error) {
     return null;

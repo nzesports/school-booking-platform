@@ -1,6 +1,5 @@
 "use server";
 
-import { config } from "@/lib/env";
 import {
   buildContactEmailHtml,
   contactFormSchema,
@@ -51,7 +50,7 @@ export async function submitContactFormAction(
   try {
     result = await sendTransactionalEmail({
       templateKey: "website_contact",
-      recipientEmail: config.brevoContactEmail,
+      recipientEmail: "schools@esf.nz",
       subject: `[Website contact] ${parsed.data.subject}`,
       html: buildContactEmailHtml(parsed.data),
       replyTo: {

@@ -17,7 +17,12 @@ export async function GET(request: NextRequest) {
   const type = requestUrl.searchParams.get("type");
   const code = requestUrl.searchParams.get("code");
   const rawNext = requestUrl.searchParams.get("next") ?? "/login";
-  const next = rawNext.startsWith("/") ? rawNext : "/login";
+  // Same strict rule as sanitizeReturnTo (portal actions): must be a local
+  // path — "//host" is protocol-relative and "\" can smuggle one past parsers.
+  const next =
+    rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes("\\")
+      ? rawNext
+      : "/login";
 
   if (!config.isSupabaseConfigured) {
     return NextResponse.redirect(new URL("/login?error=invalid-confirm-link", request.url));

@@ -594,40 +594,65 @@ export async function sendAmbassadorWithdrawalResolvedEmail(opts: {
   return result;
 }
 
-export async function sendInvoiceToFinanceEmail(opts: {
+export async function sendPaymentApprovalToFinanceEmail(opts: {
   toEmail: string;
-  ccEmails: string[];
   invoiceNumber: string;
   ambassadorName: string;
   sessionDescription: string;
   amountLabel: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  gstNumber?: string;
+  confirmationToken: string;
   bookingSessionId: string;
-  attachment: { name: string; contentBase64: string };
 }) {
   const invoiceNumber = escapeHtml(opts.invoiceNumber);
   const ambassadorName = escapeHtml(opts.ambassadorName);
   const sessionDescription = escapeHtml(opts.sessionDescription);
   const amountLabel = escapeHtml(opts.amountLabel);
-  const template = await renderTemplate("invoice_to_finance", {
-    invoiceNumber: opts.invoiceNumber,
-    ambassadorName: opts.ambassadorName,
-    sessionDescription: opts.sessionDescription,
-    amountLabel: opts.amountLabel
-  });
+  const bankAccountName = escapeHtml(opts.bankAccountName);
+  const bankAccountNumber = escapeHtml(opts.bankAccountNumber);
+  const confirmationUrl = `${config.siteUrl}/finance/payment/${encodeURIComponent(opts.confirmationToken)}`;
+  const gstLine = opts.gstNumber
+    ? `<br><strong>GST number:</strong> ${escapeHtml(opts.gstNumber)}`
+    : "";
+  const confirmationButton = `
+    <p style="margin:28px 0;">
+      <a href="${escapeHtml(confirmationUrl)}" style="display:inline-block;border-radius:12px;background:#18a83b;color:#ffffff;padding:13px 22px;font-weight:700;text-decoration:none;">
+        Payment made
+      </a>
+    </p>
+  `;
+  const template = await renderTemplate(
+    "invoice_to_finance",
+    {
+      invoiceNumber: opts.invoiceNumber,
+      ambassadorName: opts.ambassadorName,
+      sessionDescription: opts.sessionDescription,
+      amountLabel: opts.amountLabel,
+      bankAccountName: opts.bankAccountName,
+      bankAccountNumber: opts.bankAccountNumber
+    },
+    { confirmationButton, gstLine }
+  );
   const result = await sendTransactionalEmail({
     templateKey: "invoice_to_finance",
     recipientEmail: opts.toEmail,
-    cc: opts.ccEmails,
-    attachments: [opts.attachment],
     subject: template?.subject ?? `Ambassador invoice ${opts.invoiceNumber} - ${opts.ambassadorName}`,
     html:
       template?.html ??
       `
       <p>Kia ora,</p>
-      <p>Invoice <strong>${invoiceNumber}</strong> from <strong>${ambassadorName}</strong>
-      for <strong>${sessionDescription}</strong> is attached.</p>
-      <p>Amount payable: <strong>${amountLabel}</strong></p>
-      <p>Please process this payment and reply to confirm once complete.</p>
+      <p>The ambassador payment below has been approved.</p>
+      <p><strong>Invoice reference:</strong> ${invoiceNumber}<br>
+      <strong>Ambassador:</strong> ${ambassadorName}<br>
+      <strong>Session:</strong> ${sessionDescription}<br>
+      <strong>Amount:</strong> ${amountLabel}<br>
+      <strong>Account name:</strong> ${bankAccountName}<br>
+      <strong>Bank account:</strong> ${bankAccountNumber}${gstLine}</p>
+      <p>Use <strong>${invoiceNumber}</strong> as the bank payment reference.</p>
+      ${confirmationButton}
+      <p>This confirmation link expires after 30 days.</p>
     `
   });
 

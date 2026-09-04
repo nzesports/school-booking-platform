@@ -162,7 +162,7 @@ export function SettingsWorkspace({
         icon={<CircleDollarSign className="h-5 w-5" />}
         iconClassName="bg-[#e6f5ec] text-[#117a2e]"
         title="Payments"
-        description="Defaults for ambassador session payouts: the standard payment per delivered session, the attendee count a report needs before it becomes payment-eligible, and where invoices are sent."
+        description="Defaults for ambassador session payouts: the standard payment per delivered session, the attendee count a report needs before it becomes payment-eligible, and where approved payments are sent."
         action={action}
         section="payments"
         returnTo={returnTo}

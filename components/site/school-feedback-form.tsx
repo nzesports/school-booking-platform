@@ -7,6 +7,7 @@ import {
   Send,
   UserRound,
   UsersRound,
+  X,
   Zap
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -233,17 +234,19 @@ function FeedbackSection({
 
 function YesNoField({ name }: { name: string }) {
   return (
-    <div className="grid max-w-[520px] grid-cols-2 gap-1 rounded-[18px] border border-[color:var(--border-soft)] bg-[#f8fbff] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7)]">
-      {["yes", "no"].map((value, index) => (
+    <div className="grid max-w-[320px] grid-cols-2 gap-2">
+      {["yes", "no"].map((value) => (
         <label key={value} className="cursor-pointer">
           <input type="radio" name={name} value={value} required className="peer sr-only" />
           <span
             className={cn(
-              "flex min-h-[54px] items-center justify-center gap-2 rounded-[14px] text-sm font-semibold text-[color:var(--navy)] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[rgba(24,168,59,0.16)] peer-checked:bg-[rgba(24,168,59,0.12)] peer-checked:text-[color:var(--green)] peer-checked:shadow-[inset_0_0_0_1px_rgba(24,168,59,0.24),0_8px_20px_rgba(24,168,59,0.08)] peer-checked:[&_.yes-no-check]:opacity-100",
-              index === 0 ? "border-r border-transparent" : ""
+              "flex min-h-[42px] items-center justify-center gap-2 rounded-[13px] border bg-white px-4 text-[13px] font-semibold transition peer-focus-visible:ring-4",
+              value === "yes"
+                ? "border-[#c9e7d1] text-[#117a2e] peer-focus-visible:ring-[rgba(24,168,59,0.16)] peer-checked:border-[#18a83b] peer-checked:bg-[#eaf8ee] peer-checked:shadow-[0_8px_18px_rgba(24,168,59,0.1)]"
+                : "border-[#d5deeb] text-[color:var(--navy)] peer-focus-visible:ring-[rgba(30,79,174,0.14)] peer-checked:border-[#9bb7e8] peer-checked:bg-[#eef4fd] peer-checked:shadow-[0_8px_18px_rgba(30,79,174,0.08)]"
             )}
           >
-            <Check className="yes-no-check h-4 w-4 opacity-0 transition" />
+            {value === "yes" ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
             {value === "yes" ? "Yes" : "No"}
           </span>
         </label>

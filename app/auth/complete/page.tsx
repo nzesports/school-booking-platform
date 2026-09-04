@@ -20,7 +20,13 @@ export default function AuthCompletePage() {
       const refreshToken = hashParams.get("refresh_token");
       const type = hashParams.get("type");
       const rawNext = queryParams.get("next") || "/";
-      const next = rawNext.startsWith("/") ? rawNext : "/";
+      // Same strict rule as sanitizeReturnTo (portal actions, server-only so
+      // not importable here): must be a local path — "//host" is
+      // protocol-relative and "\" can smuggle one past parsers.
+      const next =
+        rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes("\\")
+          ? rawNext
+          : "/";
 
       if (!config.isSupabaseConfigured || !accessToken || !refreshToken) {
         window.location.replace("/login?error=invalid-confirm-link");

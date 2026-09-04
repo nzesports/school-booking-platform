@@ -35,10 +35,11 @@ function isAuthorized(request: NextRequest) {
     return false;
   }
 
+  // Vercel Cron authenticates with the Authorization header only; never accept
+  // the secret via query string, where it would leak into logs and referrers.
   const header = request.headers.get("authorization");
-  const querySecret = request.nextUrl.searchParams.get("secret");
 
-  return header === `Bearer ${config.cronSecret}` || querySecret === config.cronSecret;
+  return header === `Bearer ${config.cronSecret}`;
 }
 
 export async function GET(request: NextRequest) {

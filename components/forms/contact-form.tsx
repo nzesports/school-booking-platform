@@ -93,13 +93,13 @@ export function ContactForm({ action }: { action: ContactAction }) {
       <ContactField
         id="contact-school"
         label="School or organisation"
-        hint="Optional"
         error={state.fieldErrors?.school?.[0]}
       >
         <Input
           id="contact-school"
           name="school"
           autoComplete="organization"
+          required
           maxLength={120}
           aria-invalid={Boolean(state.fieldErrors?.school)}
           aria-describedby={state.fieldErrors?.school ? "contact-school-error" : undefined}
@@ -171,23 +171,24 @@ export function ContactForm({ action }: { action: ContactAction }) {
 function ContactField({
   id,
   label,
-  hint,
   error,
   children
 }: {
   id: string;
   label: string;
-  hint?: string;
   error?: string;
   children: ReactNode;
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="mb-2 flex items-center gap-1.5">
         <label htmlFor={id} className="text-sm font-semibold text-[color:var(--navy)]">
           {label}
         </label>
-        {hint ? <span className="text-xs text-[color:var(--text-soft)]">{hint}</span> : null}
+        <span className="font-bold text-[#c7352c]" aria-hidden="true">
+          *
+        </span>
+        <span className="sr-only">Required</span>
       </div>
       {children}
       {error ? (

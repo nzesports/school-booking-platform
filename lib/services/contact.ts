@@ -10,7 +10,11 @@ export const contactFormSchema = z.object({
     .max(80, "Keep your name under 80 characters.")
     .regex(singleLine, "Enter your name on one line."),
   email: z.string().trim().email("Enter a valid email address.").max(254),
-  school: z.string().trim().max(120, "Keep the school or organisation under 120 characters."),
+  school: z
+    .string()
+    .trim()
+    .min(2, "Enter your school or organisation.")
+    .max(120, "Keep the school or organisation under 120 characters."),
   subject: z
     .string()
     .trim()
@@ -51,16 +55,13 @@ function escapeHtml(value: string) {
 }
 
 export function buildContactEmailHtml(values: ContactFormValues) {
-  const schoolRow = values.school
-    ? `<p style="margin:0 0 8px;"><strong>School or organisation:</strong> ${escapeHtml(values.school)}</p>`
-    : "";
   const message = escapeHtml(values.message).replace(/\r?\n/g, "<br>");
 
   return `
     <h2 style="margin:0 0 20px;color:#040f4b;">New website enquiry</h2>
     <p style="margin:0 0 8px;"><strong>From:</strong> ${escapeHtml(values.name)}</p>
     <p style="margin:0 0 8px;"><strong>Email:</strong> ${escapeHtml(values.email)}</p>
-    ${schoolRow}
+    <p style="margin:0 0 8px;"><strong>School or organisation:</strong> ${escapeHtml(values.school)}</p>
     <p style="margin:0 0 8px;"><strong>Subject:</strong> ${escapeHtml(values.subject)}</p>
     <div style="margin-top:24px;padding:20px;border-radius:16px;background:#f6fbfd;line-height:1.7;">${message}</div>
   `.trim();

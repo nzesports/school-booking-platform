@@ -1,5 +1,21 @@
-import type { ReactNode } from "react";
+"use client";
 
+import type { ReactNode } from "react";
+import { useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  CalendarClock,
+  FileCheck2,
+  Images,
+  MessageSquareQuote,
+  MessageSquareText,
+  Presentation,
+  School2,
+  Star,
+  UserRound
+} from "lucide-react";
+
+import { ReportMediaUpload } from "@/components/dashboard/report-media-upload";
 import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,84 +56,80 @@ function nzTimeValue(iso?: string) {
 }
 
 export function AmbassadorReportForm({
-  sessionId,
-  session,
+  sessions,
+  initialSessionId,
   presenterName,
   action
 }: {
-  sessionId: string;
-  session: BookingSessionView | null;
+  sessions: BookingSessionView[];
+  initialSessionId?: string;
   presenterName: string;
   action: (formData: FormData) => void | Promise<void>;
 }) {
+  const initialSession = sessions.find((session) => session.id === initialSessionId) ?? sessions[0];
+  const [selectedSessionId, setSelectedSessionId] = useState(initialSession?.id ?? "");
+  const session = sessions.find((item) => item.id === selectedSessionId) ?? initialSession;
+
+  if (!session) {
+    return (
+      <div className="surface-panel rounded-[32px] p-6 text-center md:p-8">
+        <Presentation className="mx-auto h-7 w-7 text-[color:var(--text-soft)]" aria-hidden="true" />
+        <h2 className="mt-3 text-xl font-semibold text-[color:var(--navy)]">No completed bookings need a report</h2>
+        <p className="mt-1 text-sm text-[color:var(--text-soft)]">A report becomes available after an assigned school booking is completed.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="surface-panel rounded-[32px] p-6 md:p-7">
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-        School esports presentation report
-      </p>
-      <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-        {session
-          ? `${session.presentationTitle} at ${session.schoolName}`
-          : "Submit your session report"}
+      <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+        {`${session.presentationTitle} at ${session.schoolName}`}
       </h2>
-      <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
-        Please fill out this report after every presentation. We&apos;ve pre-filled what we know —
-        check it and complete the rest.
-      </p>
 
-      <form action={action} encType="multipart/form-data" className="mt-7 grid gap-5">
-        <input type="hidden" name="bookingSessionId" value={sessionId} />
-        <input type="hidden" name="returnTo" value="/ambassador/completed" />
+      <form key={session.id} action={action} className="mt-5 grid gap-5">
+        <input type="hidden" name="bookingSessionId" value={session.id} />
+        <input type="hidden" name="returnTo" value="/ambassador/reports" />
 
-        <ReportSection title="Presenter">
+        <ReportSection title="Completed school booking" icon={School2}>
+          <label className="grid gap-1.5">
+            <span className="text-sm font-semibold text-[color:var(--navy)]">Select the session you’re reporting on</span>
+            <select
+              value={session.id}
+              onChange={(event) => setSelectedSessionId(event.target.value)}
+              className="min-h-11 w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none focus:border-[#9fd4ad]"
+            >
+              {sessions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.schoolName} · {option.presentationTitle} · {new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short", year: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(option.startsAt))}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-3 rounded-[18px] bg-[#f6f9fd] p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <BookingFact label="School" value={session.schoolName} />
+            <BookingFact label="Presentation" value={session.presentationTitle} />
+            <BookingFact label="Location" value={session.regionName ?? session.regionSlug} />
+            <BookingFact label="School contact" value={session.contactName ?? "Recorded by the school team"} />
+          </div>
+          <input type="hidden" name="schoolName" value={session.schoolName} />
+          <input type="hidden" name="primaryContactName" value={session.contactName ?? ""} />
+          <input type="hidden" name="primaryContactEmail" value={session.contactEmail ?? ""} />
+          <input type="hidden" name="regionLocation" value={[session.regionName, session.schoolAddress].filter(Boolean).join(" · ")} />
+        </ReportSection>
+
+        <ReportSection title="Presenter" icon={UserRound}>
           <ReportField label="Presenter name *">
             <Input name="presenterName" defaultValue={presenterName} required />
           </ReportField>
         </ReportSection>
 
-        <ReportSection title="School information">
-          <div className="grid gap-4 md:grid-cols-2">
-            <ReportField label="School name *">
-              <Input name="schoolName" defaultValue={session?.schoolName ?? ""} required />
-            </ReportField>
-            <ReportField label="Total school roll size">
-              <Input name="schoolRollSize" type="number" min={0} placeholder="e.g. 1200" />
-            </ReportField>
-            <ReportField label="Primary contact name *">
-              <Input
-                name="primaryContactName"
-                defaultValue={session?.contactName ?? ""}
-                placeholder="Who hosted you on the day?"
-                required
-              />
-            </ReportField>
-            <ReportField label="Primary contact email (for follow-up) *">
-              <Input
-                name="primaryContactEmail"
-                type="email"
-                defaultValue={session?.contactEmail ?? ""}
-                required
-              />
-            </ReportField>
-          </div>
-          <ReportField label="Region / location">
-            <Input
-              name="regionLocation"
-              defaultValue={[session?.regionName, session?.schoolAddress]
-                .filter(Boolean)
-                .join(" · ")}
-              placeholder="e.g. Hamilton — 12 Whatawhata Road"
-            />
-          </ReportField>
-        </ReportSection>
-
-        <ReportSection title="When was the presentation delivered? *">
+        <ReportSection title="When was the presentation delivered? *" icon={CalendarClock}>
           <div className="grid gap-4 sm:grid-cols-2">
             <ReportField label="Date">
               <Input
                 name="deliveredDate"
                 type="date"
-                defaultValue={nzDateValue(session?.startsAt)}
+                defaultValue={nzDateValue(session.startsAt)}
                 required
               />
             </ReportField>
@@ -125,26 +137,36 @@ export function AmbassadorReportForm({
               <Input
                 name="deliveredTime"
                 type="time"
-                defaultValue={nzTimeValue(session?.startsAt)}
+                defaultValue={nzTimeValue(session.startsAt)}
                 required
               />
             </ReportField>
           </div>
         </ReportSection>
 
-        <ReportSection title="About the session">
+        <ReportSection title="About the session" icon={Presentation}>
           <YesNoQuestion
             name="studentsCompeted"
             question="Did you have the students compete in an esports event? *"
           />
           <div className="grid gap-4 md:grid-cols-2">
-            <ReportField label="How many attendees were present? *" hint="An approximate number is sufficient">
-              <Input name="attendeeCount" type="number" min={0} placeholder="e.g. 230" required />
+            <ReportField
+              label="Students reached *"
+              hint="The school’s booking estimate is prefilled. Confirm or correct the final attendance."
+            >
+              <Input
+                name="attendeeCount"
+                type="number"
+                min={0}
+                defaultValue={session.actualStudentCount ?? session.expectedStudentCount}
+                placeholder="e.g. 230"
+                required
+              />
             </ReportField>
             <ReportField label="What age groups were presented to? *">
               <Input
                 name="ageGroups"
-                defaultValue={session?.yearLevels ?? ""}
+                defaultValue={session.yearLevels}
                 placeholder="e.g. Years 7 to 8"
                 required
               />
@@ -153,25 +175,15 @@ export function AmbassadorReportForm({
           <YesNoQuestion name="parentsPresent" question="Were any parents present? *" />
         </ReportSection>
 
-        <ReportSection title="Presentation photos / videos">
-          <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-            Upload any photos or videos you have of the presentation, as well as the signed media
-            release form. Up to 6 files, 25MB each (images, video, or PDF).
-          </p>
-          <input
-            type="file"
-            name="mediaFiles"
-            multiple
-            accept=".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.pdf"
-            className="w-full rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white px-4 py-4 text-sm text-[color:var(--navy)]"
-          />
+        <ReportSection title="Presentation photos / videos" icon={Images}>
+          <ReportMediaUpload />
           <label className="flex items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-[#f6f9fd] px-4 py-3 text-sm text-[color:var(--navy)]">
             <input type="checkbox" name="mediaConsentObtained" />
             Media consent was checked or obtained where needed.
           </label>
         </ReportSection>
 
-        <ReportSection title="Did you capture any thoughts or quotes from attendees?">
+        <ReportSection title="Did you capture any thoughts or quotes from attendees?" icon={MessageSquareQuote}>
           <ReportField label="If so, share them here">
             <Textarea
               name="attendeeQuotes"
@@ -188,7 +200,7 @@ export function AmbassadorReportForm({
           </ReportField>
         </ReportSection>
 
-        <ReportSection title="How did you feel the presentation went? *">
+        <ReportSection title="How did you feel the presentation went? *" icon={Star}>
           <div className="grid gap-3">
             {RATING_ROWS.map((row) => (
               <RatingRow key={row.name} name={row.name} label={row.label} />
@@ -197,7 +209,7 @@ export function AmbassadorReportForm({
           <p className="text-xs text-[color:var(--text-soft)]">1 = poor · 5 = excellent</p>
         </ReportSection>
 
-        <ReportSection title="Presentation feedback *">
+        <ReportSection title="Presentation feedback *" icon={MessageSquareText}>
           <ReportField label="Do you have any feedback you'd like us to consider for future presentations?">
             <Textarea
               name="presentationFeedback"
@@ -214,8 +226,9 @@ export function AmbassadorReportForm({
         <div className="flex justify-end border-t border-[color:var(--border-soft)] pt-5">
           <Button
             type="submit"
-            className="rounded-[14px] border-[#2563eb] bg-[#2563eb] px-8 text-white shadow-[0_12px_28px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
+            className="px-6"
           >
+            <FileCheck2 className="h-4 w-4" aria-hidden="true" />
             Submit report
           </Button>
         </div>
@@ -224,10 +237,15 @@ export function AmbassadorReportForm({
   );
 }
 
-function ReportSection({ title, children }: { title: string; children: ReactNode }) {
+function ReportSection({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: ReactNode }) {
   return (
     <section className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-      <h3 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">{title}</h3>
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#e8f1fd] text-[#1e4fae]">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <h3 className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">{title}</h3>
+      </div>
       <div className="mt-4 grid gap-4">{children}</div>
     </section>
   );
@@ -248,6 +266,15 @@ function ReportField({
       {hint ? <span className="-mt-1 text-xs text-[color:var(--text-soft)]">{hint}</span> : null}
       {children}
     </label>
+  );
+}
+
+function BookingFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-[color:var(--navy)]" title={value}>{value}</p>
+    </div>
   );
 }
 

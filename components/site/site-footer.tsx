@@ -121,20 +121,22 @@ export function SiteFooter({
             <Link href="/#for-schools">For Schools</Link>
             <Link href="/#how-it-works">How It Works</Link>
             <Link href="/#regions">Regions</Link>
-            <Link href="/#about">About Us</Link>
+            <Link href="/resources">Resources</Link>
+            <Link href="/about">About Us</Link>
             <Link href="/contact">Contact</Link>
           </div>
         </div>
 
-        <div id="resources">
+        <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
             Presentations
           </p>
           <div className="mt-4 grid gap-3 text-sm text-[color:var(--navy)]">
             <Link href="/presentations/digital-wellbeing">Digital Wellbeing</Link>
             <Link href="/presentations/esports-pathways">Esports Pathways</Link>
-            <Link href="/presentations/careers">Careers</Link>
-            <Link href="/presentations/understanding-esports">Understanding Esports</Link>
+            <Link href="/presentations/understanding-esports">
+              Understanding the Gaming World
+            </Link>
           </div>
         </div>
 

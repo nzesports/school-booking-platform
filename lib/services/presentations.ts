@@ -1,22 +1,22 @@
 import {
   presentations as demoPresentations,
-  regions as demoRegions,
-  testimonials as demoTestimonials
+  regions as demoRegions
 } from "@/lib/domain/demo-data";
 import { regionDisplayName } from "@/lib/domain/regions";
 import type { HomepageSectionRecord, PresentationType, Region, Testimonial } from "@/lib/domain/types";
+import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
 import { PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
 import { createSignedResourceUrl } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-// Public reference data (presentations, regions, homepage copy, testimonials)
-// changes rarely but was being re-read from the database on every page render
-// — the root layout alone queries three of these per request. Each loader is
-// cached for 5 minutes and busted via PUBLIC_CONTENT_TAG whenever staff save
-// content. They read with the admin client (public data, server-only module)
-// so no cookie access happens inside the cache scope.
+// Regions, homepage copy, testimonials, and resources are cached for five
+// minutes and invalidated whenever staff save public content. Presentation
+// records are different: the same record powers both the homepage card and its
+// Learn More page, so those loaders use React's request-only cache below. That
+// keeps duplicate queries within one render deduplicated without allowing the
+// two public surfaces to drift between persistent cache entries.
 const publicCacheOptions = { revalidate: 300, tags: [PUBLIC_CONTENT_TAG] };
 
 export function splitContentLines(value: unknown): string[] {
@@ -45,16 +45,13 @@ function mapPresentationRecord(record: Record<string, unknown>): PresentationTyp
     requiredEquipment: splitContentLines(record.required_equipment),
     youtubeUrl: (record.youtube_url as string | null) ?? undefined,
     imageUrl: (record.image_url as string | null) ?? undefined,
+    accentColor: (record.accent_color as string | null) ?? undefined,
     active: Boolean(record.is_active),
     public: Boolean(record.is_public)
   };
 }
 
-export const listPublicPresentations = unstable_cache(
-  listPublicPresentationsUncached,
-  ["public-presentations"],
-  publicCacheOptions
-);
+export const listPublicPresentations = cache(listPublicPresentationsUncached);
 
 async function listPublicPresentationsUncached() {
   const supabase = createAdminClient();
@@ -70,6 +67,7 @@ async function listPublicPresentationsUncached() {
     .select("*")
     .eq("is_active", true)
     .eq("is_public", true)
+    .neq("slug", "careers")
     .order("sort_order", { ascending: true });
 
   if (error || !data) {
@@ -107,28 +105,33 @@ async function listPublicPresentationResourcesUncached(
   }
 
   // Select * so environments still on the legacy single-audience column load.
+  // Filters mirror the anon RLS policy (0031): only current, active resources
+  // in the "resource" category are ever public — archived versions and
+  // training/presentation material must never appear on the website.
   const { data, error } = await admin
     .from("presentation_resources")
     .select("*")
     .eq("presentation_type_id", presentationTypeId)
+    .eq("category", "resource")
     .eq("is_active", true)
+    .eq("is_current", true)
     .order("created_at", { ascending: false });
 
   if (error || !data) {
     return [];
   }
 
-  const schoolResources = data.filter((resource) => {
+  const publicWebsiteResources = data.filter((resource) => {
     const audiences =
       Array.isArray(resource.audiences) && resource.audiences.length > 0
         ? (resource.audiences as string[])
         : [((resource as Record<string, unknown>).audience as string | undefined) ?? "staff"];
 
-    return audiences.includes("school");
+    return audiences.includes("public");
   });
 
   const mapped = await Promise.all(
-    schoolResources.map(async (resource) => {
+    publicWebsiteResources.map(async (resource) => {
       const url =
         (resource.public_url as string | null) ??
         (await createSignedResourceUrl(resource.storage_path as string | null, 60 * 60));
@@ -183,13 +186,13 @@ async function listRegionsUncached() {
   );
 }
 
-export const getPresentationBySlug = unstable_cache(
-  getPresentationBySlugUncached,
-  ["public-presentation-by-slug"],
-  publicCacheOptions
-);
+export const getPresentationBySlug = cache(getPresentationBySlugUncached);
 
 async function getPresentationBySlugUncached(slug: string) {
+  if (slug === "careers") {
+    return null;
+  }
+
   const supabase = createAdminClient();
 
   if (!supabase) {
@@ -200,6 +203,8 @@ async function getPresentationBySlugUncached(slug: string) {
     .from("presentation_types")
     .select("*")
     .eq("slug", slug)
+    .eq("is_active", true)
+    .eq("is_public", true)
     .maybeSingle();
 
   if (error || !data) {
@@ -257,7 +262,7 @@ async function listPublicTestimonialsUncached(limit = 6): Promise<Testimonial[]>
   const admin = createAdminClient();
 
   if (!admin) {
-    return demoTestimonials.slice(0, limit);
+    return [];
   }
 
   const { data: reviews, error } = await admin
@@ -268,8 +273,8 @@ async function listPublicTestimonialsUncached(limit = 6): Promise<Testimonial[]>
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error || !reviews?.length) {
-    return demoTestimonials.slice(0, limit);
+  if (error || !reviews) {
+    return [];
   }
 
   const schoolIds = Array.from(

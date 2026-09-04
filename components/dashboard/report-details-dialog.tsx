@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Building2,
   CalendarDays,
   CheckCircle2,
   Circle,
@@ -24,15 +23,24 @@ import {
   UsersRound,
   X
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { FeedbackDialogNavigation } from "@/components/dashboard/feedback-dialog-navigation";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import type { ReportSummary } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
-type ReportMediaItem = { url: string; type: string; title?: string };
+type ReportMediaItem = { id?: string; url: string; type: string; title?: string };
+
+// Report media lives in a private bucket and is served through the
+// auth-gated /portal/report-media/[mediaId] route (which also proxies
+// legacy rows that still hold a public-bucket URL). Fall back to the
+// stored URL only when a row has no id.
+function mediaSrc(item: ReportMediaItem) {
+  return item.id ? `/portal/report-media/${encodeURIComponent(item.id)}` : item.url;
+}
 
 function formatNzDate(iso?: string, withTime = false) {
   if (!iso) {
@@ -58,28 +66,53 @@ function yesNo(value?: boolean) {
 }
 
 export function ReportDetailsButton({
-  report,
+  report: initialReport,
+  reports,
   className,
   label = "View submission",
   reviewAction,
   reviewReturnTo
 }: {
   report: ReportSummary;
+  reports?: ReportSummary[];
   className?: string;
   label?: string;
   reviewAction?: (formData: FormData) => void | Promise<void>;
   reviewReturnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeReportId, setActiveReportId] = useState(initialReport.id);
   const [lightbox, setLightbox] = useState<ReportMediaItem | null>(null);
+  const navigationAnchorRef = useRef<HTMLDivElement>(null);
+  const reportCollection = reports?.length ? reports : [initialReport];
+  const matchedReportIndex = reportCollection.findIndex((item) => item.id === activeReportId);
+  const reportIndex = matchedReportIndex >= 0 ? matchedReportIndex : 0;
+  const report = reportCollection[reportIndex] ?? initialReport;
   const media = report.media ?? [];
+
+  const showReport = (index: number) => {
+    const nextReport = reportCollection[index];
+
+    if (!nextReport) {
+      return;
+    }
+
+    setLightbox(null);
+    setActiveReportId(nextReport.id);
+    navigationAnchorRef.current
+      ?.closest('[role="dialog"]')
+      ?.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <>
       <Button
         type="button"
         variant="secondary"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setActiveReportId(initialReport.id);
+          setOpen(true);
+        }}
         className={className ?? "min-h-[36px] rounded-[14px] px-3 py-1.5 text-xs"}
       >
         <Eye className="h-3.5 w-3.5" />
@@ -97,7 +130,10 @@ export function ReportDetailsButton({
               overlayClassName="z-[80]"
               compact
             >
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]">
+              <div
+                ref={navigationAnchorRef}
+                className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]"
+              >
                 <span className="inline-flex items-center gap-1.5">
                   <CalendarDays className="h-4 w-4" />
                   Delivered {formatNzDate(report.deliveredAt ?? report.sessionStartsAt, true)}
@@ -112,6 +148,17 @@ export function ReportDetailsButton({
                 ) : null}
               </div>
 
+              <FeedbackDialogNavigation
+                current={reportIndex + 1}
+                total={reportCollection.length}
+                onPrevious={reportIndex > 0 ? () => showReport(reportIndex - 1) : undefined}
+                onNext={
+                  reportIndex < reportCollection.length - 1
+                    ? () => showReport(reportIndex + 1)
+                    : undefined
+                }
+              />
+
               {/* -------------------------------------------- 1. overview */}
               <SectionHeading icon={<UsersRound className="h-4 w-4" />} index={1}>
                 Session overview
@@ -125,9 +172,6 @@ export function ReportDetailsButton({
                 </OverviewTile>
                 <OverviewTile icon={<GraduationCap className="h-4 w-4" />} label="Age groups">
                   {report.ageGroups ?? report.yearLevels ?? "Not recorded"}
-                </OverviewTile>
-                <OverviewTile icon={<Building2 className="h-4 w-4" />} label="School roll size">
-                  {report.schoolRollSize ? String(report.schoolRollSize) : "Not recorded"}
                 </OverviewTile>
                 <OverviewTile icon={<Trophy className="h-4 w-4" />} label="Students competed in an event">
                   {yesNo(report.studentsCompetedInEsports)}
@@ -187,12 +231,12 @@ export function ReportDetailsButton({
                 <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
                   {media.map((item, index) => (
                     <MediaTile
-                      key={item.url}
+                      key={item.id ?? item.url}
                       item={item}
                       featured={index === 0 && media.length > 2}
                       onOpen={() => {
                         if (item.type === "document") {
-                          window.open(item.url, "_blank", "noopener,noreferrer");
+                          window.open(mediaSrc(item), "_blank", "noopener,noreferrer");
                         } else {
                           setLightbox(item);
                         }
@@ -253,11 +297,11 @@ export function ReportDetailsButton({
                 />
                 <JourneyStep
                   done={report.status === "reviewed"}
-                  label="Reviewed for payment"
+                  label="Report approved"
                   detail={
                     report.status === "reviewed"
                       ? formatNzDate(report.reviewedAt)
-                      : "Awaiting staff review"
+                      : "Awaiting staff approval"
                   }
                   last
                 />
@@ -269,8 +313,12 @@ export function ReportDetailsButton({
                   <Info className="h-4 w-4 shrink-0" />
                   Status:{" "}
                   {report.status === "reviewed"
-                    ? "Reviewed for payment by staff."
-                    : "Submitted — awaiting staff review."}
+                    ? report.paymentRequired
+                      ? "Approved and prepared for finance."
+                      : "Approved — no payment was required."
+                    : report.paymentRequired && !report.paymentDetailsComplete
+                      ? `Payment details missing: ${(report.missingPaymentDetails ?? []).join(", ")}.`
+                      : "Submitted — awaiting staff approval."}
                 </p>
                 {reviewAction && report.status !== "reviewed" ? (
                   <form action={reviewAction}>
@@ -281,7 +329,11 @@ export function ReportDetailsButton({
                       className="min-h-[42px] rounded-[12px] border-[#2563eb] bg-[#2563eb] px-4 py-2 text-sm text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
                     >
                       <CheckCircle2 className="h-4 w-4" />
-                      Mark reviewed for payment
+                      {report.paymentRequired && !report.paymentDetailsComplete
+                        ? "Request payment details"
+                        : report.paymentRequired
+                          ? "Approve report & send to finance"
+                          : "Approve report"}
                     </Button>
                   </form>
                 ) : null}
@@ -310,7 +362,7 @@ export function ReportDetailsButton({
                   </p>
                   <div className="flex items-center gap-2">
                     <a
-                      href={lightbox.url}
+                      href={mediaSrc(lightbox)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex min-h-[40px] items-center gap-2 rounded-[12px] bg-white/14 px-3.5 text-sm font-semibold text-white transition hover:bg-white/24"
@@ -330,7 +382,7 @@ export function ReportDetailsButton({
                 </div>
                 {lightbox.type === "video" ? (
                   <video
-                    src={lightbox.url}
+                    src={mediaSrc(lightbox)}
                     controls
                     autoPlay
                     className="max-h-[78vh] w-full rounded-[18px] bg-black object-contain"
@@ -338,7 +390,7 @@ export function ReportDetailsButton({
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img
-                    src={lightbox.url}
+                    src={mediaSrc(lightbox)}
                     alt={lightbox.title ?? "Report media"}
                     className="max-h-[78vh] w-full rounded-[18px] bg-black object-contain"
                   />
@@ -451,13 +503,13 @@ function MediaTile({
       {item.type === "image" ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
-          src={item.url}
+          src={mediaSrc(item)}
           alt={item.title ?? "Report media"}
           className="absolute inset-0 h-full w-full object-cover transition group-hover:scale-[1.03]"
         />
       ) : item.type === "video" ? (
         <>
-          <video src={item.url} muted preload="metadata" className="absolute inset-0 h-full w-full object-cover" />
+          <video src={mediaSrc(item)} muted preload="metadata" className="absolute inset-0 h-full w-full object-cover" />
           <span className="absolute inset-0 flex items-center justify-center">
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/92 text-[color:var(--navy)] shadow-[0_10px_24px_rgba(4,15,75,0.28)]">
               <Play className="ml-0.5 h-5 w-5" />

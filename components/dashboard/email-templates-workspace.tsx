@@ -5,7 +5,6 @@ import {
   ChevronRight,
   CircleDollarSign,
   Grid2x2,
-  Info,
   Mail,
   PencilLine,
   Plus,
@@ -113,14 +112,6 @@ export function EmailTemplatesWorkspace({
 
   return (
     <div className="grid gap-5">
-      <p className="flex items-start gap-2.5 rounded-[16px] bg-[#eef4fd] px-4 py-3 text-sm font-medium leading-6 text-[#1e4fae]">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
-          Every email includes the NZ Esports header and footer. Account confirmation and
-          password reset emails are managed separately.
-        </span>
-      </p>
-
       {/* ------------------------------------------------ stat tiles + create */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="grid flex-1 grid-cols-2 gap-4 xl:grid-cols-4">

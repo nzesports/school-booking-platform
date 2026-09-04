@@ -22,9 +22,10 @@ export type PaymentStatus =
   | "not_eligible"
   | "eligible"
   | "pending"
-  | "invoiced"
-  | "submitted_for_payment"
+  | "approved"
   | "paid";
+
+export type FinanceEmailStatus = "pending" | "sent" | "failed";
 
 export type ReportStatus =
   | "not_submitted"
@@ -54,6 +55,7 @@ export interface PresentationType {
   requiredEquipment: string[];
   youtubeUrl?: string;
   imageUrl?: string;
+  accentColor?: string;
   active: boolean;
   public: boolean;
 }
@@ -74,6 +76,8 @@ export interface Faq {
   answer: string;
 }
 
+export type ResourceAudience = "public" | "school" | "ambassador" | "staff";
+
 export interface ResourceItem {
   id: string;
   title: string;
@@ -88,7 +92,7 @@ export interface ResourceItem {
     | "pptx"
     | "script"
     | "file";
-  audience: "school" | "ambassador" | "staff";
+  audience: ResourceAudience;
   presentationSlug?: string;
   isCurrent: boolean;
   downloadUrl?: string;
@@ -100,13 +104,15 @@ export interface TrainingLesson {
   title: string;
   type: "video" | "quiz" | "checklist";
   durationMinutes: number;
+  youtubeUrl?: string;
+  content?: string;
 }
 
 export interface TrainingModule {
   id: string;
+  presentationTypeId?: string;
   title: string;
   description: string;
-  progress: number;
   lessons: TrainingLesson[];
 }
 
@@ -164,10 +170,14 @@ export interface AmbassadorProfileDetails {
   weeklyAvailability?: Record<string, string>;
   unavailableDates?: string[];
   availabilityNote?: string;
+  materialsConsentAcceptedAt?: string;
+  materialsConsentSignedName?: string;
+  materialsConsentVersion?: string;
 }
 
 export interface AmbassadorProfile {
   id: string;
+  userId?: string;
   name: string;
   email: string;
   phone?: string;
@@ -194,10 +204,12 @@ export interface BookingSessionView {
   presentationTypeId?: string;
   presentationSlug: string;
   presentationTitle: string;
+  presentationAccentColor?: string;
   regionSlug: string;
   regionName?: string;
   schoolId?: string;
   schoolName: string;
+  schoolRollSize?: number;
   schoolAddress?: string;
   locationAddress?: string;
   contactName?: string;
@@ -236,6 +248,8 @@ export interface BookingRequestView {
   regionSlug: string;
   status: BookingStatus;
   source: "public" | "staff" | "ambassador" | "ambassador_booked";
+  sourcedByAmbassadorId?: string;
+  sourcedByAmbassadorName?: string;
   schoolNotes?: string;
   internalNotes?: string;
   createdAt: string;
@@ -317,29 +331,40 @@ export interface TaskItem {
 
 export interface PaymentRecord {
   id: string;
+  ambassadorProfileId?: string;
   ambassadorName: string;
   bookingSessionId: string;
   amountCents: number;
+  baseAmountCents: number;
+  sourcingBonusCents: number;
   status: PaymentStatus;
   eligibilityReason: string;
   createdAt: string;
   paidAt?: string;
   invoiceNumber?: string;
-  invoiceSubmittedAt?: string;
+  invoiceGeneratedAt?: string;
   sentToFinanceAt?: string;
   sentToEmail?: string;
-  sentCcEmail?: string;
+  financeEmailStatus?: FinanceEmailStatus;
+  financeEmailAttempts: number;
+  financeEmailLastAttemptAt?: string;
+  financeEmailError?: string;
+  financeConfirmationExpiresAt?: string;
+  financeConfirmedAt?: string;
+  bankAccountName?: string;
   bankAccountNumber?: string;
   gstNumber?: string;
-  invoiceNotes?: string;
 }
 
 export interface ReportSummary {
   id: string;
+  ambassadorProfileId?: string;
+  bookingSessionId?: string;
   schoolId?: string;
   schoolName: string;
   presentationTypeId?: string;
   presentationTitle: string;
+  presentationAccentColor?: string;
   submittedAt: string;
   attendeeCount: number;
   status: ReportStatus;
@@ -364,10 +389,13 @@ export interface ReportSummary {
   additionalNotes?: string;
   yearLevels?: string;
   sessionStartsAt?: string;
-  media?: Array<{ url: string; type: string; title?: string }>;
+  media?: Array<{ id?: string; url: string; type: string; title?: string }>;
   bookingRequestId?: string;
   bookingRequestedAt?: string;
   reviewedAt?: string;
+  paymentRequired?: boolean;
+  paymentDetailsComplete?: boolean;
+  missingPaymentDetails?: string[];
 }
 
 export interface AuditLogEntry {

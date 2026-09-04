@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Clock3, Mail, MapPin, type LucideIcon } from "lucide-react";
+import { Clock3, MapPin, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { submitContactFormAction } from "@/app/contact/actions";
@@ -13,8 +13,9 @@ export const metadata: Metadata = {
 export default function ContactPage() {
   return (
     <main className="public-stack">
-      <section className="public-band relative overflow-hidden">
-        <div className="hero-aurora" />
+      <section className="public-band relative overflow-hidden bg-[linear-gradient(135deg,#eefbf5_0%,#eef8fc_52%,#f5f8fc_100%)]">
+        <div className="pointer-events-none absolute -left-32 -top-32 h-[34rem] w-[34rem] rounded-full bg-[radial-gradient(circle,rgba(24,168,59,0.14),transparent_70%)]" />
+        <div className="pointer-events-none absolute -bottom-40 right-[-8rem] h-[38rem] w-[38rem] rounded-full bg-[radial-gradient(circle,rgba(175,213,237,0.32),transparent_70%)]" />
         <div className="site-shell relative grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
           <div className="max-w-xl pt-2">
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
@@ -29,9 +30,6 @@ export default function ContactPage() {
             </p>
 
             <div className="mt-8 grid gap-4 text-sm text-[color:var(--text-soft)]">
-              <ContactDetail icon={Mail}>
-                Your message goes directly to the NZ Esports schools team.
-              </ContactDetail>
               <ContactDetail icon={Clock3}>
                 We usually reply within two working days.
               </ContactDetail>
@@ -46,7 +44,7 @@ export default function ContactPage() {
               Write to us
             </h2>
             <p className="mb-7 mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
-              All fields are required unless marked optional.
+              All fields are required.
             </p>
             <ContactForm action={submitContactFormAction} />
           </div>

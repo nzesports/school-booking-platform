@@ -24,12 +24,20 @@ export function AmbassadorManualBookingDialog({
   schools,
   regions,
   presentations,
-  action
+  action,
+  triggerLabel = "Log a booking",
+  triggerClassName,
+  wrapperClassName = "flex justify-end",
+  returnTo = "/ambassador/bookings?tab=sourced"
 }: {
   schools: School[];
   regions: Region[];
   presentations: PresentationOption[];
   action: (formData: FormData) => void | Promise<void>;
+  triggerLabel?: string;
+  triggerClassName?: string;
+  wrapperClassName?: string;
+  returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState(45);
@@ -45,15 +53,18 @@ export function AmbassadorManualBookingDialog({
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className={wrapperClassName}>
         <Button
           type="button"
           variant="secondary"
           onClick={() => setOpen(true)}
-          className="min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
+          className={
+            triggerClassName ??
+            "min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
+          }
         >
           <CalendarPlus2 className="h-4 w-4" />
-          Log a booking
+          {triggerLabel}
         </Button>
       </div>
 
@@ -67,12 +78,12 @@ export function AmbassadorManualBookingDialog({
               maxWidthClassName="max-w-[920px]"
             >
               <form action={action} className="mt-7 grid gap-4">
-                <input type="hidden" name="returnTo" value="/ambassador/upcoming" />
+                <input type="hidden" name="returnTo" value={returnTo} />
 
                 <div className="rounded-[18px] border border-[#b9e2c7] bg-[#f4fbf6] px-4 py-3 text-sm leading-6 text-[#1d6f35]">
-                  This will be flagged as <strong>Ambassador Booked</strong>. Once the session meets
-                  the usual payment requirements, it will pay <strong>$300</strong> instead of the
-                  standard <strong>$205</strong> rate.
+                  You&apos;ll receive the standard <strong>$250 delivery fee</strong>. If you personally
+                  sourced the school, the eligible payment will also include a separately tracked
+                  <strong> $50 sourcing bonus</strong>, for a <strong>$300 total</strong>.
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -157,6 +168,25 @@ export function AmbassadorManualBookingDialog({
                     placeholder="Add any delivery details or context staff should know."
                   />
                 </Field>
+
+                <fieldset className="rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4">
+                  <legend className="px-1 text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
+                    Did you personally source this school relationship?
+                  </legend>
+                  <p className="mt-2 text-sm leading-6 text-[color:var(--text-soft)]">
+                    This attribution is used to track sourced schools and the additional $50 bonus.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                      <input type="radio" name="schoolSource" value="sourced" required className="mt-0.5" />
+                      Yes, I sourced this school
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                      <input type="radio" name="schoolSource" value="existing" required className="mt-0.5" />
+                      No, it was an existing relationship
+                    </label>
+                  </div>
+                </fieldset>
 
                 <label className="flex cursor-pointer items-start gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
                   <input

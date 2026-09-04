@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath as nextRevalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -25,18 +27,24 @@ import {
   sendBookingConfirmedEmail,
   sendBookingRescheduledEmail,
   sendFeedbackRequestEmail,
-  sendInvoiceToFinanceEmail
+  sendPaymentApprovalToFinanceEmail
 } from "@/lib/services/email-triggers";
 import {
-  buildInvoicePdf,
+  createFinanceConfirmationToken,
   generateInvoiceNumber,
-  loadInvoiceDetails
-} from "@/lib/services/invoices";
+  getPaymentSettings,
+  loadPaymentDetails
+} from "@/lib/services/payment-automation";
 import { sendTransactionalEmail } from "@/lib/services/email";
 import { substituteSampleValues } from "@/lib/services/email-samples";
 import { notifyStaff, notifyUser } from "@/lib/services/notifications";
 import { sanitizeEmailHtml, sanitizeRichText } from "@/lib/services/sanitize";
-import { uploadPrivateResourceFile, uploadPublicAsset } from "@/lib/services/storage";
+import {
+  deletePrivateResourceFile,
+  uploadPrivateReportMedia,
+  uploadPrivateResourceFile,
+  uploadPublicAsset
+} from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
@@ -80,6 +88,19 @@ const userDeleteSchema = z.object({
 const ambassadorReviewSchema = z.object({
   ambassadorProfileId: z.uuid(),
   status: z.enum(["approved", "declined", "inactive"]),
+  returnTo: z.string().min(1).default("/staff/ambassadors")
+});
+
+const ambassadorDeleteSchema = z.object({
+  ambassadorProfileId: z.uuid(),
+  confirmationText: z.literal("DELETE"),
+  returnTo: z.string().min(1).default("/staff/ambassadors")
+});
+
+const ambassadorPortalConnectSchema = z.object({
+  ambassadorProfileId: z.uuid(),
+  email: z.string().trim().email(),
+  fullName: z.string().trim().min(2),
   returnTo: z.string().min(1).default("/staff/ambassadors")
 });
 
@@ -164,6 +185,7 @@ const ambassadorManualBookingSchema = z.object({
   yearLevels: z.string().trim().min(1).max(100),
   expectedStudentCount: z.coerce.number().int().min(1).max(10000),
   internalNotes: z.string().trim().max(5000).optional(),
+  schoolSource: z.enum(["sourced", "existing"]),
   confirmBooking: z.boolean(),
   returnTo: z.string().min(1).default("/ambassador/upcoming")
 }).superRefine((value, context) => {
@@ -177,15 +199,17 @@ const ambassadorManualBookingSchema = z.object({
 });
 
 const AMBASSADOR_BOOKING_SOURCE = "ambassador_booked";
-const AMBASSADOR_BOOKED_PAYMENT_CENTS = 30_000;
+const AMBASSADOR_DELIVERY_PAYMENT_CENTS = 25_000;
+const AMBASSADOR_SOURCING_BONUS_CENTS = 5_000;
+const AMBASSADOR_BOOKED_PAYMENT_CENTS =
+  AMBASSADOR_DELIVERY_PAYMENT_CENTS + AMBASSADOR_SOURCING_BONUS_CENTS;
 
 const ambassadorReportSubmitSchema = z.object({
   bookingSessionId: z.uuid(),
   presenterName: z.string().min(2),
-  schoolName: z.string().min(2),
-  schoolRollSize: z.coerce.number().int().nonnegative().optional(),
-  primaryContactName: z.string().min(2),
-  primaryContactEmail: z.string().email(),
+  schoolName: z.string().optional(),
+  primaryContactName: z.string().optional(),
+  primaryContactEmail: z.union([z.literal(""), z.string().email()]).optional(),
   regionLocation: z.string().optional(),
   deliveredDate: z.string().min(1),
   deliveredTime: z.string().min(1),
@@ -204,6 +228,54 @@ const ambassadorReportSubmitSchema = z.object({
   mediaConsentObtained: z.boolean().optional(),
   returnTo: z.string().min(1).default("/ambassador/completed")
 });
+
+const staffFeedbackSubmitSchema = z
+  .object({
+    sessionMode: z.enum(["existing", "manual"]),
+    bookingSessionId: z.string().trim().optional(),
+    manualSchoolName: z.string().trim().max(200).optional(),
+    manualPresentationTypeId: z.string().trim().optional(),
+    presenterName: z.string().trim().min(2).max(200),
+    schoolRollSize: z.coerce.number().int().nonnegative().optional(),
+    primaryContactName: z.string().trim().max(200).optional(),
+    primaryContactEmail: z.union([z.literal(""), z.string().trim().email()]).optional(),
+    deliveredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    deliveredTime: z.string().regex(/^\d{2}:\d{2}$/),
+    studentsCompeted: z.enum(["yes", "no"]),
+    attendeeCount: z.coerce.number().int().nonnegative(),
+    ageGroups: z.string().trim().min(1).max(200),
+    parentsPresent: z.enum(["yes", "no"]),
+    attendeeQuotes: z.string().trim().max(5000).optional(),
+    attendanceRating: z.coerce.number().int().min(1).max(5),
+    studentEngagementRating: z.coerce.number().int().min(1).max(5),
+    teacherResponseRating: z.coerce.number().int().min(1).max(5),
+    presentationEnergyRating: z.coerce.number().int().min(1).max(5),
+    presentationFeedback: z.string().trim().min(1).max(5000),
+    notableQuestions: z.string().trim().max(5000).optional(),
+    additionalNotes: z.string().trim().max(5000).optional(),
+    mediaConsentObtained: z.boolean().optional(),
+    returnTo: z.string().min(1).default("/staff/feedback")
+  })
+  .superRefine((value, context) => {
+    if (value.sessionMode === "existing" && !z.uuid().safeParse(value.bookingSessionId).success) {
+      context.addIssue({
+        code: "custom",
+        path: ["bookingSessionId"],
+        message: "Choose a completed session."
+      });
+    }
+
+    if (
+      value.sessionMode === "manual" &&
+      (!value.manualSchoolName || !z.uuid().safeParse(value.manualPresentationTypeId).success)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["manualSchoolName"],
+        message: "Enter the school and presentation for the manual session."
+      });
+    }
+  });
 
 const sessionApplicationSchema = z.object({
   bookingSessionId: z.uuid(),
@@ -311,11 +383,43 @@ const updateBookingStatusSchema = z.object({
   returnTo: z.string().min(1)
 });
 
+const bulkUpdateBookingStatusSchema = z.object({
+  bookingRequestIds: z.array(z.uuid()).min(1).max(100),
+  status: z.enum([
+    "requested",
+    "tentative",
+    "applied",
+    "ambassador_assigned",
+    "confirmed",
+    "reschedule_requested",
+    "closed",
+    "cancelled",
+    "declined"
+  ]),
+  returnTo: z.string().min(1)
+});
+
 const removeBookingInternalNoteSchema = z.object({
   bookingRequestId: z.uuid(),
   noteIndex: z.coerce.number().int().nonnegative(),
   returnTo: z.string().min(1)
 });
+
+// Sessions in these states are still "in flight" and safe to rewrite when the
+// parent booking is cancelled or declined. Delivered/terminal sessions
+// (completed_pending_report, report_submitted, payment_pending, paid, closed,
+// cancelled, declined) must never be rewritten — this mirrors the
+// school-initiated cancellation's exclusion list in
+// requestSchoolBookingChangeAction.
+const NON_TERMINAL_SESSION_STATUSES = [
+  "requested",
+  "tentative",
+  "applied",
+  "ambassador_assigned",
+  "confirmed",
+  "withdrawal_requested",
+  "reschedule_requested"
+];
 
 const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] }>> = {
   confirmed: {
@@ -326,31 +430,37 @@ const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] 
       "ambassador_assigned"
     ]
   },
-  cancelled: { to: "cancelled" }
+  cancelled: { to: "cancelled", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
+  // Declining a booking closes out its open sessions so they leave the
+  // ambassador open pool and stop reading as "pending approval" for schools.
+  declined: { to: "declined", onlyFrom: NON_TERMINAL_SESSION_STATUSES }
 };
 
-const trainingCompleteSchema = z.object({
-  trainingModuleId: z.uuid(),
-  trainingLessonId: z.string().optional(),
-  returnTo: z.string().min(1).default("/ambassador/training")
-});
-
-const resourceSchema = z.object({
-  id: z.string().optional(),
-  title: z.string().min(2),
-  description: z.string().optional(),
-  audiences: z.array(z.enum(["school", "ambassador", "staff"])).min(1),
-  tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
-  resourceType: z.string().min(1),
-  category: z.enum(["resource", "training", "presentation_material"]).default("resource"),
-  presentationTypeId: z.string().optional(),
-  versionLabel: z.string().optional(),
-  youtubeUrl: z.string().optional(),
-  externalUrl: z.string().optional(),
-  isCurrent: z.boolean().optional(),
-  isActive: z.boolean().optional(),
-  returnTo: z.string().min(1)
-});
+const resourceSchema = z
+  .object({
+    id: z.string().optional(),
+    title: z.string().min(2),
+    description: z.string().optional(),
+    audiences: z.array(z.enum(["public", "school", "ambassador", "staff"])).min(1),
+    sharingScope: z.enum(["internal", "public"]).default("internal"),
+    tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
+    resourceType: z.string().min(1),
+    category: z.enum(["resource", "training", "presentation_material"]).default("resource"),
+    presentationTypeId: z.uuid().optional(),
+    versionLabel: z.string().optional(),
+    youtubeUrl: z.string().optional(),
+    externalUrl: z.string().optional(),
+    isCurrent: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    returnTo: z.string().min(1)
+  })
+  .refine(
+    (value) => value.category !== "presentation_material" || Boolean(value.presentationTypeId),
+    {
+      message: "Presentation materials must be linked to a presentation.",
+      path: ["presentationTypeId"]
+    }
+  );
 
 const presentationSchema = z.object({
   id: z.uuid().optional(),
@@ -367,6 +477,7 @@ const presentationSchema = z.object({
   youtubeUrl: z
     .union([z.literal(""), z.string().url().refine(isYouTubeUrl, "Enter a YouTube link")])
     .optional(),
+  accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default("#18A83B"),
   isPublic: z.boolean().optional(),
   isActive: z.boolean().optional(),
   returnTo: z.string().min(1)
@@ -405,29 +516,7 @@ const notificationSchema = z.object({
 
 const nzBankAccountPattern = /^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/;
 
-const ambassadorPaymentDetailsSchema = z.object({
-  bankAccountNumber: z.string().trim().regex(nzBankAccountPattern),
-  gstNumber: z.string().trim().optional(),
-  returnTo: z.string().min(1).default("/ambassador/profile")
-});
-
-const invoiceSubmitSchema = z.object({
-  paymentId: z.uuid(),
-  bankAccountNumber: z.string().trim().regex(nzBankAccountPattern),
-  gstNumber: z.string().trim().optional(),
-  invoiceNotes: z.string().max(2000).optional(),
-  saveToProfile: z.boolean().optional(),
-  returnTo: z.string().min(1).default("/ambassador/earnings")
-});
-
-const sendInvoiceToFinanceSchema = z.object({
-  paymentId: z.uuid(),
-  toEmail: z.string().trim().email(),
-  ccEmail: z.string().optional(),
-  returnTo: z.string().min(1).default("/staff/payments")
-});
-
-const markPaymentPaidSchema = z.object({
+const retryFinanceEmailSchema = z.object({
   paymentId: z.uuid(),
   returnTo: z.string().min(1).default("/staff/payments")
 });
@@ -440,6 +529,23 @@ function getAdminClientOrThrow() {
   }
 
   return admin;
+}
+
+// Deactivated users must lose platform access immediately, not just at their
+// next login. The installed Supabase admin API cannot revoke another user's
+// sessions directly (auth.admin.signOut requires that user's own JWT), so we
+// apply a long ban via updateUserById instead: banned users cannot refresh
+// their session tokens or sign in until the ban is lifted when staff restore
+// them.
+const DEACTIVATED_ACCESS_BAN = "87600h"; // ~10 years
+
+async function setUserPlatformAccess(userId: string, active: boolean) {
+  const admin = getAdminClientOrThrow();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: active ? "none" : DEACTIVATED_ACCESS_BAN
+  });
+
+  return error;
 }
 
 function appendSearchParam(path: string, key: string, value: string) {
@@ -990,6 +1096,15 @@ export async function updateUserAccessAction(formData: FormData) {
     redirect("/admin/users?error=status-update-failed");
   }
 
+  const accessError = await setUserPlatformAccess(
+    parsedStatus.data.userId,
+    parsedStatus.data.status === "active"
+  );
+
+  if (accessError) {
+    redirect("/admin/users?error=status-update-failed");
+  }
+
   const errorKey = await applyUserRoleChange(actor.id, parsedRole.data.userId, parsedRole.data.role);
 
   if (errorKey) {
@@ -1030,6 +1145,15 @@ export async function updateUserStatusAction(formData: FormData) {
     redirect("/admin/users?error=status-update-failed");
   }
 
+  const accessError = await setUserPlatformAccess(
+    parsed.data.userId,
+    parsed.data.status === "active"
+  );
+
+  if (accessError) {
+    redirect("/admin/users?error=status-update-failed");
+  }
+
   await logAuditEvent(actor.id, "user.status_updated", "profile", parsed.data.userId);
   revalidatePath("/admin");
   redirect("/admin/users?updated=status");
@@ -1048,10 +1172,20 @@ export async function reviewAmbassadorAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirect(`${fallbackReturnTo}?error=invalid-review`);
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-review"));
   }
 
   const admin = getAdminClientOrThrow();
+  const { data: ambassador } = await admin
+    .from("ambassador_profiles")
+    .select("id, user_id, status, approved_at, approved_by")
+    .eq("id", parsed.data.ambassadorProfileId)
+    .maybeSingle();
+
+  if (!ambassador) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
   const updatePayload =
     parsed.data.status === "approved"
       ? {
@@ -1068,13 +1202,61 @@ export async function reviewAmbassadorAction(formData: FormData) {
             approved_by: null
           };
 
+  let previousUserStatus: string | null = null;
+
+  if (ambassador.user_id) {
+    const { data: linkedUser } = await admin
+      .from("profiles")
+      .select("status")
+      .eq("id", ambassador.user_id)
+      .maybeSingle();
+    previousUserStatus = (linkedUser?.status as string | null) ?? null;
+
+    const { error: userStatusError } = await admin
+      .from("profiles")
+      .update({ status: parsed.data.status === "approved" ? "active" : "inactive" })
+      .eq("id", ambassador.user_id);
+
+    if (userStatusError) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "review-failed"));
+    }
+
+    // Deactivating (or declining) revokes the user's live sessions; approving
+    // lifts the ban so a restored ambassador can simply log in again.
+    const accessError = await setUserPlatformAccess(
+      ambassador.user_id as string,
+      parsed.data.status === "approved"
+    );
+
+    if (accessError) {
+      if (previousUserStatus) {
+        await admin
+          .from("profiles")
+          .update({ status: previousUserStatus })
+          .eq("id", ambassador.user_id);
+      }
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "review-failed"));
+    }
+  }
+
   const { error } = await admin
     .from("ambassador_profiles")
     .update(updatePayload)
     .eq("id", parsed.data.ambassadorProfileId);
 
   if (error) {
-    redirect(`${parsed.data.returnTo}?error=review-failed`);
+    if (ambassador.user_id && previousUserStatus) {
+      await admin
+        .from("profiles")
+        .update({ status: previousUserStatus })
+        .eq("id", ambassador.user_id);
+      // Best-effort: put session access back in line with the restored status.
+      await setUserPlatformAccess(
+        ambassador.user_id as string,
+        previousUserStatus === "active"
+      );
+    }
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "review-failed"));
   }
 
   await admin
@@ -1113,9 +1295,11 @@ export async function reviewAmbassadorAction(formData: FormData) {
   await logAuditEvent(
     actor.id,
     parsed.data.status === "approved"
-      ? "ambassador.approved"
+      ? ["applied", "declined"].includes(ambassador.status as string)
+        ? "ambassador.approved"
+        : "ambassador.activated"
       : parsed.data.status === "inactive"
-        ? "ambassador.access_restricted"
+        ? "ambassador.deactivated"
         : "ambassador.declined",
     "ambassador_profile",
     parsed.data.ambassadorProfileId
@@ -1123,7 +1307,300 @@ export async function reviewAmbassadorAction(formData: FormData) {
 
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(`${parsed.data.returnTo}?reviewed=${parsed.data.status}`);
+  redirect(appendSearchParam(parsed.data.returnTo, "reviewed", parsed.data.status));
+}
+
+export async function connectAmbassadorPortalAccountAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/ambassadors"),
+    "/staff/ambassadors"
+  );
+  const parsed = ambassadorPortalConnectSchema.safeParse({
+    ambassadorProfileId: String(formData.get("ambassadorProfileId") || ""),
+    email: String(formData.get("email") || ""),
+    fullName: String(formData.get("fullName") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-ambassador-connect"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassador } = await admin
+    .from("ambassador_profiles")
+    .select("id, user_id, region_id, deleted_at")
+    .eq("id", parsed.data.ambassadorProfileId)
+    .maybeSingle();
+
+  if (!ambassador || ambassador.deleted_at) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  if (ambassador.user_id) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-already-connected"));
+  }
+
+  const { data: existingUser } = await admin
+    .from("profiles")
+    .select("id")
+    .ilike("email", parsed.data.email)
+    .maybeSingle();
+
+  if (existingUser) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-email-in-use"));
+  }
+
+  const { data: region } = ambassador.region_id
+    ? await admin
+        .from("regions")
+        .select("slug")
+        .eq("id", ambassador.region_id)
+        .maybeSingle()
+    : { data: null };
+  let invitedUserId: string | null = null;
+  let generatedAmbassadorProfileId: string | null = null;
+  let connectionFailed = false;
+
+  try {
+    const { data: inviteData, error: inviteError } =
+      await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
+        data: {
+          role: "ambassador",
+          full_name: parsed.data.fullName,
+          region_slug: (region?.slug as string | undefined) ?? undefined,
+          open_to_travel: false
+        },
+        redirectTo: buildAuthConfirmUrl("/reset-password")
+      });
+
+    invitedUserId = inviteData.user?.id ?? null;
+
+    if (inviteError || !invitedUserId) {
+      throw inviteError ?? new Error("The invited user was not returned.");
+    }
+
+    const { data: generatedProfile, error: generatedProfileError } = await admin
+      .from("ambassador_profiles")
+      .select("id")
+      .eq("user_id", invitedUserId)
+      .maybeSingle();
+
+    if (generatedProfileError || !generatedProfile) {
+      throw generatedProfileError ?? new Error("The invited ambassador profile was not created.");
+    }
+
+    generatedAmbassadorProfileId = generatedProfile.id as string;
+
+    const { error: userUpdateError } = await admin
+      .from("profiles")
+      .update({
+        role: "ambassador",
+        status: "active",
+        full_name: parsed.data.fullName
+      })
+      .eq("id", invitedUserId);
+
+    if (userUpdateError) {
+      throw userUpdateError;
+    }
+
+    const { error: generatedProfileDeleteError } = await admin
+      .from("ambassador_profiles")
+      .delete()
+      .eq("id", generatedAmbassadorProfileId);
+
+    if (generatedProfileDeleteError) {
+      throw generatedProfileDeleteError;
+    }
+
+    const { data: connectedProfile, error: connectError } = await admin
+      .from("ambassador_profiles")
+      .update({
+        user_id: invitedUserId,
+        display_name: parsed.data.fullName,
+        contact_email: parsed.data.email,
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approved_by: actor.id
+      })
+      .eq("id", ambassador.id)
+      .is("user_id", null)
+      .select("id")
+      .maybeSingle();
+
+    if (connectError || !connectedProfile) {
+      throw connectError ?? new Error("The existing volunteer profile could not be connected.");
+    }
+  } catch {
+    connectionFailed = true;
+
+    if (invitedUserId) {
+      const { data: targetAfterFailure } = await admin
+        .from("ambassador_profiles")
+        .select("user_id")
+        .eq("id", ambassador.id)
+        .maybeSingle();
+
+      // A transport error can occur after the final database update commits.
+      // Never delete the auth user in that case: the FK cascade would also
+      // remove the operational volunteer record we just connected.
+      if (targetAfterFailure?.user_id === invitedUserId) {
+        connectionFailed = false;
+      } else {
+        if (generatedAmbassadorProfileId) {
+          await resolveAmbassadorApplicationNotifications(generatedAmbassadorProfileId);
+        }
+        await admin.auth.admin.deleteUser(invitedUserId);
+      }
+    }
+  }
+
+  if (connectionFailed) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-connect-failed"));
+  }
+
+  if (generatedAmbassadorProfileId) {
+    await resolveAmbassadorApplicationNotifications(generatedAmbassadorProfileId);
+  }
+  await logAuditEvent(
+    actor.id,
+    "ambassador.portal_connected",
+    "ambassador_profile",
+    ambassador.id as string
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/ambassador");
+  redirect(appendSearchParam(parsed.data.returnTo, "connected", "platform"));
+}
+
+export async function deleteAmbassadorRecordAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/ambassadors"),
+    "/staff/ambassadors"
+  );
+  const parsed = ambassadorDeleteSchema.safeParse({
+    ambassadorProfileId: String(formData.get("ambassadorProfileId") || ""),
+    confirmationText: String(formData.get("confirmationText") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-ambassador-delete"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassador } = await admin
+    .from("ambassador_profiles")
+    .select("id, user_id, status, display_name")
+    .eq("id", parsed.data.ambassadorProfileId)
+    .maybeSingle();
+
+  if (!ambassador) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const [sessions, sourcedBookings, reports, payments] = await Promise.all([
+    admin
+      .from("booking_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("assigned_ambassador_id", ambassador.id),
+    admin
+      .from("booking_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("ambassador_outreach_by", ambassador.id),
+    admin
+      .from("ambassador_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("ambassador_profile_id", ambassador.id),
+    admin
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("ambassador_profile_id", ambassador.id)
+  ]);
+  const hasOperationalHistory = [sessions, sourcedBookings, reports, payments].some(
+    (result) => (result.count ?? 0) > 0
+  );
+  const recordType = ["applied", "declined"].includes(String(ambassador.status))
+    ? "application"
+    : "volunteer";
+
+  try {
+    if (hasOperationalHistory) {
+      const { error: archiveError } = await admin
+        .from("ambassador_profiles")
+        .update({
+          status: "inactive",
+          deleted_at: new Date().toISOString()
+        })
+        .eq("id", ambassador.id);
+
+      if (archiveError) {
+        throw archiveError;
+      }
+
+      if (ambassador.user_id) {
+        await admin
+          .from("profiles")
+          .update({ status: "inactive" })
+          .eq("id", ambassador.user_id);
+
+        // Archived ambassadors lose platform access immediately — revoke the
+        // user's live sessions rather than waiting for their token to expire.
+        // Profiles without a linked auth user (nullable since migration 0026)
+        // have no sessions to revoke.
+        const accessError = await setUserPlatformAccess(
+          ambassador.user_id as string,
+          false
+        );
+
+        if (accessError) {
+          throw accessError;
+        }
+      }
+    } else if (ambassador.user_id) {
+      await clearNullableProfileReferences(ambassador.user_id as string);
+      const { error: userDeleteError } = await admin.auth.admin.deleteUser(
+        ambassador.user_id as string
+      );
+
+      if (userDeleteError) {
+        throw userDeleteError;
+      }
+    } else {
+      const { error: profileDeleteError } = await admin
+        .from("ambassador_profiles")
+        .delete()
+        .eq("id", ambassador.id);
+
+      if (profileDeleteError) {
+        throw profileDeleteError;
+      }
+    }
+  } catch {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-delete-failed"));
+  }
+
+  await resolveAmbassadorApplicationNotifications(ambassador.id as string);
+  await logAuditEvent(
+    actor.id,
+    hasOperationalHistory ? "ambassador.archived" : "ambassador.deleted",
+    "ambassador_profile",
+    ambassador.id as string
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/ambassador");
+  redirect(
+    appendSearchParam(
+      parsed.data.returnTo,
+      "deleted",
+      hasOperationalHistory ? `${recordType}-history-preserved` : recordType
+    )
+  );
 }
 
 export async function markNotificationReadAction(formData: FormData) {
@@ -1343,15 +1820,20 @@ export async function saveManualBookingAction(formData: FormData) {
 
   const startsAt = new Date(nzDateTimeToIso(parsed.data.date, parsed.data.startTime));
   const endsAt = new Date(startsAt.getTime() + parsed.data.durationMinutes * 60 * 1000);
-  const reportStatus = parsed.data.status === "report_submitted" ? "submitted" : "not_submitted";
-  const paymentStatus = parsed.data.status === "report_submitted" ? "eligible" : "not_eligible";
+  // Manual entries never carry an actual ambassador_reports row, so a session
+  // must not be persisted as "report submitted" — that would exclude it from
+  // the feedback-logging queue and block the ambassador from ever submitting
+  // the real report. Map that choice to completed_pending_report so the
+  // session enters the normal report flow instead.
+  const effectiveStatus =
+    parsed.data.status === "report_submitted" ? "completed_pending_report" : parsed.data.status;
 
   const { data: booking, error: bookingError } = await admin
     .from("booking_requests")
     .insert({
       school_id: school.id,
       region_id: school.region_id ?? null,
-      status: parsed.data.status,
+      status: effectiveStatus,
       source: parsed.data.outreachAmbassadorId ? "ambassador" : "staff",
       ambassador_outreach_by: parsed.data.outreachAmbassadorId || null,
       staff_owner_id: actor.id,
@@ -1373,15 +1855,15 @@ export async function saveManualBookingAction(formData: FormData) {
       school_id: school.id,
       assigned_ambassador_id: parsed.data.assignedAmbassadorId || null,
       share_contact_with_ambassador: Boolean(parsed.data.assignedAmbassadorId),
-      status: parsed.data.status,
+      status: effectiveStatus,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
       year_levels: parsed.data.yearLevels,
       expected_student_count: parsed.data.expectedStudentCount,
       actual_student_count: parsed.data.actualStudentCount ?? null,
       internal_notes: parsed.data.internalNotes || null,
-      report_status: reportStatus,
-      payment_status: paymentStatus
+      report_status: "not_submitted",
+      payment_status: "not_eligible"
     })
     .select("id")
     .single();
@@ -1393,7 +1875,7 @@ export async function saveManualBookingAction(formData: FormData) {
   await admin.from("booking_status_history").insert({
     booking_request_id: booking.id,
     booking_session_id: session.id,
-    new_status: parsed.data.status,
+    new_status: effectiveStatus,
     changed_by: actor.id,
     reason: "Manual staff entry"
   });
@@ -1421,6 +1903,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     yearLevels: String(formData.get("yearLevels") || ""),
     expectedStudentCount: formData.get("expectedStudentCount") || 0,
     internalNotes: String(formData.get("internalNotes") || "") || undefined,
+    schoolSource: String(formData.get("schoolSource") || ""),
     confirmBooking: formData.get("confirmBooking") === "on",
     returnTo: fallbackReturnTo
   });
@@ -1474,6 +1957,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
 
   const endsAt = new Date(startsAt.getTime() + parsed.data.durationMinutes * 60 * 1000);
   const status = parsed.data.confirmBooking ? "confirmed" : "ambassador_assigned";
+  const wasSourcedByAmbassador = parsed.data.schoolSource === "sourced";
   const { data: booking, error: bookingError } = await admin
     .from("booking_requests")
     .insert({
@@ -1481,9 +1965,9 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
       primary_contact_id: primaryContact?.id ?? null,
       region_id: school.region_id ?? null,
       status,
-      source: AMBASSADOR_BOOKING_SOURCE,
+      source: wasSourcedByAmbassador ? AMBASSADOR_BOOKING_SOURCE : "ambassador",
       submitted_by_user_id: actor.id,
-      ambassador_outreach_by: ambassadorProfile.id,
+      ambassador_outreach_by: wasSourcedByAmbassador ? ambassadorProfile.id : null,
       internal_notes: parsed.data.internalNotes || null
     })
     .select("id")
@@ -1534,17 +2018,24 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
       actor_id: actor.id,
       actor_type: "ambassador",
       details: {
-        source: AMBASSADOR_BOOKING_SOURCE,
+        source: wasSourcedByAmbassador ? AMBASSADOR_BOOKING_SOURCE : "ambassador",
+        sourced_by_ambassador: wasSourcedByAmbassador,
         status,
         ambassador_profile_id: ambassadorProfile.id,
-        payment_amount_cents: AMBASSADOR_BOOKED_PAYMENT_CENTS
+        delivery_payment_cents: AMBASSADOR_DELIVERY_PAYMENT_CENTS,
+        sourcing_bonus_cents: wasSourcedByAmbassador
+          ? AMBASSADOR_SOURCING_BONUS_CENTS
+          : 0,
+        payment_amount_cents: wasSourcedByAmbassador
+          ? AMBASSADOR_BOOKED_PAYMENT_CENTS
+          : AMBASSADOR_DELIVERY_PAYMENT_CENTS
       }
     })
   ]);
 
   void notifyStaff({
     title: `${actor.fullName} logged an ambassador booking`,
-    body: `${presentation.title as string} at ${school.name as string} on ${formatDateTime(startsAt)}${parsed.data.confirmBooking ? " (confirmed)" : ""}.`,
+    body: `${presentation.title as string} at ${school.name as string} on ${formatDateTime(startsAt)}${wasSourcedByAmbassador ? " · school sourced by ambassador" : ""}${parsed.data.confirmBooking ? " (confirmed)" : ""}.`,
     type: "ambassador_booking_created",
     relatedUrl: `/staff/bookings?booking=${booking.id}`
   }).catch(() => {});
@@ -1567,7 +2058,6 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     bookingSessionId: String(formData.get("bookingSessionId") || ""),
     presenterName: String(formData.get("presenterName") || ""),
     schoolName: String(formData.get("schoolName") || ""),
-    schoolRollSize: String(formData.get("schoolRollSize") || "") || undefined,
     primaryContactName: String(formData.get("primaryContactName") || ""),
     primaryContactEmail: String(formData.get("primaryContactEmail") || ""),
     regionLocation: String(formData.get("regionLocation") || "") || undefined,
@@ -1593,7 +2083,24 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-report"));
   }
 
-  const deliveredAt = new Date(`${parsed.data.deliveredDate}T${parsed.data.deliveredTime}:00`);
+  const mediaFiles = formData
+    .getAll("mediaFiles")
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+
+  if (mediaFiles.length > 15 || mediaFiles.some((file) => file.size > 5 * 1024 * 1024)) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "report-media-invalid"));
+  }
+
+  // The form supplies NZ wall-clock values; interpret them in Pacific/Auckland
+  // (like the staff feedback path) rather than the server's zone, which is UTC
+  // on Vercel and would skew delivered_at by ~12-13 hours.
+  let deliveredAtIso: string | null = null;
+
+  try {
+    deliveredAtIso = nzDateTimeToIso(parsed.data.deliveredDate, parsed.data.deliveredTime);
+  } catch {
+    deliveredAtIso = null;
+  }
 
   const admin = getAdminClientOrThrow();
   const { data: ambassadorProfile } = await admin
@@ -1608,7 +2115,7 @@ export async function submitAmbassadorReportAction(formData: FormData) {
 
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, assigned_ambassador_id, starts_at, school_id")
+    .select("id, booking_request_id, assigned_ambassador_id, starts_at, ends_at, school_id, status, report_status")
     .eq("id", parsed.data.bookingSessionId)
     .maybeSingle();
 
@@ -1616,11 +2123,21 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assigned"));
   }
 
-  if (session.starts_at && new Date(session.starts_at as string).getTime() > Date.now()) {
+  if (
+    !session.ends_at ||
+    new Date(session.ends_at as string).getTime() > Date.now() ||
+    session.status === "cancelled" ||
+    session.report_status !== "not_submitted"
+  ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
   }
 
-  const [{ data: existingReport }, { data: bookingRequest }] = await Promise.all([
+  const [
+    { data: existingReport },
+    { data: bookingRequest },
+    { data: schoolRecord },
+    { data: schoolContact }
+  ] = await Promise.all([
     admin
       .from("ambassador_reports")
       .select("id")
@@ -1628,8 +2145,20 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       .maybeSingle(),
     admin
       .from("booking_requests")
-      .select("source")
+      .select("source, ambassador_outreach_by")
       .eq("id", session.booking_request_id)
+      .maybeSingle(),
+    admin
+      .from("schools")
+      .select("name, roll_size, address, suburb, city, postcode")
+      .eq("id", session.school_id)
+      .maybeSingle(),
+    admin
+      .from("school_contacts")
+      .select("full_name, email")
+      .eq("school_id", session.school_id)
+      .order("is_primary", { ascending: false })
+      .limit(1)
       .maybeSingle()
   ]);
 
@@ -1637,18 +2166,33 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "report-already-submitted"));
   }
 
+  const canonicalSchoolName = String(schoolRecord?.name ?? parsed.data.schoolName ?? "School");
+  const canonicalContactName = String(
+    schoolContact?.full_name ?? parsed.data.primaryContactName ?? ""
+  );
+  const canonicalContactEmail = String(
+    schoolContact?.email ?? parsed.data.primaryContactEmail ?? ""
+  );
+  const canonicalLocation = [
+    schoolRecord?.address,
+    schoolRecord?.suburb,
+    schoolRecord?.city,
+    schoolRecord?.postcode
+  ]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
   const { data: report, error: reportError } = await admin
     .from("ambassador_reports")
     .insert({
       booking_session_id: parsed.data.bookingSessionId,
       ambassador_profile_id: ambassadorProfile.id,
       presenter_name: parsed.data.presenterName,
-      school_roll_size: parsed.data.schoolRollSize ?? null,
-      primary_contact_name: parsed.data.primaryContactName,
-      primary_contact_email: parsed.data.primaryContactEmail,
-      delivered_at: Number.isNaN(deliveredAt.getTime())
-        ? (session.starts_at ?? new Date().toISOString())
-        : deliveredAt.toISOString(),
+      school_roll_size: schoolRecord?.roll_size ?? null,
+      primary_contact_name: canonicalContactName || null,
+      primary_contact_email: canonicalContactEmail || null,
+      delivered_at: deliveredAtIso ?? session.starts_at ?? new Date().toISOString(),
       students_competed_in_esports: parsed.data.studentsCompeted === "yes",
       attendee_count: parsed.data.attendeeCount,
       year_levels: parsed.data.ageGroups,
@@ -1663,10 +2207,10 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       student_questions_themes: parsed.data.notableQuestions || null,
       additional_notes: [
         parsed.data.additionalNotes?.trim(),
-        parsed.data.regionLocation?.trim()
-          ? `Region / location: ${parsed.data.regionLocation.trim()}`
+        canonicalLocation || parsed.data.regionLocation?.trim()
+          ? `Region / location: ${canonicalLocation || parsed.data.regionLocation?.trim()}`
           : "",
-        parsed.data.schoolName.trim() ? `School (as entered): ${parsed.data.schoolName.trim()}` : ""
+        canonicalSchoolName ? `School: ${canonicalSchoolName}` : ""
       ]
         .filter(Boolean)
         .join("\n") || null,
@@ -1681,16 +2225,17 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   }
 
   // Presentation photos/videos and signed media release forms go into the
-  // media library, linked to this report for staff review.
-  const mediaFiles = formData
-    .getAll("mediaFiles")
-    .filter((entry): entry is File => entry instanceof File && entry.size > 0)
-    .slice(0, 6);
-
+  // media library, linked to this report for staff review. They can contain
+  // identifiable students, so they upload to the private `report-media`
+  // bucket and only surface through the auth-gated
+  // /portal/report-media/[mediaId] route (stored as the row's public_url so
+  // existing consumers keep a renderable link).
   for (const file of mediaFiles) {
     try {
-      const upload = await uploadPublicAsset(file, "report-media");
+      const upload = await uploadPrivateReportMedia(file, "report-media");
+      const mediaId = randomUUID();
       await admin.from("media_library").insert({
+        id: mediaId,
         title: file.name,
         media_type: file.type.startsWith("video/")
           ? "video"
@@ -1698,7 +2243,7 @@ export async function submitAmbassadorReportAction(formData: FormData) {
             ? "document"
             : "image",
         storage_path: upload.storagePath,
-        public_url: upload.publicUrl,
+        public_url: `/portal/report-media/${mediaId}`,
         uploaded_by: actor.id,
         school_id: session.school_id ?? null,
         booking_session_id: parsed.data.bookingSessionId,
@@ -1712,10 +2257,12 @@ export async function submitAmbassadorReportAction(formData: FormData) {
 
   const eligibleThreshold = 100;
   const isPaymentEligible = parsed.data.attendeeCount >= eligibleThreshold;
-  const isAmbassadorBooked = bookingRequest?.source === AMBASSADOR_BOOKING_SOURCE;
+  const isAmbassadorSourced =
+    bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
+    ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
   const paymentStatus = isPaymentEligible ? "eligible" : "not_eligible";
   const eligibilityReason = isPaymentEligible
-    ? `Attendee count ${parsed.data.attendeeCount} meets threshold of ${eligibleThreshold}.${isAmbassadorBooked ? ` Ambassador-booked session rate: ${formatCurrency(AMBASSADOR_BOOKED_PAYMENT_CENTS)}.` : ""}`
+    ? `Attendee count ${parsed.data.attendeeCount} meets threshold of ${eligibleThreshold}.${isAmbassadorSourced ? ` ${formatCurrency(AMBASSADOR_DELIVERY_PAYMENT_CENTS)} delivery fee + ${formatCurrency(AMBASSADOR_SOURCING_BONUS_CENTS)} sourcing bonus.` : ""}`
     : `Attendee count ${parsed.data.attendeeCount} below threshold of ${eligibleThreshold}.`;
 
   await admin
@@ -1734,7 +2281,11 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       ambassador_profile_id: ambassadorProfile.id,
       status: "pending",
       eligibility_reason: eligibilityReason,
-      ...(isAmbassadorBooked ? { amount_cents: AMBASSADOR_BOOKED_PAYMENT_CENTS } : {})
+      amount_cents: isAmbassadorSourced
+        ? AMBASSADOR_BOOKED_PAYMENT_CENTS
+        : AMBASSADOR_DELIVERY_PAYMENT_CENTS,
+      base_amount_cents: AMBASSADOR_DELIVERY_PAYMENT_CENTS,
+      sourcing_bonus_cents: isAmbassadorSourced ? AMBASSADOR_SOURCING_BONUS_CENTS : 0
     });
   }
 
@@ -1752,7 +2303,11 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     actor_type: "ambassador",
     details: {
       attendee_count: parsed.data.attendeeCount,
-      payment_status: paymentStatus
+      payment_status: paymentStatus,
+      sourced_by_ambassador: isAmbassadorSourced,
+      delivery_payment_cents: isPaymentEligible ? AMBASSADOR_DELIVERY_PAYMENT_CENTS : 0,
+      sourcing_bonus_cents:
+        isPaymentEligible && isAmbassadorSourced ? AMBASSADOR_SOURCING_BONUS_CENTS : 0
     }
   });
 
@@ -1771,6 +2326,351 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(appendSearchParam(parsed.data.returnTo, "submitted", "report"));
+}
+
+export async function logStaffFeedbackAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/feedback"),
+    "/staff/feedback"
+  );
+  const parsed = staffFeedbackSubmitSchema.safeParse({
+    sessionMode: String(formData.get("sessionMode") || "existing"),
+    bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    manualSchoolName: String(formData.get("manualSchoolName") || "") || undefined,
+    manualPresentationTypeId:
+      String(formData.get("manualPresentationTypeId") || "") || undefined,
+    presenterName: String(formData.get("presenterName") || ""),
+    schoolRollSize: String(formData.get("schoolRollSize") || "") || undefined,
+    primaryContactName: String(formData.get("primaryContactName") || "") || undefined,
+    primaryContactEmail: String(formData.get("primaryContactEmail") || ""),
+    deliveredDate: String(formData.get("deliveredDate") || ""),
+    deliveredTime: String(formData.get("deliveredTime") || ""),
+    studentsCompeted: String(formData.get("studentsCompeted") || ""),
+    attendeeCount: formData.get("attendeeCount"),
+    ageGroups: String(formData.get("ageGroups") || ""),
+    parentsPresent: String(formData.get("parentsPresent") || ""),
+    attendeeQuotes: String(formData.get("attendeeQuotes") || "") || undefined,
+    attendanceRating: formData.get("attendanceRating"),
+    studentEngagementRating: formData.get("studentEngagementRating"),
+    teacherResponseRating: formData.get("teacherResponseRating"),
+    presentationEnergyRating: formData.get("presentationEnergyRating"),
+    presentationFeedback: String(formData.get("presentationFeedback") || ""),
+    notableQuestions: String(formData.get("notableQuestions") || "") || undefined,
+    additionalNotes: String(formData.get("additionalNotes") || "") || undefined,
+    mediaConsentObtained: formData.get("mediaConsentObtained") === "on",
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-staff-feedback"));
+  }
+
+  const mediaFiles = formData
+    .getAll("mediaFiles")
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+
+  if (mediaFiles.length > 15 || mediaFiles.some((file) => file.size > 5 * 1024 * 1024)) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-staff-feedback"));
+  }
+
+  let deliveredAt: string;
+
+  try {
+    deliveredAt = nzDateTimeToIso(parsed.data.deliveredDate, parsed.data.deliveredTime);
+  } catch {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-delivery-time"));
+  }
+
+  if (new Date(deliveredAt).getTime() > Date.now()) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  type FeedbackSessionRow = {
+    id: string;
+    booking_request_id: string | null;
+    status: string | null;
+    starts_at: string | null;
+    school_id: string | null;
+  };
+  let session: FeedbackSessionRow | null = null;
+  let existingReport: { id: string } | null = null;
+  let createdManualBookingId: string | null = null;
+
+  if (parsed.data.sessionMode === "existing") {
+    const [sessionResult, reportResult] = await Promise.all([
+      admin
+        .from("booking_sessions")
+        .select("id, booking_request_id, status, starts_at, school_id")
+        .eq("id", parsed.data.bookingSessionId as string)
+        .maybeSingle(),
+      admin
+        .from("ambassador_reports")
+        .select("id")
+        .eq("booking_session_id", parsed.data.bookingSessionId as string)
+        .maybeSingle()
+    ]);
+
+    session = sessionResult.data as FeedbackSessionRow | null;
+    existingReport = reportResult.data as { id: string } | null;
+  } else {
+    const [{ data: presentation }, { data: schools }] = await Promise.all([
+      admin
+        .from("presentation_types")
+        .select("id, duration_minutes")
+        .eq("id", parsed.data.manualPresentationTypeId as string)
+        .maybeSingle(),
+      admin.from("schools").select("id, name, region_id").limit(2000)
+    ]);
+
+    if (!presentation) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "presentation-not-found"));
+    }
+
+    const normalizedSchoolName = parsed.data.manualSchoolName?.trim().toLocaleLowerCase();
+    let school = (schools ?? []).find(
+      (candidate) =>
+        String(candidate.name).trim().toLocaleLowerCase() === normalizedSchoolName
+    );
+    let createdNewSchool = false;
+
+    if (!school) {
+      const { data: createdSchool, error: schoolError } = await admin
+        .from("schools")
+        .insert({
+          name: parsed.data.manualSchoolName,
+          roll_size: parsed.data.schoolRollSize ?? null,
+          status: "active",
+          notes: "Created from a manually logged presentation session."
+        })
+        .select("id, name, region_id")
+        .single();
+
+      if (schoolError || !createdSchool) {
+        redirect(appendSearchParam(parsed.data.returnTo, "error", "school-save-failed"));
+      }
+
+      school = createdSchool;
+      createdNewSchool = true;
+    }
+
+    let primaryContactId: string | null = null;
+    if (parsed.data.primaryContactName && parsed.data.primaryContactEmail) {
+      const { data: existingContact } = await admin
+        .from("school_contacts")
+        .select("id")
+        .eq("school_id", school.id)
+        .ilike("email", parsed.data.primaryContactEmail)
+        .maybeSingle();
+      const { data: contact } = existingContact
+        ? { data: existingContact }
+        : await admin
+        .from("school_contacts")
+        .insert({
+          school_id: school.id,
+          full_name: parsed.data.primaryContactName,
+          email: parsed.data.primaryContactEmail,
+          is_primary: createdNewSchool
+        })
+        .select("id")
+        .single();
+      primaryContactId = (contact?.id as string | undefined) ?? null;
+    }
+
+    const { data: booking, error: bookingError } = await admin
+      .from("booking_requests")
+      .insert({
+        school_id: school.id,
+        primary_contact_id: primaryContactId,
+        region_id: school.region_id ?? null,
+        status: "closed",
+        source: "staff",
+        submitted_by_user_id: actor.id,
+        staff_owner_id: actor.id,
+        internal_notes: "Manual session created while logging feedback."
+      })
+      .select("id")
+      .single();
+
+    if (bookingError || !booking) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-save-failed"));
+    }
+
+    createdManualBookingId = booking.id as string;
+    const startsAt = new Date(deliveredAt);
+    const endsAt = new Date(
+      startsAt.getTime() + Number(presentation.duration_minutes ?? 60) * 60_000
+    );
+    const { data: createdSession, error: sessionError } = await admin
+      .from("booking_sessions")
+      .insert({
+        booking_request_id: booking.id,
+        presentation_type_id: presentation.id,
+        region_id: school.region_id ?? null,
+        school_id: school.id,
+        status: "closed",
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        year_levels: parsed.data.ageGroups,
+        expected_student_count: parsed.data.attendeeCount,
+        actual_student_count: parsed.data.attendeeCount,
+        report_status: "reviewed",
+        payment_status: "not_eligible"
+      })
+      .select("id, booking_request_id, status, starts_at, school_id")
+      .single();
+
+    if (sessionError || !createdSession) {
+      await admin.from("booking_requests").delete().eq("id", booking.id);
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-session-save-failed"));
+    }
+
+    session = createdSession as FeedbackSessionRow;
+  }
+
+  if (!session) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+  }
+
+  if (existingReport) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-already-submitted"));
+  }
+
+  if (session.starts_at && new Date(session.starts_at as string).getTime() > Date.now()) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
+  }
+
+  const { data: siblingSessions } = session.booking_request_id
+    ? await admin
+        .from("booking_sessions")
+        .select("id, status")
+        .eq("booking_request_id", session.booking_request_id)
+    : { data: [] };
+  const terminalSessionStatuses = new Set([
+    "report_submitted",
+    "payment_pending",
+    "paid",
+    "closed",
+    "cancelled",
+    "declined"
+  ]);
+  const closesWholeBooking = (siblingSessions ?? []).every(
+    (sibling) =>
+      sibling.id === session.id ||
+      terminalSessionStatuses.has(String(sibling.status))
+  );
+
+  const submittedAt = new Date().toISOString();
+  const { data: report, error: reportError } = await admin
+    .from("ambassador_reports")
+    .insert({
+      booking_session_id: session.id,
+      ambassador_profile_id: null,
+      presenter_name: parsed.data.presenterName,
+      school_roll_size: parsed.data.schoolRollSize ?? null,
+      primary_contact_name: parsed.data.primaryContactName || null,
+      primary_contact_email: parsed.data.primaryContactEmail || null,
+      delivered_at: deliveredAt,
+      students_competed_in_esports: parsed.data.studentsCompeted === "yes",
+      attendee_count: parsed.data.attendeeCount,
+      year_levels: parsed.data.ageGroups,
+      age_groups: parsed.data.ageGroups,
+      parents_present: parsed.data.parentsPresent === "yes",
+      media_consent_confirmed: parsed.data.mediaConsentObtained ?? false,
+      attendee_quotes: parsed.data.attendeeQuotes || null,
+      attendance_rating: parsed.data.attendanceRating,
+      student_response_rating: parsed.data.studentEngagementRating,
+      teacher_response_rating: parsed.data.teacherResponseRating,
+      presentation_energy_rating: parsed.data.presentationEnergyRating,
+      presentation_feedback: parsed.data.presentationFeedback,
+      student_questions_themes: parsed.data.notableQuestions || null,
+      additional_notes: parsed.data.additionalNotes || null,
+      submitted_at: submittedAt,
+      reviewed_for_payment_at: submittedAt,
+      reviewed_for_payment_by: actor.id
+    })
+    .select("id")
+    .single();
+
+  if (reportError || !report) {
+    if (createdManualBookingId) {
+      await admin.from("booking_requests").delete().eq("id", createdManualBookingId);
+    }
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
+  }
+
+  for (const file of mediaFiles) {
+    try {
+      // Private bucket + auth-gated route: see submitAmbassadorReportAction.
+      const upload = await uploadPrivateReportMedia(file, "report-media");
+      const mediaId = randomUUID();
+      await admin.from("media_library").insert({
+        id: mediaId,
+        title: file.name,
+        media_type: file.type.startsWith("video/")
+          ? "video"
+          : file.type === "application/pdf"
+            ? "document"
+            : "image",
+        storage_path: upload.storagePath,
+        public_url: `/portal/report-media/${mediaId}`,
+        uploaded_by: actor.id,
+        school_id: session.school_id ?? null,
+        booking_session_id: session.id,
+        report_id: report.id,
+        consent_status: parsed.data.mediaConsentObtained
+          ? "consent_confirmed"
+          : "needs_consent_check"
+      });
+    } catch {
+      // Keep the feedback report even if an individual media upload fails.
+    }
+  }
+
+  await Promise.all([
+    admin
+      .from("booking_sessions")
+      .update({
+        report_status: "reviewed",
+        payment_status: "not_eligible",
+        actual_student_count: parsed.data.attendeeCount,
+        status: "closed"
+      })
+      .eq("id", session.id),
+    session.booking_request_id && closesWholeBooking
+      ? admin
+          .from("booking_requests")
+          .update({ status: "closed" })
+          .eq("id", session.booking_request_id)
+      : Promise.resolve(),
+    admin.from("booking_status_history").insert({
+      booking_request_id: session.booking_request_id ?? null,
+      booking_session_id: session.id,
+      old_status: session.status ?? null,
+      new_status: "closed",
+      changed_by: actor.id,
+      reason: "Feedback logged by staff"
+    }),
+    admin.from("booking_activity_logs").insert({
+      booking_request_id: session.booking_request_id ?? null,
+      booking_session_id: session.id,
+      action: "report.logged_by_staff",
+      actor_id: actor.id,
+      actor_type: actor.role,
+      details: {
+        presenter_name: parsed.data.presenterName,
+        attendee_count: parsed.data.attendeeCount,
+        payment_status: "not_eligible"
+      }
+    })
+  ]);
+
+  await logAuditEvent(actor.id, "report.logged_by_staff", "ambassador_report", report.id);
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/school");
+  redirect(appendSearchParam(parsed.data.returnTo, "logged", "feedback"));
 }
 
 export async function applyToSessionAction(formData: FormData) {
@@ -2237,7 +3137,7 @@ export async function submitSchoolReviewAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("id, school_id, presentation_type_id")
+    .select("id, booking_request_id, school_id, presentation_type_id, status, ends_at")
     .eq("id", parsed.data.bookingSessionId)
     .maybeSingle();
 
@@ -2245,17 +3145,50 @@ export async function submitSchoolReviewAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
   }
 
-  const { data: contactUsers } = await admin
-    .from("school_contact_users")
-    .select("school_contact_id")
-    .eq("user_id", actor.id);
+  // Feedback only opens once the session has genuinely been delivered: its
+  // time has passed (mirroring submitPublicFeedbackAction) AND it reached a
+  // delivered-capable status — never for declined/cancelled or still-pending
+  // sessions whose date merely elapsed.
+  const deliveredCapableStatuses = new Set([
+    "confirmed",
+    "ambassador_assigned",
+    "completed_pending_report",
+    "report_submitted",
+    "payment_pending",
+    "paid",
+    "closed"
+  ]);
+
+  if (
+    !session.ends_at ||
+    new Date(session.ends_at as string).getTime() > Date.now() ||
+    !deliveredCapableStatuses.has(String(session.status))
+  ) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-delivered"));
+  }
+
+  const [{ data: contactUsers }, { data: bookingRequest }] = await Promise.all([
+    admin.from("school_contact_users").select("school_contact_id").eq("user_id", actor.id),
+    session.booking_request_id
+      ? admin
+          .from("booking_requests")
+          .select("submitted_by_user_id")
+          .eq("id", session.booking_request_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
   const contactIds = (contactUsers ?? []).map((contact) => contact.school_contact_id as string);
   const { data: contacts } = contactIds.length
     ? await admin.from("school_contacts").select("school_id").in("id", contactIds)
     : { data: [] };
   const schoolIds = new Set((contacts ?? []).map((contact) => contact.school_id as string));
 
-  if (!schoolIds.has(session.school_id as string)) {
+  // Ownership mirrors the school-portal visibility predicate: a booking is
+  // theirs when it belongs to one of their schools OR they submitted it.
+  if (
+    !schoolIds.has(session.school_id as string) &&
+    bookingRequest?.submitted_by_user_id !== actor.id
+  ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-owned"));
   }
 
@@ -2280,7 +3213,10 @@ export async function submitSchoolReviewAction(formData: FormData) {
     title: "New school review",
     body: `${actor.fullName} submitted feedback for a completed session.`,
     type: "school_review_submitted",
-    relatedUrl: "/admin/feedback"
+    // Staff paths are canonical for notification links: staff users land on
+    // them directly, and the notifications bell rewrites them to /admin for
+    // super_admins.
+    relatedUrl: "/staff/feedback"
   }).catch(() => {});
 
   await logAuditEvent(actor.id, "review.submitted", "presentation_review", review.id);
@@ -2308,7 +3244,7 @@ export async function submitPublicFeedbackAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("id, school_id, presentation_type_id, ends_at")
+    .select("id, school_id, presentation_type_id, ends_at, status")
     .eq("id", parsed.data.bookingSessionId)
     .maybeSingle();
 
@@ -2316,8 +3252,21 @@ export async function submitPublicFeedbackAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
   }
 
-  // Feedback only opens once the session time has passed.
-  if (new Date(session.ends_at as string).getTime() > Date.now()) {
+  const feedbackEligibleStatuses = new Set([
+    "confirmed",
+    "ambassador_assigned",
+    "completed_pending_report",
+    "report_submitted",
+    "payment_pending",
+    "paid",
+    "closed"
+  ]);
+
+  // Public links only open after sessions that genuinely went ahead.
+  if (
+    new Date(session.ends_at as string).getTime() > Date.now() ||
+    !feedbackEligibleStatuses.has(String(session.status))
+  ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-delivered"));
   }
 
@@ -2342,7 +3291,7 @@ export async function submitPublicFeedbackAction(formData: FormData) {
     title: "New school review",
     body: `${parsed.data.attribution} submitted feedback via the public form.`,
     type: "school_review_submitted",
-    relatedUrl: "/admin/feedback"
+    relatedUrl: "/staff/feedback"
   }).catch(() => {});
 
   revalidatePath("/staff");
@@ -2599,7 +3548,7 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: booking } = await admin
     .from("booking_requests")
-    .select("id, reference_code, school_id, primary_contact_id, status")
+    .select("id, reference_code, school_id, primary_contact_id, status, submitted_by_user_id")
     .eq("id", parsed.data.bookingRequestId)
     .maybeSingle();
 
@@ -2617,7 +3566,12 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     : { data: [] };
   const schoolIds = new Set((contacts ?? []).map((contact) => contact.school_id as string));
 
-  if (!schoolIds.has(booking.school_id as string)) {
+  // Ownership mirrors the school-portal visibility predicate: a booking is
+  // theirs when it belongs to one of their schools OR they submitted it.
+  if (
+    !schoolIds.has(booking.school_id as string) &&
+    booking.submitted_by_user_id !== actor.id
+  ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-owned"));
   }
 
@@ -2825,17 +3779,26 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-reschedulable"));
   }
 
-  const { data: contactUsers } = await admin
-    .from("school_contact_users")
-    .select("school_contact_id")
-    .eq("user_id", actor.id);
+  const [{ data: contactUsers }, { data: rescheduleBooking }] = await Promise.all([
+    admin.from("school_contact_users").select("school_contact_id").eq("user_id", actor.id),
+    admin
+      .from("booking_requests")
+      .select("submitted_by_user_id")
+      .eq("id", parsed.data.bookingRequestId)
+      .maybeSingle()
+  ]);
   const contactIds = (contactUsers ?? []).map((contact) => contact.school_contact_id as string);
   const { data: contacts } = contactIds.length
     ? await admin.from("school_contacts").select("school_id").in("id", contactIds)
     : { data: [] };
   const schoolIds = new Set((contacts ?? []).map((contact) => contact.school_id as string));
 
-  if (!schoolIds.has(session.school_id as string)) {
+  // Ownership mirrors the school-portal visibility predicate: a booking is
+  // theirs when it belongs to one of their schools OR they submitted it.
+  if (
+    !schoolIds.has(session.school_id as string) &&
+    rescheduleBooking?.submitted_by_user_id !== actor.id
+  ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-owned"));
   }
 
@@ -3822,6 +4785,113 @@ export async function updateBookingStatusAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "updated", "status"));
 }
 
+export async function bulkUpdateBookingStatusAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/bookings"),
+    "/staff/bookings"
+  );
+  const parsed = bulkUpdateBookingStatusSchema.safeParse({
+    bookingRequestIds: formData
+      .getAll("bookingRequestId")
+      .map((value) => String(value))
+      .filter(Boolean),
+    status: String(formData.get("status") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-bulk-status"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: existingBookings, error: bookingReadError } = await admin
+    .from("booking_requests")
+    .select("id")
+    .in("id", parsed.data.bookingRequestIds);
+
+  if (bookingReadError || existingBookings.length !== parsed.data.bookingRequestIds.length) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
+  }
+
+  if (parsed.data.status === "closed") {
+    const { data: futureSessions, error: futureSessionError } = await admin
+      .from("booking_sessions")
+      .select("id")
+      .in("booking_request_id", parsed.data.bookingRequestIds)
+      .not("status", "in", "(cancelled,declined)")
+      .gt("ends_at", new Date().toISOString())
+      .limit(1);
+
+    if (futureSessionError || futureSessions.length > 0) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "cannot-complete-future"));
+    }
+  }
+
+  const { error: updateError } = await admin
+    .from("booking_requests")
+    .update({ status: parsed.data.status })
+    .in("id", parsed.data.bookingRequestIds);
+
+  if (updateError) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+  }
+
+  const cascade = SESSION_CASCADE[parsed.data.status];
+
+  if (cascade) {
+    let sessionUpdate = admin
+      .from("booking_sessions")
+      .update({ status: cascade.to })
+      .in("booking_request_id", parsed.data.bookingRequestIds);
+
+    if (cascade.onlyFrom) {
+      sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
+    }
+
+    const { error: cascadeError } = await sessionUpdate;
+
+    if (cascadeError) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+    }
+  }
+
+  const changedAt = new Date().toISOString();
+  const { error: historyError } = await admin.from("booking_status_history").insert(
+    parsed.data.bookingRequestIds.map((bookingRequestId) => ({
+      booking_request_id: bookingRequestId,
+      new_status: parsed.data.status,
+      changed_by: actor.id,
+      reason: `Bulk status update to ${parsed.data.status}`,
+      created_at: changedAt
+    }))
+  );
+  const { error: activityError } = await admin.from("booking_activity_logs").insert(
+    parsed.data.bookingRequestIds.map((bookingRequestId) => ({
+      booking_request_id: bookingRequestId,
+      action: "booking.status_updated",
+      actor_id: actor.id,
+      actor_type: "staff",
+      details: { status: parsed.data.status, bulk: true },
+      created_at: changedAt
+    }))
+  );
+
+  if (historyError || activityError) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+  }
+
+  await Promise.all(
+    parsed.data.bookingRequestIds.map((bookingRequestId) =>
+      logAuditEvent(actor.id, "booking.status_updated", "booking_request", bookingRequestId)
+    )
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/school");
+  redirect(appendSearchParam(parsed.data.returnTo, "updated", "bulk-status"));
+}
+
 export async function removeBookingInternalNoteAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -3888,75 +4958,63 @@ export async function removeBookingInternalNoteAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "removed", "note"));
 }
 
-export async function markTrainingCompleteAction(formData: FormData) {
-  const actor = await requirePortalAccess("ambassador");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/ambassador/training"),
-    "/ambassador/training"
-  );
-  const parsed = trainingCompleteSchema.safeParse({
-    trainingModuleId: String(formData.get("trainingModuleId") || ""),
-    trainingLessonId: String(formData.get("trainingLessonId") || "") || undefined,
-    returnTo: fallbackReturnTo
-  });
-
-  if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-training"));
-  }
-
-  const admin = getAdminClientOrThrow();
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("user_id", actor.id)
-    .maybeSingle();
-
-  if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
-  }
-
-  let existingQuery = admin
-    .from("training_progress")
-    .select("id")
-    .eq("ambassador_profile_id", ambassadorProfile.id)
-    .eq("training_module_id", parsed.data.trainingModuleId);
-
-  existingQuery = parsed.data.trainingLessonId
-    ? existingQuery.eq("training_lesson_id", parsed.data.trainingLessonId)
-    : existingQuery.is("training_lesson_id", null);
-
-  const { data: existing } = await existingQuery.maybeSingle();
-  const payload = {
-    ambassador_profile_id: ambassadorProfile.id,
-    training_module_id: parsed.data.trainingModuleId,
-    training_lesson_id: parsed.data.trainingLessonId || null,
-    status: "completed",
-    completed_at: new Date().toISOString()
-  };
-  const { error } = existing?.id
-    ? await admin.from("training_progress").update(payload).eq("id", existing.id)
-    : await admin.from("training_progress").insert(payload);
-
-  if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "training-save-failed"));
-  }
-
-  await logAuditEvent(actor.id, "training.completed", "training_module", parsed.data.trainingModuleId);
-  revalidatePath("/ambassador");
-  redirect(appendSearchParam(parsed.data.returnTo, "completed", "training"));
-}
-
 export async function saveResourceAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
     String(formData.get("returnTo") || "/staff/resources"),
     "/staff/resources"
   );
+
+  if (formData.get("intent") === "delete") {
+    const resourceId = z.uuid().safeParse(String(formData.get("id") || ""));
+
+    if (!resourceId.success) {
+      redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-resource"));
+    }
+
+    const admin = getAdminClientOrThrow();
+    const { data: resource, error: resourceError } = await admin
+      .from("presentation_resources")
+      .select("storage_path")
+      .eq("id", resourceId.data)
+      .maybeSingle();
+
+    if (resourceError || !resource) {
+      redirect(appendSearchParam(fallbackReturnTo, "error", "resource-delete-failed"));
+    }
+
+    const { error: deleteError } = await admin
+      .from("presentation_resources")
+      .delete()
+      .eq("id", resourceId.data);
+
+    if (deleteError) {
+      redirect(appendSearchParam(fallbackReturnTo, "error", "resource-delete-failed"));
+    }
+
+    if (resource.storage_path) {
+      await deletePrivateResourceFile(resource.storage_path as string);
+    }
+
+    await logAuditEvent(
+      actor.id,
+      "resource.deleted",
+      "presentation_resource",
+      resourceId.data
+    );
+    updateTag(PUBLIC_CONTENT_TAG);
+    revalidatePath("/staff");
+    revalidatePath("/admin");
+    redirect(appendSearchParam(fallbackReturnTo, "deleted", "resource"));
+  }
+
+  const lifecycle = String(formData.get("lifecycle") || "");
   const parsed = resourceSchema.safeParse({
     id: String(formData.get("id") || "") || undefined,
     title: String(formData.get("title") || ""),
     description: String(formData.get("description") || ""),
     audiences: formData.getAll("audiences").map(String),
+    sharingScope: String(formData.get("sharingScope") || "internal"),
     tags: splitCommaList(String(formData.get("tags") || "")),
     resourceType: String(formData.get("resourceType") || ""),
     category: String(formData.get("category") || "resource"),
@@ -3964,13 +5022,33 @@ export async function saveResourceAction(formData: FormData) {
     versionLabel: String(formData.get("versionLabel") || "") || undefined,
     youtubeUrl: String(formData.get("youtubeUrl") || "") || undefined,
     externalUrl: String(formData.get("externalUrl") || "") || undefined,
-    isCurrent: formData.get("isCurrent") === "on",
-    isActive: formData.get("isActive") === "on",
+    isCurrent: lifecycle ? lifecycle !== "archived" : formData.get("isCurrent") === "on",
+    isActive: lifecycle ? lifecycle !== "draft" : formData.get("isActive") === "on",
     returnTo: fallbackReturnTo
   });
 
   if (!parsed.success) {
-    redirect(`${fallbackReturnTo}?error=invalid-resource`);
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-resource"));
+  }
+
+  const normalizedCategory = parsed.data.category;
+  const normalizedAudiences = ["training", "presentation_material"].includes(normalizedCategory)
+    ? parsed.data.audiences.filter(
+        (audience) =>
+          audience !== "public" &&
+          audience !== "staff" &&
+          (parsed.data.sharingScope === "public" || audience !== "school")
+      )
+    : parsed.data.audiences.filter((audience) => audience !== "staff");
+
+  // A resource must keep at least one selectable audience after normalization.
+  // Surface the problem instead of silently defaulting to ambassadors, which
+  // would publish to an audience the editor never chose. (Reuses the generic
+  // invalid-resource code because the error-copy mapping lives in the portal
+  // page files.) Checked before the file upload so a rejected submit does not
+  // orphan an uploaded file.
+  if (normalizedAudiences.length === 0) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-resource"));
   }
 
   const file = formData.get("file");
@@ -3981,7 +5059,7 @@ export async function saveResourceAction(formData: FormData) {
       const upload = await uploadPrivateResourceFile(file);
       storagePath = upload.storagePath;
     } catch {
-      redirect(`${parsed.data.returnTo}?error=resource-upload-failed`);
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "resource-upload-failed"));
     }
   }
 
@@ -3989,10 +5067,11 @@ export async function saveResourceAction(formData: FormData) {
   const payload: Record<string, unknown> = {
     title: parsed.data.title,
     description: parsed.data.description || null,
-    audiences: parsed.data.audiences,
+    audiences: normalizedAudiences,
+    sharing_scope: parsed.data.sharingScope,
     tags: parsed.data.tags,
     resource_type: parsed.data.resourceType,
-    category: parsed.data.category,
+    category: normalizedCategory,
     presentation_type_id: parsed.data.presentationTypeId || null,
     version_label: parsed.data.versionLabel || null,
     youtube_url: parsed.data.youtubeUrl || null,
@@ -4019,18 +5098,25 @@ export async function saveResourceAction(formData: FormData) {
           .single()
       : admin.from("presentation_resources").insert(savePayload).select("id").single();
 
-  let { data, error } = await runSave(payload);
+  const savePayload = { ...payload };
+  let { data, error } = await runSave(savePayload);
 
   // Environments that haven't run migration 0015 yet lack the category
   // column — retry without it rather than failing the whole save.
   if (error?.message?.includes("category")) {
-    const legacyPayload = { ...payload };
-    delete legacyPayload.category;
-    ({ data, error } = await runSave(legacyPayload));
+    delete savePayload.category;
+    ({ data, error } = await runSave(savePayload));
+  }
+
+  // Allow saves to continue in local environments that have not applied the
+  // sharing-scope migration yet. The portal will treat those rows as internal.
+  if (error?.message?.includes("sharing_scope")) {
+    delete savePayload.sharing_scope;
+    ({ data, error } = await runSave(savePayload));
   }
 
   if (error) {
-    redirect(`${parsed.data.returnTo}?error=resource-save-failed`);
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "resource-save-failed"));
   }
 
   const resourceId = parsed.data.id ?? data?.id;
@@ -4048,7 +5134,7 @@ export async function saveResourceAction(formData: FormData) {
     redirect(`${parsed.data.returnTo.replace(/\/new$/, `/${resourceId}`)}?saved=resource`);
   }
 
-  redirect(`${parsed.data.returnTo}?saved=resource`);
+  redirect(appendSearchParam(parsed.data.returnTo, "saved", "resource"));
 }
 
 export async function savePresentationAction(formData: FormData) {
@@ -4071,6 +5157,7 @@ export async function savePresentationAction(formData: FormData) {
     learningOutcomes: String(formData.get("learningOutcomes") || ""),
     requiredEquipment: String(formData.get("requiredEquipment") || ""),
     youtubeUrl: String(formData.get("youtubeUrl") || "").trim(),
+    accentColor: String(formData.get("accentColor") || "#18A83B"),
     isPublic: formData.get("isPublic") === "on",
     isActive: formData.get("isActive") === "on",
     returnTo: fallbackReturnTo
@@ -4108,6 +5195,7 @@ export async function savePresentationAction(formData: FormData) {
       learning_outcomes: parsed.data.learningOutcomes?.trim() || null,
       required_equipment: parsed.data.requiredEquipment?.trim() || null,
       youtube_url: parsed.data.youtubeUrl || null,
+      accent_color: parsed.data.accentColor,
       is_public: intent === "draft" ? false : (parsed.data.isPublic ?? false),
       is_active: intent === "draft" ? false : (parsed.data.isActive ?? false),
       image_url: imageUrl
@@ -4141,6 +5229,8 @@ export async function savePresentationAction(formData: FormData) {
   );
   updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/admin");
+  revalidatePath("/");
+  revalidatePath(`/presentations/${slug}`);
 
   if (!parsed.data.id && presentationId && parsed.data.returnTo.endsWith("/new")) {
     redirect(`${parsed.data.returnTo.replace(/\/new$/, `/${presentationId}`)}?saved=presentation`);
@@ -4333,53 +5423,74 @@ export async function sendTestEmailAction(formData: FormData) {
   );
 }
 
-export async function saveAmbassadorPaymentDetailsAction(formData: FormData) {
-  const actor = await requirePortalAccess("ambassador");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/ambassador/profile"),
-    "/ambassador/profile"
-  );
-  const parsed = ambassadorPaymentDetailsSchema.safeParse({
-    bankAccountNumber: String(formData.get("bankAccountNumber") || ""),
-    gstNumber: String(formData.get("gstNumber") || "") || undefined,
-    returnTo: fallbackReturnTo
-  });
-
-  if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-payment-details"));
-  }
-
+async function sendPaymentApprovalToFinance({
+  paymentId,
+  confirmationToken,
+  financeEmail,
+  actorId
+}: {
+  paymentId: string;
+  confirmationToken: string;
+  financeEmail: string;
+  actorId: string;
+}) {
   const admin = getAdminClientOrThrow();
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("user_id", actor.id)
-    .maybeSingle();
+  const [{ data: payment }, details] = await Promise.all([
+    admin
+      .from("payments")
+      .select("finance_email_attempts")
+      .eq("id", paymentId)
+      .maybeSingle(),
+    loadPaymentDetails(paymentId)
+  ]);
 
-  if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  if (!details) {
+    await admin
+      .from("payments")
+      .update({
+        finance_email_status: "failed",
+        finance_email_error: "Approved payment details could not be loaded.",
+        finance_email_last_attempt_at: new Date().toISOString(),
+        finance_email_attempts: Number(payment?.finance_email_attempts ?? 0) + 1,
+        updated_by: actorId
+      })
+      .eq("id", paymentId);
+    return false;
   }
 
-  const { error } = await admin
-    .from("ambassador_profiles")
+  const emailResult = await sendPaymentApprovalToFinanceEmail({
+    toEmail: financeEmail,
+    invoiceNumber: details.invoiceNumber,
+    ambassadorName: details.ambassadorName,
+    sessionDescription: details.sessionDescription,
+    amountLabel: formatCurrency(details.amountCents, details.currency),
+    bankAccountName: details.bankAccountName,
+    bankAccountNumber: details.bankAccountNumber,
+    gstNumber: details.gstNumber,
+    confirmationToken,
+    bookingSessionId: details.bookingSessionId
+  });
+  const sent = emailResult.status === "sent";
+  const attemptedAt = new Date().toISOString();
+
+  const { error: statusUpdateError } = await admin
+    .from("payments")
     .update({
-      bank_account_number: parsed.data.bankAccountNumber,
-      gst_number: parsed.data.gstNumber || null
+      finance_email_status: sent ? "sent" : "failed",
+      finance_email_attempts: Number(payment?.finance_email_attempts ?? 0) + 1,
+      finance_email_last_attempt_at: attemptedAt,
+      finance_email_error: sent
+        ? null
+        : "error" in emailResult
+          ? emailResult.error
+          : "Brevo email delivery is not configured.",
+      sent_to_finance_at: sent ? attemptedAt : null,
+      sent_to_email: financeEmail,
+      updated_by: actorId
     })
-    .eq("id", ambassadorProfile.id);
+    .eq("id", paymentId);
 
-  if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-details-save-failed"));
-  }
-
-  await logAuditEvent(
-    actor.id,
-    "ambassador.payment_details_updated",
-    "ambassador_profile",
-    ambassadorProfile.id
-  );
-  revalidatePath("/ambassador");
-  redirect(appendSearchParam(parsed.data.returnTo, "saved", "payment-details"));
+  return sent && !statusUpdateError;
 }
 
 export async function markReportReviewedAction(formData: FormData) {
@@ -4395,22 +5506,161 @@ export async function markReportReviewedAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { error } = await admin
+  let financeEmailFailed = false;
+  const { data: report } = await admin
     .from("ambassador_reports")
-    .update({
-      reviewed_for_payment_at: new Date().toISOString(),
-      reviewed_for_payment_by: actor.id
-    })
-    .eq("id", reportId);
+    .select("id, booking_session_id, ambassador_profile_id, reviewed_for_payment_at")
+    .eq("id", reportId)
+    .maybeSingle();
 
-  if (error) {
+  if (!report) {
     redirect(appendSearchParam(returnTo, "error", "report-review-failed"));
   }
 
-  await logAuditEvent(actor.id, "report.reviewed_for_payment", "ambassador_report", reportId);
+  if (report.reviewed_for_payment_at) {
+    redirect(appendSearchParam(returnTo, "approved", "report"));
+  }
+
+  const [{ data: payment }, { data: ambassadorProfile }] = await Promise.all([
+    report.ambassador_profile_id
+      ? admin
+          .from("payments")
+          .select("id, status")
+          .eq("booking_session_id", report.booking_session_id as string)
+          .eq("ambassador_profile_id", report.ambassador_profile_id as string)
+          .in("status", ["pending", "eligible"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    report.ambassador_profile_id
+      ? admin
+          .from("ambassador_profiles")
+          .select("id, user_id, bank_account_name, bank_account_number, gst_number")
+          .eq("id", report.ambassador_profile_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
+
+  if (payment) {
+    const bankAccountName = String(ambassadorProfile?.bank_account_name ?? "").trim();
+    const bankAccountNumber = String(ambassadorProfile?.bank_account_number ?? "").trim();
+    const hasValidPaymentDetails =
+      bankAccountName.length >= 2 && nzBankAccountPattern.test(bankAccountNumber);
+
+    if (!hasValidPaymentDetails) {
+      if (ambassadorProfile?.user_id) {
+        const { data: existingNotification } = await admin
+          .from("notifications")
+          .select("id")
+          .eq("user_id", ambassadorProfile.user_id as string)
+          .eq("notification_type", "payment_details_required")
+          .eq("related_url", "/ambassador/profile")
+          .is("read_at", null)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingNotification) {
+          void notifyUser(ambassadorProfile.user_id as string, {
+            title: "Payment details required",
+            body: "Add your account name and bank account number so your approved report can be sent to finance.",
+            type: "payment_details_required",
+            relatedUrl: "/ambassador/profile"
+          }).catch(() => {});
+        }
+      }
+
+      redirect(appendSearchParam(returnTo, "error", "payment-details-required"));
+    }
+
+    const approvedAt = new Date();
+    const invoiceNumber = generateInvoiceNumber(payment.id as string, approvedAt);
+    const confirmation = createFinanceConfirmationToken(approvedAt);
+    const paymentSettings = await getPaymentSettings();
+    const { data: approvalRows, error: approvalError } = await admin.rpc(
+      "approve_ambassador_report_payment",
+      {
+        p_report_id: report.id,
+        p_actor_id: actor.id,
+        p_invoice_number: invoiceNumber,
+        p_bank_account_name: bankAccountName,
+        p_bank_account_number: bankAccountNumber,
+        p_gst_number: String(ambassadorProfile?.gst_number ?? "").trim() || null,
+        p_token_hash: confirmation.tokenHash,
+        p_token_expires_at: confirmation.expiresAt,
+        p_finance_email: paymentSettings.financeEmail
+      }
+    );
+
+    const approval = Array.isArray(approvalRows) ? approvalRows[0] : null;
+
+    if (approvalError) {
+      redirect(appendSearchParam(returnTo, "error", "report-review-failed"));
+    }
+
+    if (!approval?.did_approve) {
+      redirect(appendSearchParam(returnTo, "approved", "report"));
+    }
+
+    const emailSent = await sendPaymentApprovalToFinance({
+      paymentId: payment.id as string,
+      confirmationToken: confirmation.token,
+      financeEmail: paymentSettings.financeEmail,
+      actorId: actor.id
+    });
+    financeEmailFailed = !emailSent;
+
+    await admin.from("booking_activity_logs").insert({
+      booking_session_id: report.booking_session_id,
+      action: "payment.approved_for_finance",
+      actor_id: actor.id,
+      actor_type: actor.role,
+      details: {
+        invoice_number: invoiceNumber,
+        finance_email_status: emailSent ? "sent" : "failed"
+      }
+    });
+
+    if (ambassadorProfile?.user_id) {
+      void notifyUser(ambassadorProfile.user_id as string, {
+        title: "Report approved for payment",
+        body: `Your report has been approved. Finance will use invoice ${invoiceNumber} to process your payment.`,
+        type: "payment_approved",
+        relatedUrl: "/ambassador/earnings"
+      }).catch(() => {});
+    }
+
+    await logAuditEvent(actor.id, "payment.approved_for_finance", "payment", payment.id as string);
+  } else {
+    const { data: approvalRows, error: approvalError } = await admin.rpc(
+      "approve_ambassador_report_payment",
+      {
+        p_report_id: report.id,
+        p_actor_id: actor.id
+      }
+    );
+
+    if (approvalError) {
+      redirect(appendSearchParam(returnTo, "error", "report-review-failed"));
+    }
+
+    const approval = Array.isArray(approvalRows) ? approvalRows[0] : null;
+
+    if (!approval?.did_approve) {
+      redirect(appendSearchParam(returnTo, "approved", "report"));
+    }
+  }
+
+  await logAuditEvent(actor.id, "report.approved", "ambassador_report", reportId);
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(appendSearchParam(returnTo, "saved", "report-reviewed"));
+  revalidatePath("/ambassador");
+  const approvedReturnTo = appendSearchParam(returnTo, "approved", "report");
+  redirect(
+    financeEmailFailed
+      ? appendSearchParam(approvedReturnTo, "financeEmail", "failed")
+      : approvedReturnTo
+  );
 }
 
 const bookingDefaultsSettingSchema = z.object({
@@ -4621,7 +5871,7 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
 
   const { data: ambassadorProfile } = await admin
     .from("ambassador_profiles")
-    .select("id")
+    .select("id, profile_details")
     .eq("user_id", actor.id)
     .maybeSingle();
 
@@ -4638,6 +5888,17 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
     redirect(appendSearchParam(returnTo, "error", "profile-save-failed"));
   }
 
+  const bankAccountName = String(formData.get("bankAccountName") || "").trim();
+  const bankAccountNumber = String(formData.get("bankAccountNumber") || "").trim();
+  const hasAnyPaymentDetails = Boolean(bankAccountName || bankAccountNumber);
+
+  if (
+    hasAnyPaymentDetails &&
+    (bankAccountName.length < 2 || !nzBankAccountPattern.test(bankAccountNumber))
+  ) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-payment-details"));
+  }
+
   const weeklyAvailability: Record<string, string> = {};
   for (const day of ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]) {
     const value = String(formData.get(`availability-${day}`) || "").trim();
@@ -4647,7 +5908,12 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
     }
   }
 
+  const existingProfileDetails =
+    ambassadorProfile.profile_details && typeof ambassadorProfile.profile_details === "object"
+      ? (ambassadorProfile.profile_details as Record<string, unknown>)
+      : {};
   const profileDetails = {
+    ...existingProfileDetails,
     mailingAddress: String(formData.get("mailingAddress") || "").trim(),
     payoutEmail: String(formData.get("payoutEmail") || "").trim(),
     payoutMethod: String(formData.get("payoutMethod") || "bank_transfer").trim(),
@@ -4658,7 +5924,7 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
     preferredTimes: String(formData.get("preferredTimes") || "").trim(),
     weeklyAvailability,
     unavailableDates: splitCommaList(String(formData.get("unavailableDates") || "")),
-      availabilityNote: String(formData.get("availabilityNote") || "").trim()
+    availabilityNote: String(formData.get("availabilityNote") || "").trim()
   };
 
   const avatarFile = formData.get("avatar");
@@ -4704,8 +5970,8 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
 
   const ambassadorPayload: Record<string, unknown> = {
     bio: String(formData.get("bio") || "").trim() || null,
-    bank_account_name: String(formData.get("bankAccountName") || "").trim() || null,
-    bank_account_number: String(formData.get("bankAccountNumber") || "").trim() || null,
+    bank_account_name: bankAccountName || null,
+    bank_account_number: bankAccountNumber || null,
     gst_number: String(formData.get("gstNumber") || "").trim() || null,
     open_to_travel: formData.get("openToTravel") === "on",
     profile_details: profileDetails
@@ -4761,209 +6027,67 @@ export async function saveAmbassadorProfileAction(formData: FormData) {
   redirect(appendSearchParam(returnTo, "saved", "profile"));
 }
 
-export async function submitPaymentInvoiceAction(formData: FormData) {
+export async function acceptAmbassadorMaterialsConsentAction(formData: FormData) {
   const actor = await requirePortalAccess("ambassador");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/ambassador/earnings"),
-    "/ambassador/earnings"
-  );
-  const parsed = invoiceSubmitSchema.safeParse({
-    paymentId: String(formData.get("paymentId") || ""),
-    bankAccountNumber: String(formData.get("bankAccountNumber") || ""),
-    gstNumber: String(formData.get("gstNumber") || "") || undefined,
-    invoiceNotes: String(formData.get("invoiceNotes") || "") || undefined,
-    saveToProfile: formData.get("saveToProfile") === "on",
-    returnTo: fallbackReturnTo
-  });
+  const returnTo = "/ambassador/materials";
+  const signedName = String(formData.get("signedName") || "").trim();
+  const accepted = formData.get("accepted") === "on";
 
-  if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-invoice"));
+  if (!accepted || signedName.length < 2) {
+    redirect(appendSearchParam(returnTo, "error", "materials-consent-required"));
   }
 
   const admin = getAdminClientOrThrow();
   const { data: ambassadorProfile } = await admin
     .from("ambassador_profiles")
-    .select("id")
+    .select("id, profile_details")
     .eq("user_id", actor.id)
     .maybeSingle();
 
   if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+    redirect(appendSearchParam(returnTo, "error", "ambassador-not-found"));
   }
 
-  const { data: payment } = await admin
-    .from("payments")
-    .select("id, booking_session_id, ambassador_profile_id, status, invoice_number")
-    .eq("id", parsed.data.paymentId)
-    .maybeSingle();
-
-  if (!payment || payment.ambassador_profile_id !== ambassadorProfile.id) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-found"));
-  }
-
-  if (payment.status !== "pending" || payment.invoice_number) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-invoiceable"));
-  }
-
-  const submittedAt = new Date();
-  const invoiceNumber = generateInvoiceNumber(payment.id as string, submittedAt);
+  const existingDetails =
+    ambassadorProfile.profile_details && typeof ambassadorProfile.profile_details === "object"
+      ? (ambassadorProfile.profile_details as Record<string, unknown>)
+      : {};
+  const acceptedAt = new Date().toISOString();
   const { error } = await admin
-    .from("payments")
+    .from("ambassador_profiles")
     .update({
-      status: "invoiced",
-      invoice_number: invoiceNumber,
-      bank_account_number: parsed.data.bankAccountNumber,
-      gst_number: parsed.data.gstNumber || null,
-      invoice_notes: parsed.data.invoiceNotes || null,
-      invoice_submitted_at: submittedAt.toISOString(),
-      updated_by: actor.id
+      profile_details: {
+        ...existingDetails,
+        materialsConsentAcceptedAt: acceptedAt,
+        materialsConsentSignedName: signedName,
+        materialsConsentVersion: "2026-09-03"
+      }
     })
-    .eq("id", payment.id);
+    .eq("id", ambassadorProfile.id);
 
   if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-save-failed"));
+    redirect(appendSearchParam(returnTo, "error", "materials-consent-save-failed"));
   }
 
-  if (parsed.data.saveToProfile) {
-    await admin
-      .from("ambassador_profiles")
-      .update({
-        bank_account_number: parsed.data.bankAccountNumber,
-        gst_number: parsed.data.gstNumber || null
-      })
-      .eq("id", ambassadorProfile.id);
-  }
-
-  await admin.from("booking_activity_logs").insert({
-    booking_session_id: payment.booking_session_id,
-    action: "payment.invoice_submitted",
-    actor_id: actor.id,
-    actor_type: "ambassador",
-    details: { invoice_number: invoiceNumber }
-  });
-
-  void notifyStaff({
-    title: `Invoice received from ${actor.fullName}`,
-    body: `Invoice ${invoiceNumber} is ready to review and send to finance.`,
-    type: "payment_invoice_submitted",
-    relatedUrl: "/staff/payments"
-  }).catch(() => {});
-
-  await logAuditEvent(actor.id, "payment.invoice_submitted", "payment", payment.id as string);
+  await logAuditEvent(
+    actor.id,
+    "ambassador.materials_consent_accepted",
+    "ambassador_profile",
+    ambassadorProfile.id
+  );
   revalidatePath("/ambassador");
-  revalidatePath("/staff");
-  revalidatePath("/admin");
-  redirect(appendSearchParam(parsed.data.returnTo, "submitted", "invoice"));
+  revalidatePath("/staff/ambassadors");
+  revalidatePath("/admin/ambassadors");
+  redirect(appendSearchParam(returnTo, "saved", "materials-consent"));
 }
 
-export async function sendInvoiceToFinanceAction(formData: FormData) {
+export async function retryFinancePaymentEmailAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
     String(formData.get("returnTo") || "/staff/payments"),
     "/staff/payments"
   );
-  const parsed = sendInvoiceToFinanceSchema.safeParse({
-    paymentId: String(formData.get("paymentId") || ""),
-    toEmail: String(formData.get("toEmail") || ""),
-    ccEmail: String(formData.get("ccEmail") || "") || undefined,
-    returnTo: fallbackReturnTo
-  });
-
-  if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-finance-email"));
-  }
-
-  const ccEmails = splitCommaList(parsed.data.ccEmail ?? "");
-
-  if (ccEmails.some((email) => !z.string().email().safeParse(email).success)) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-finance-email"));
-  }
-
-  const admin = getAdminClientOrThrow();
-  const { data: payment } = await admin
-    .from("payments")
-    .select("id, booking_session_id, status, invoice_number")
-    .eq("id", parsed.data.paymentId)
-    .maybeSingle();
-
-  if (!payment || payment.status !== "invoiced" || !payment.invoice_number) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-not-ready"));
-  }
-
-  const details = await loadInvoiceDetails(payment.id as string);
-
-  if (!details) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-not-ready"));
-  }
-
-  const pdfBytes = await buildInvoicePdf(details);
-  const emailResult = await sendInvoiceToFinanceEmail({
-    toEmail: parsed.data.toEmail,
-    ccEmails,
-    invoiceNumber: details.invoiceNumber,
-    ambassadorName: details.ambassadorName,
-    sessionDescription: details.sessionDescription,
-    amountLabel: formatCurrency(details.amountCents, details.currency),
-    bookingSessionId: details.bookingSessionId,
-    attachment: {
-      name: `${details.invoiceNumber}.pdf`,
-      contentBase64: Buffer.from(pdfBytes).toString("base64")
-    }
-  });
-
-  // Only flip the status once the email is out the door; a hard failure keeps
-  // the invoice retryable. "skipped_unconfigured" still progresses so the flow
-  // works in environments without Brevo keys.
-  if (emailResult.status === "failed") {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-email-failed"));
-  }
-
-  const { error } = await admin
-    .from("payments")
-    .update({
-      status: "submitted_for_payment",
-      sent_to_finance_at: new Date().toISOString(),
-      sent_to_email: parsed.data.toEmail,
-      sent_cc_email: ccEmails.length > 0 ? ccEmails.join(", ") : null,
-      updated_by: actor.id
-    })
-    .eq("id", payment.id);
-
-  if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invoice-update-failed"));
-  }
-
-  await admin.from("booking_activity_logs").insert({
-    booking_session_id: payment.booking_session_id,
-    action: "payment.sent_to_finance",
-    actor_id: actor.id,
-    actor_type: "staff",
-    details: { invoice_number: details.invoiceNumber, sent_to: parsed.data.toEmail }
-  });
-
-  if (details.ambassadorUserId) {
-    void notifyUser(details.ambassadorUserId, {
-      title: "Invoice submitted for payment",
-      body: `The team has submitted your invoice ${details.invoiceNumber} to finance for payment.`,
-      type: "payment_submitted_for_payment",
-      relatedUrl: "/ambassador/earnings"
-    }).catch(() => {});
-  }
-
-  await logAuditEvent(actor.id, "payment.sent_to_finance", "payment", payment.id as string);
-  revalidatePath("/ambassador");
-  revalidatePath("/staff");
-  revalidatePath("/admin");
-  redirect(appendSearchParam(parsed.data.returnTo, "sent", "invoice"));
-}
-
-export async function markPaymentPaidAction(formData: FormData) {
-  const actor = await requirePortalAccess("staff");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/staff/payments"),
-    "/staff/payments"
-  );
-  const parsed = markPaymentPaidSchema.safeParse({
+  const parsed = retryFinanceEmailSchema.safeParse({
     paymentId: String(formData.get("paymentId") || ""),
     returnTo: fallbackReturnTo
   });
@@ -4975,66 +6099,74 @@ export async function markPaymentPaidAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: payment } = await admin
     .from("payments")
-    .select("id, booking_session_id, ambassador_profile_id, status, invoice_number")
+    .select(
+      "id, booking_session_id, status, invoice_number, finance_email_status, finance_confirmation_expires_at"
+    )
     .eq("id", parsed.data.paymentId)
     .maybeSingle();
 
-  if (!payment) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-found"));
+  const linkExpired =
+    payment?.finance_confirmation_expires_at &&
+    new Date(payment.finance_confirmation_expires_at as string).getTime() <= Date.now();
+
+  if (
+    !payment ||
+    payment.status !== "approved" ||
+    !payment.invoice_number ||
+    (!["failed", "pending"].includes(String(payment.finance_email_status)) && !linkExpired)
+  ) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "finance-email-not-retryable"));
   }
 
-  if (!["pending", "eligible", "invoiced", "submitted_for_payment"].includes(payment.status as string)) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-not-payable"));
-  }
-
-  const { error } = await admin
+  const paymentSettings = await getPaymentSettings();
+  const confirmation = createFinanceConfirmationToken();
+  const { data: preparedPayment, error: prepareError } = await admin
     .from("payments")
     .update({
-      status: "paid",
-      paid_at: new Date().toISOString(),
+      finance_email_status: "pending",
+      finance_email_error: null,
+      finance_confirmation_token_hash: confirmation.tokenHash,
+      finance_confirmation_expires_at: confirmation.expiresAt,
+      sent_to_email: paymentSettings.financeEmail,
       updated_by: actor.id
     })
-    .eq("id", payment.id);
+    .eq("id", payment.id)
+    .eq("status", "approved")
+    .eq("finance_email_status", payment.finance_email_status as string)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "payment-update-failed"));
+  if (prepareError || !preparedPayment) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "finance-email-not-retryable"));
   }
 
-  await admin
-    .from("booking_sessions")
-    .update({ payment_status: "paid" })
-    .eq("id", payment.booking_session_id);
+  const emailSent = await sendPaymentApprovalToFinance({
+    paymentId: payment.id as string,
+    confirmationToken: confirmation.token,
+    financeEmail: paymentSettings.financeEmail,
+    actorId: actor.id
+  });
 
   await admin.from("booking_activity_logs").insert({
     booking_session_id: payment.booking_session_id,
-    action: "payment.marked_paid",
+    action: "payment.finance_email_retried",
     actor_id: actor.id,
-    actor_type: "staff",
-    details: { invoice_number: payment.invoice_number }
+    actor_type: actor.role,
+    details: {
+      invoice_number: payment.invoice_number,
+      finance_email_status: emailSent ? "sent" : "failed"
+    }
   });
 
-  if (payment.ambassador_profile_id) {
-    const { data: ambassadorProfile } = await admin
-      .from("ambassador_profiles")
-      .select("user_id")
-      .eq("id", payment.ambassador_profile_id)
-      .maybeSingle();
-
-    if (ambassadorProfile?.user_id) {
-      void notifyUser(ambassadorProfile.user_id as string, {
-        title: "Payment sent",
-        body: payment.invoice_number
-          ? `Your invoice ${payment.invoice_number} has been marked as paid.`
-          : "Your session payment has been marked as paid.",
-        type: "payment_paid",
-        relatedUrl: "/ambassador/earnings"
-      }).catch(() => {});
-    }
-  }
-
-  await logAuditEvent(actor.id, "payment.marked_paid", "payment", payment.id as string);
+  await logAuditEvent(actor.id, "payment.finance_email_retried", "payment", payment.id as string);
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(appendSearchParam(parsed.data.returnTo, "paid", "1"));
+  redirect(
+    appendSearchParam(
+      parsed.data.returnTo,
+      emailSent ? "sent" : "error",
+      emailSent ? "finance-email" : "invoice-email-failed"
+    )
+  );
 }

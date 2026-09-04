@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  BriefcaseBusiness,
   Clock3,
   Gamepad2,
   HeartHandshake,
@@ -11,14 +10,22 @@ import { BookPresentationButton } from "@/components/site/book-presentation-butt
 import { Card } from "@/components/ui/card";
 import type { PresentationType } from "@/lib/domain/types";
 import { splitYearGroups, yearGroupChipClass } from "@/lib/domain/year-groups";
+import { presentationPalette } from "@/lib/presentation-colors";
 
 export function PresentationCard({ presentation }: { presentation: PresentationType }) {
   const Icon = iconMap[presentation.slug] ?? UsersRound;
   const yearGroups = splitYearGroups(presentation.yearLevels);
+  const palette = presentationPalette(presentation);
 
   return (
-    <Card className="group flex h-full flex-col rounded-[30px] p-6 transition hover:-translate-y-1">
-      <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-[linear-gradient(180deg,#f7fbff,#edf6ff)] text-[color:var(--green)] shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]">
+    <Card
+      className="group flex h-full flex-col rounded-[30px] p-6 transition hover:-translate-y-1"
+      style={{ borderColor: palette.border, boxShadow: `0 16px 44px ${palette.shadow}` }}
+    >
+      <div
+        className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-[20px] shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]"
+        style={{ backgroundColor: palette.soft, color: palette.accent }}
+      >
         <Icon className="h-7 w-7" />
       </div>
       <h3 className="text-[26px] font-semibold leading-8 tracking-[-0.04em] text-[color:var(--navy)]">
@@ -64,9 +71,7 @@ export function PresentationCard({ presentation }: { presentation: PresentationT
 }
 
 const iconMap: Record<string, typeof HeartHandshake> = {
-  careers: BriefcaseBusiness,
   "digital-wellbeing": HeartHandshake,
   "esports-pathways": Gamepad2,
   "understanding-esports": UsersRound
 };
-

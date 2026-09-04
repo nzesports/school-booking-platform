@@ -5,8 +5,9 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Copy,
   GraduationCap,
-  Info,
+  Eye,
   MapPin,
   School2,
   UserRound,
@@ -83,7 +84,27 @@ export function SessionDetailsButton({
   returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [feedbackLinkCopied, setFeedbackLinkCopied] = useState(false);
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
+
+  const copyFeedbackLink = async () => {
+    const feedbackUrl = `${window.location.origin}/feedback/${session.id}`;
+
+    try {
+      await navigator.clipboard.writeText(feedbackUrl);
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = feedbackUrl;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      textArea.remove();
+    }
+
+    setFeedbackLinkCopied(true);
+  };
 
   const location = session.locationAddress || session.schoolAddress || session.schoolName;
   const calendarEvent: CalendarEventInput = {
@@ -126,12 +147,15 @@ export function SessionDetailsButton({
           type="button"
           variant="secondary"
           onClick={() => setOpen(true)}
-          className={className ?? "min-h-[38px] rounded-[14px] px-3.5 py-1.5 text-xs"}
+          className={
+            className ??
+            "min-h-[40px] rounded-[13px] border-transparent bg-[#e8f1fd] px-3.5 py-1.5 text-xs text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
+          }
         >
           {label ?? (
             <>
-              <Info className="h-3.5 w-3.5" />
-              Details
+              <Eye className="h-3.5 w-3.5" />
+              View booking
             </>
           )}
         </Button>
@@ -190,16 +214,16 @@ export function SessionDetailsButton({
                 <DetailTile
                   icon={<GraduationCap className="h-6 w-6" />}
                   iconClassName="bg-[#e3f2fd] text-[#1565c0]"
-                  label="Expected students"
+                  label="Students"
                 >
                   <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    {session.expectedStudentCount} students
+                    {session.actualStudentCount ?? session.expectedStudentCount} students
                   </p>
-                  {session.actualStudentCount ? (
-                    <p className="text-sm text-[color:var(--text-soft)]">
-                      {session.actualStudentCount} attended
-                    </p>
-                  ) : null}
+                  <p className="text-sm text-[color:var(--text-soft)]">
+                    {session.actualStudentCount !== undefined
+                      ? "Final attendance"
+                      : "School booking estimate"}
+                  </p>
                 </DetailTile>
               </div>
 
@@ -454,6 +478,32 @@ export function SessionDetailsButton({
                       </button>
                     </form>
                   </div>
+                </div>
+              ) : null}
+
+              {canReview ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-[#d7e5f6] bg-[#f7faff] p-5">
+                  <div>
+                    <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                      Share school feedback form
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
+                      Anyone with this link can submit feedback after the session. No login is required.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={copyFeedbackLink}
+                    className="min-h-[40px] rounded-[13px] px-4"
+                  >
+                    {feedbackLinkCopied ? (
+                      <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                    {feedbackLinkCopied ? "Link copied" : "Copy feedback link"}
+                  </Button>
                 </div>
               ) : null}
 

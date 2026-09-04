@@ -188,7 +188,7 @@ export function NotificationsBell({
                               <Link
                                 href={resolveUrl(notification.relatedUrl)}
                                 onClick={() => setOpen(false)}
-                                className="inline-flex min-h-[32px] items-center gap-1.5 rounded-[10px] border border-[#c4dbfb] bg-white px-2.5 text-xs font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
+                                className="inline-flex min-h-[34px] w-[124px] items-center justify-center gap-1.5 rounded-[10px] border border-[#c4dbfb] bg-white px-2.5 text-xs font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
                                 Open
@@ -204,9 +204,10 @@ export function NotificationsBell({
                                 <input type="hidden" name="redirectTo" value={currentPath} />
                                 <button
                                   type="submit"
-                                  className="inline-flex min-h-[32px] items-center gap-1.5 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-2.5 text-xs font-semibold text-[color:var(--navy)] transition hover:bg-[#f6f9fd]"
+                                  style={{ fontSize: "10px", lineHeight: "14px" }}
+                                  className="inline-flex min-h-[30px] items-center justify-center gap-1 whitespace-nowrap rounded-[9px] border border-[color:var(--border-soft)] bg-white px-2.5 text-[10px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f6f9fd]"
                                 >
-                                  <CircleCheck className="h-3.5 w-3.5" />
+                                  <CircleCheck className="h-2.5 w-2.5" />
                                   Mark as read
                                 </button>
                               </form>

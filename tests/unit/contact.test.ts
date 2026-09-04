@@ -40,8 +40,15 @@ describe("contactFormSchema", () => {
     }
   });
 
-  it("allows the optional school field to be blank", () => {
-    expect(contactFormSchema.safeParse({ ...validContact, school: "" }).success).toBe(true);
+  it("requires a school or organisation", () => {
+    const result = contactFormSchema.safeParse({ ...validContact, school: "" });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.school?.[0]).toBe(
+        "Enter your school or organisation."
+      );
+    }
   });
 
   it("keeps email header fields to a single line", () => {
@@ -67,9 +74,9 @@ describe("buildContactEmailHtml", () => {
     expect(html).not.toContain("<script>");
   });
 
-  it("omits an empty school row", () => {
-    expect(buildContactEmailHtml({ ...validContact, school: "" })).not.toContain(
-      "School or organisation:"
+  it("includes the required school or organisation", () => {
+    expect(buildContactEmailHtml(validContact)).toContain(
+      "<strong>School or organisation:</strong> Harbour College"
     );
   });
 });

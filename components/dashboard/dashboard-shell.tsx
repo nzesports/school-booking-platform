@@ -1,8 +1,7 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Bell,
-  Headphones,
   Home,
   type LucideIcon
 } from "lucide-react";
@@ -19,6 +18,7 @@ type NavItem = {
   href: string;
   label: string;
   icon?: LucideIcon;
+  separatorBefore?: boolean;
 };
 
 // Highlight only the deepest matching item, so the dashboard root ("/staff")
@@ -54,29 +54,29 @@ function DashboardNavLinks({
         const Icon = item.icon ?? Home;
 
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            prefetch={false}
-            className={cn(
-              "flex items-center gap-3 rounded-[18px] px-4 py-3 text-sm font-medium transition",
-              isActive
-                ? "bg-[linear-gradient(90deg,rgba(24,168,59,0.12),rgba(24,168,59,0.06))] text-[color:var(--green)] shadow-[inset_0_0_0_1px_rgba(24,168,59,0.08)]"
-                : "text-[color:var(--navy)] hover:bg-[color:var(--blue-soft)]"
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {item.label}
-          </Link>
+          <Fragment key={item.href}>
+            {item.separatorBefore ? (
+              <div
+                aria-hidden="true"
+                className="mx-3 my-2 border-t border-[color:var(--border-soft)]"
+              />
+            ) : null}
+            <Link
+              href={item.href}
+              prefetch={false}
+              className={cn(
+                "flex items-center gap-3 rounded-[18px] px-4 py-3 text-sm font-medium transition",
+                isActive
+                  ? "bg-[linear-gradient(90deg,rgba(24,168,59,0.12),rgba(24,168,59,0.06))] text-[color:var(--green)] shadow-[inset_0_0_0_1px_rgba(24,168,59,0.08)]"
+                  : "text-[color:var(--navy)] hover:bg-[color:var(--blue-soft)]"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          </Fragment>
         );
       })}
-      <a
-        href="mailto:schools@esf.nz"
-        className="flex items-center gap-3 rounded-[18px] px-4 py-3 text-sm font-medium text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]"
-      >
-        <Headphones className="h-4 w-4" />
-        Support
-      </a>
     </nav>
   );
 }
@@ -90,11 +90,16 @@ export function DashboardShell({
   dateLabel,
   rangeOptions,
   activeRange,
+  customRange,
+  headerAction,
   activityHref,
   notificationCount,
   notifications,
   markNotificationReadAction,
   logoutAction,
+  auditLogsHref,
+  usersHref,
+  settingsHref,
   profile,
   children
 }: {
@@ -107,11 +112,16 @@ export function DashboardShell({
   dateLabel?: string;
   rangeOptions?: Array<{ href: string; label: string; value: string }>;
   activeRange?: string;
+  customRange?: { from: string; to: string } | null;
+  headerAction?: ReactNode;
   activityHref?: string;
   notificationCount?: number;
   notifications?: PortalNotification[];
   markNotificationReadAction?: (formData: FormData) => void | Promise<void>;
   logoutAction?: (formData: FormData) => void | Promise<void>;
+  auditLogsHref?: string;
+  usersHref?: string;
+  settingsHref?: string;
   profile?: {
     name: string;
     subtitle: string;
@@ -166,6 +176,9 @@ export function DashboardShell({
                 profile={profile}
                 logoutAction={logoutAction}
                 notificationControl={notificationControl}
+                auditLogsHref={auditLogsHref}
+                usersHref={usersHref}
+                settingsHref={settingsHref}
               />
             ) : (
               <div className="ml-auto w-14">{notificationControl}</div>
@@ -174,7 +187,7 @@ export function DashboardShell({
         </aside>
       </DashboardSidebarDrawer>
 
-      <main className="grid content-start gap-5 pb-1 pt-16 xl:min-h-screen xl:px-8 xl:py-6 2xl:px-10">
+      <main className="grid min-h-screen grid-rows-[auto_1fr_auto] gap-5 pb-0 pt-16 xl:px-8 xl:pt-6 2xl:px-10">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="px-2 py-2">
             {headline && headline !== title ? (
@@ -197,20 +210,25 @@ export function DashboardShell({
             ) : null}
           </div>
 
-          {rangeOptions && rangeOptions.length > 0 ? (
+          {headerAction || (rangeOptions && rangeOptions.length > 0) ? (
             <div className="flex flex-wrap items-center gap-3 px-2 py-2">
-              <DashboardRangePicker
-                label={dateLabel ?? "This week"}
-                options={rangeOptions}
-                activeRange={activeRange}
-              />
+              {headerAction}
+              {rangeOptions && rangeOptions.length > 0 ? (
+                <DashboardRangePicker
+                  key={`${activeRange ?? "range"}-${customRange?.from ?? ""}-${customRange?.to ?? ""}`}
+                  label={dateLabel ?? "This week"}
+                  options={rangeOptions}
+                  activeRange={activeRange}
+                  customRange={customRange}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        <div className="portal-card-grid">{children}</div>
+        <div className="portal-card-grid content-start">{children}</div>
 
-        <div className="mt-3 border-t border-[rgba(4,15,75,0.08)] px-2 pt-4 text-xs leading-6 text-[color:var(--text-soft)]">
+        <footer className="-mx-4 border-t border-[rgba(4,15,75,0.08)] bg-white/45 px-6 py-3 text-center text-[11px] leading-5 text-[color:var(--text-soft)] xl:-mx-8 2xl:-mx-10">
           <p>
             &copy; 2026{" "}
             <a
@@ -231,7 +249,7 @@ export function DashboardShell({
               Privacy Policy
             </a>
           </p>
-        </div>
+        </footer>
       </main>
     </div>
   );

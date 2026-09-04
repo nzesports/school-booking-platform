@@ -1,28 +1,28 @@
 "use client";
 
 import {
+  BookOpen,
   ExternalLink,
   FileText,
   ListChecks,
   PackageOpen,
-  Play,
   Search,
-  SquarePlay,
-  X
+  SquarePlay
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { ButtonLink } from "@/components/ui/button";
+import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 import type { ResourceRecord } from "@/lib/services/portal";
-import { cn } from "@/lib/utils";
 
-// School-facing resource library. Deliberately shows no audience information —
-// schools should never see that a resource is also targeted at ambassadors.
-
+// School-facing resources deliberately omit internal audience and sharing
+// metadata. Schools only receive items explicitly published to their portal.
 const FILTERS = [
-  { value: "all", label: "All resources" },
-  { value: "pdf", label: "PDF" },
-  { value: "video", label: "Video" },
-  { value: "checklist", label: "Checklists" }
+  { value: "all", label: "All resources", icon: PackageOpen },
+  { value: "pdf", label: "PDF", icon: FileText },
+  { value: "video", label: "Video", icon: SquarePlay },
+  { value: "guide", label: "Guides", icon: BookOpen },
+  { value: "checklist", label: "Checklists", icon: ListChecks }
 ] as const;
 
 type FilterValue = (typeof FILTERS)[number]["value"];
@@ -38,19 +38,18 @@ function isChecklist(resource: ResourceRecord) {
   );
 }
 
+function isGuide(resource: ResourceRecord) {
+  return (
+    resource.tags.some((tag) => tag.toLowerCase().includes("guide")) ||
+    resource.title.toLowerCase().includes("guide")
+  );
+}
+
 function matchesFilter(resource: ResourceRecord, filter: FilterValue) {
-  if (filter === "all") {
-    return true;
-  }
-
-  if (filter === "video") {
-    return isVideo(resource);
-  }
-
-  if (filter === "checklist") {
-    return isChecklist(resource);
-  }
-
+  if (filter === "all") return true;
+  if (filter === "video") return isVideo(resource);
+  if (filter === "guide") return isGuide(resource);
+  if (filter === "checklist") return isChecklist(resource);
   return resource.type === "pdf";
 }
 
@@ -58,26 +57,32 @@ function resourceUrl(resource: ResourceRecord) {
   return resource.youtubeUrl ?? resource.downloadUrl ?? resource.externalUrl ?? null;
 }
 
+function resourceType(resource: ResourceRecord) {
+  if (isVideo(resource)) return "Video";
+  if (isGuide(resource)) return "Guide";
+  if (isChecklist(resource)) return "Checklist";
+  if (resource.type === "pdf") return "PDF";
+  return "Resource";
+}
+
+function resourceIcon(resource: ResourceRecord) {
+  if (isVideo(resource)) return SquarePlay;
+  if (isGuide(resource)) return BookOpen;
+  if (isChecklist(resource)) return ListChecks;
+  return FileText;
+}
+
 function openLabel(resource: ResourceRecord) {
-  if (isVideo(resource)) {
-    return "Watch video";
-  }
-
-  if (isChecklist(resource)) {
-    return "Open checklist";
-  }
-
-  if (resource.type === "pdf") {
-    return "Open PDF";
-  }
-
+  if (isVideo(resource)) return "Watch video";
+  if (isGuide(resource)) return "Open guide";
+  if (isChecklist(resource)) return "Open checklist";
+  if (resource.type === "pdf") return "Open PDF";
   return "Open resource";
 }
 
 export function SchoolResourceLibrary({ resources }: { resources: ResourceRecord[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterValue>("all");
-  const [dismissedFeaturedIds, setDismissedFeaturedIds] = useState<string[]>([]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -96,190 +101,121 @@ export function SchoolResourceLibrary({ resources }: { resources: ResourceRecord
     });
   }, [resources, query, filter]);
 
-  const featured = filtered.find(
-    (resource) => isVideo(resource) && !dismissedFeaturedIds.includes(resource.id)
-  );
-  const gridResources = featured
-    ? filtered.filter((resource) => resource.id !== featured.id)
-    : filtered;
+  const tabs = FILTERS.map((item) => ({
+    ...item,
+    count: resources.filter((resource) => matchesFilter(resource, item.value)).length
+  }));
 
   return (
-    <div className="grid gap-5">
-      {/* ------------------------------------------------ search + filters */}
-      <div className="surface-panel grid gap-4 rounded-[24px] p-4 md:p-5">
-        <label className="flex min-h-[52px] items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
-          <Search className="h-4 w-4 shrink-0 text-[color:var(--green)]" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search title, presentation, description, or tags"
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
-          />
-        </label>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setFilter(option.value)}
-                className={cn(
-                  "inline-flex min-h-[40px] items-center justify-center rounded-full border px-4 text-sm font-semibold transition",
-                  option.value === filter
-                    ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
-                    : "border-[color:var(--border-soft)] bg-white text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+    <section className="surface-panel rounded-[28px] p-5 md:p-7">
+      <div className="grid gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex min-h-[46px] min-w-[260px] flex-1 items-center gap-3 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+            <Search className="h-4 w-4 shrink-0 text-[color:var(--green)]" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by title, presentation, description, or tag"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+            />
+          </label>
           <p className="inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
             <FileText className="h-4 w-4 text-[color:var(--text-soft)]" />
             {filtered.length} resource{filtered.length === 1 ? "" : "s"}
           </p>
         </div>
+
+        <SecondaryTabs
+          items={tabs}
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter school resources"
+        />
       </div>
 
-      {/* ------------------------------------------------ featured video */}
-      {featured ? (
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-2xl font-semibold leading-tight tracking-normal text-[color:var(--navy)] md:text-3xl">
-              Featured resource
-            </h2>
-            <button
-              type="button"
-              aria-label="Dismiss featured resource"
-              onClick={() =>
-                setDismissedFeaturedIds((current) =>
-                  current.includes(featured.id) ? current : [...current, featured.id]
-                )
-              }
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-sm transition hover:border-[rgba(24,168,59,0.35)] hover:bg-[#f4fbf6] hover:text-[#117a2e]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="surface-panel grid gap-5 rounded-[26px] p-5 md:grid-cols-[260px_minmax(0,1fr)] md:p-6">
-            <div className="flex min-h-[160px] items-center justify-center rounded-[20px] bg-[linear-gradient(135deg,#e8f1fd,#eef7fc)]">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--navy)] text-white shadow-[0_16px_34px_rgba(11,24,77,0.28)]">
-                <Play className="ml-1 h-6 w-6 fill-current" />
-              </span>
-            </div>
-            <div className="flex min-w-0 flex-col">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <h3 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                  {featured.title}
-                </h3>
-                {featured.isCurrent ? <CurrentPill /> : null}
-              </div>
-              {featured.description ? (
-                <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {featured.description}
-                </p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border-soft)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--navy)]">
-                  <SquarePlay className="h-3.5 w-3.5" />
-                  Video
-                </span>
-                {resourceUrl(featured) ? (
-                  <a
-                    href={resourceUrl(featured) as string}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] bg-[color:var(--navy)] px-5 text-sm font-semibold text-white transition hover:bg-[#101c56]"
-                  >
-                    <Play className="h-4 w-4 fill-current" />
-                    Watch video
-                  </a>
-                ) : null}
-              </div>
-            </div>
-          </div>
+      <div className="mt-5 overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white">
+        <div className="hidden grid-cols-[minmax(0,1fr)_210px_150px] gap-5 bg-[#f6f9fd] px-7 py-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] md:grid">
+          <span>Resource</span>
+          <span>Type</span>
+          <span className="text-right">Action</span>
         </div>
-      ) : null}
 
-      {/* ------------------------------------------------ resource cards */}
-      <div className="grid gap-3">
-        <h2 className="text-2xl font-semibold leading-tight tracking-normal text-[color:var(--navy)] md:text-3xl">
-          All resources
-        </h2>
-
-        {gridResources.length === 0 && !featured ? (
-          <div className="surface-panel grid justify-items-center gap-3 rounded-[26px] px-6 py-12 text-center">
-            <PackageOpen className="h-14 w-14 text-[#cbd5e1]" />
+        {filtered.length === 0 ? (
+          <div className="grid min-h-[250px] justify-items-center content-center gap-3 px-6 py-10 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#eef3f8] text-[#9aa9bb]">
+              <PackageOpen className="h-7 w-7" />
+            </span>
             <p className="text-base font-semibold text-[color:var(--navy)]">
-              No resources match that search
+              No resources match this view
             </p>
-            <p className="max-w-[300px] text-sm leading-6 text-[color:var(--text-soft)]">
-              Try a different search or filter — new resources appear here when they&apos;re
-              shared with your school.
+            <p className="max-w-[340px] text-sm leading-6 text-[color:var(--text-soft)]">
+              Try another search or filter. New resources will appear here when they are shared
+              with your school.
             </p>
           </div>
-        ) : null}
+        ) : (
+          <div className="divide-y divide-[color:var(--border-soft)]">
+            {filtered.map((resource) => {
+              const url = resourceUrl(resource);
+              const Icon = resourceIcon(resource);
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          {gridResources.map((resource) => {
-            const url = resourceUrl(resource);
-            const Icon = isVideo(resource)
-              ? SquarePlay
-              : isChecklist(resource)
-                ? ListChecks
-                : FileText;
-
-            return (
-              <div
-                key={resource.id}
-                className="surface-panel flex flex-col rounded-[24px] p-5"
-              >
-                <div className="flex items-start gap-4">
-                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[18px] bg-[#e6f5ec] text-[#117a2e]">
-                    <Icon className="h-7 w-7" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h3 className="text-lg font-semibold leading-6 tracking-[-0.02em] text-[color:var(--navy)]">
-                        {resource.title}
-                      </h3>
-                      {resource.isCurrent ? <CurrentPill /> : null}
+              return (
+                <article
+                  key={resource.id}
+                  className="grid gap-5 px-6 py-5 md:grid-cols-[minmax(0,1fr)_210px_150px] md:items-center md:px-7 md:py-6"
+                >
+                  <div className="flex min-w-0 items-start gap-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eaf8ee] text-[#117a2e]">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-[color:var(--navy)]">{resource.title}</h3>
+                        <span className="rounded-full bg-[#eef3f8] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--text-soft)] md:hidden">
+                          {resourceType(resource)}
+                        </span>
+                      </div>
+                      {resource.description ? (
+                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-[color:var(--text-soft)]">
+                          {resource.description}
+                        </p>
+                      ) : null}
                     </div>
-                    {resource.description ? (
-                      <p className="mt-1.5 text-sm leading-6 text-[color:var(--text-soft)]">
-                        {resource.description}
-                      </p>
-                    ) : null}
                   </div>
-                </div>
 
-                {url ? (
-                  <div className="mt-4">
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[13px] border border-[color:var(--border-soft)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[rgba(24,168,59,0.4)] hover:text-[#117a2e]"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      {openLabel(resource)}
-                    </a>
+                  <div className="text-sm text-[color:var(--text-soft)]">
+                    <p className="font-medium text-[color:var(--navy)]">{resourceType(resource)}</p>
+                    <p className="mt-0.5 hidden text-xs md:block">
+                      {resource.presentationTitle
+                        ? `${resource.presentationTitle} presentation`
+                        : "General resource"}
+                    </p>
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
+
+                  <div className="flex md:justify-end">
+                    {url ? (
+                      <ButtonLink
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        variant="secondary"
+                        className="min-h-[38px] rounded-[12px] px-3"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        {openLabel(resource)}
+                      </ButtonLink>
+                    ) : (
+                      <span className="text-xs font-medium text-[color:var(--text-soft)]">
+                        Available soon
+                      </span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
-    </div>
-  );
-}
-
-function CurrentPill() {
-  return (
-    <span className="inline-flex shrink-0 items-center rounded-full bg-[#eaf8ee] px-3 py-1 text-xs font-semibold text-[#117a2e]">
-      Current
-    </span>
+    </section>
   );
 }

@@ -15,7 +15,9 @@ export function PendingSubmitButton({
   return (
     <Button {...props} disabled={pending || props.disabled} aria-disabled={pending || props.disabled}>
       {pending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-      <span aria-live="polite">{pending ? pendingLabel : children}</span>
+      <span className="inline-flex items-center gap-2" aria-live="polite">
+        {pending ? pendingLabel : children}
+      </span>
     </Button>
   );
 }

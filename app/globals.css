@@ -3,12 +3,14 @@
 :root {
   --navy: #040f4b;
   --navy-strong: #0b184d;
-  --light-blue: #afd5ed;
+  --light-blue: #bfe6c9;
   --green: #18a83b;
   --green-bright: #47c96a;
   --green-soft: #eaf8ee;
-  --blue-soft: #eef7fc;
-  --blue-soft-strong: #dff1fb;
+  /* Legacy token names are retained for compatibility, but the product accent
+     is now green across shared controls, panels, and hover states. */
+  --blue-soft: #f0faf3;
+  --blue-soft-strong: #ddf3e3;
   --white: #ffffff;
   --off-white: #f7fafc;
   /* Opaque enough that cards read as glass without backdrop-filter, which
@@ -33,15 +35,15 @@
   --shell-width: min(1480px, calc(100vw - (var(--page-gutter) * 2)));
   --shell-width-wide: min(1720px, calc(100vw - (var(--page-gutter) * 2)));
   --shell-width-narrow: min(920px, calc(100vw - (var(--page-gutter) * 2)));
-  --page-background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
+  --page-background: linear-gradient(180deg, #f8fcf9 0%, #f3f8f4 100%);
   --gradient-primary: linear-gradient(135deg, #040f4b 0%, #0b7f4a 48%, #47c96a 100%);
   --gradient-soft: linear-gradient(
     135deg,
-    rgba(175, 213, 237, 0.55) 0%,
+    rgba(191, 230, 201, 0.62) 0%,
     rgba(234, 248, 238, 0.85) 100%
   );
   --gradient-hero: radial-gradient(circle at top right, rgba(71, 201, 106, 0.22), transparent 35%),
-    radial-gradient(circle at top left, rgba(175, 213, 237, 0.55), transparent 45%),
+    radial-gradient(circle at top left, rgba(191, 230, 201, 0.55), transparent 45%),
     linear-gradient(180deg, #f7fafc 0%, #ffffff 100%);
   --hero-loop-duration: 20s;
 }
@@ -223,6 +225,22 @@ summary {
 
 .homepage-gap {
   gap: var(--homepage-card-gap);
+}
+
+.feedback-carousel-card {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .feedback-carousel-card {
+    width: calc(50% - 0.625rem);
+  }
+}
+
+@media (min-width: 1280px) {
+  .feedback-carousel-card {
+    width: calc(25% - 0.9375rem);
+  }
 }
 
 .hero-grid {

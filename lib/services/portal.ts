@@ -25,6 +25,7 @@ import type {
   PortalNotification,
   PresentationType,
   Region,
+  ResourceAudience,
   ReportSummary,
   Role,
   School,
@@ -40,6 +41,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
 export type ResourceCategory = "resource" | "training" | "presentation_material";
+export type ResourceSharingScope = "internal" | "public";
 
 export type ResourceRecord = {
   id: string;
@@ -47,12 +49,14 @@ export type ResourceRecord = {
   description: string;
   type: string;
   category: ResourceCategory;
-  audience: "school" | "ambassador" | "staff";
-  audiences: Array<"school" | "ambassador" | "staff">;
+  audience: ResourceAudience;
+  audiences: ResourceAudience[];
+  sharingScope: ResourceSharingScope;
   tags: string[];
   presentationTypeId?: string;
   presentationSlug?: string;
   presentationTitle?: string;
+  presentationAccentColor?: string;
   storagePath?: string;
   externalUrl?: string;
   youtubeUrl?: string;
@@ -147,6 +151,7 @@ export type AmbassadorPortalData = {
   presentations: PresentationType[];
   openSessions: BookingSessionView[];
   assignedSessions: BookingSessionView[];
+  sourcedBookings: BookingRequestView[];
   reports: ReportSummary[];
   resources: ResourceRecord[];
   payments: PaymentRecord[];
@@ -173,11 +178,10 @@ async function loadPlatformDataUncached() {
     return null;
   }
 
-  // Dashboards operate on recent history — cap bookings at a two-year window
-  // so IO stops scaling with all-time data volume.
-  const bookingWindowStart = new Date();
-  bookingWindowStart.setMonth(bookingWindowStart.getMonth() - 24);
-  const bookingWindowIso = bookingWindowStart.toISOString();
+  // Bookings and sessions intentionally load across the full history. Staff
+  // and admin dashboards share this same snapshot, and the historical import
+  // must remain available to all-time reporting rather than disappearing
+  // behind a rolling date cutoff.
   const bookingSessionSelectBase =
     "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador";
   const bookingSessionSelectWithWithdrawals = `${bookingSessionSelectBase}, withdrawal_reason, withdrawal_requested_at, reschedule_requested_date, reschedule_request_notes, reschedule_requested_at, reschedule_previous_status`;
@@ -207,8 +211,7 @@ async function loadPlatformDataUncached() {
     faqsResult,
     bookingActivityLogsResult,
     trainingModulesResult,
-    trainingLessonsResult,
-    trainingProgressResult
+    trainingLessonsResult
   ] = await Promise.all([
     admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
     admin
@@ -223,14 +226,12 @@ async function loadPlatformDataUncached() {
     admin
       .from("booking_requests")
       .select(
-        "id, reference_code, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id"
+        "id, reference_code, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id, ambassador_outreach_by"
       )
-      .gte("created_at", bookingWindowIso)
       .order("created_at", { ascending: false }),
     admin
       .from("booking_sessions")
       .select(bookingSessionSelectWithWithdrawals)
-      .gte("starts_at", bookingWindowIso)
       .order("starts_at", { ascending: true }),
     admin.from("presentation_types").select("*"),
     // Select * so optional columns added by later migrations (profile_details)
@@ -250,11 +251,9 @@ async function loadPlatformDataUncached() {
       .from("presentation_reviews")
       .select("*")
       .order("created_at", { ascending: false }),
-    admin
-      .from("payments")
-      .select(
-        "id, booking_session_id, ambassador_profile_id, amount_cents, status, eligibility_reason, created_at, paid_at, invoice_number, invoice_submitted_at, sent_to_finance_at, sent_to_email, sent_cc_email, bank_account_number, gst_number, invoice_notes"
-      ),
+    // Select * so the explicit sourcing-fee breakdown added in 0026 is
+    // available without breaking environments while that migration rolls out.
+    admin.from("payments").select("*"),
     // Select * so environments missing the 0006 columns (audiences/tags)
     // still load resources instead of failing the whole query.
     admin.from("presentation_resources").select("*").order("created_at", { ascending: false }),
@@ -285,10 +284,7 @@ async function loadPlatformDataUncached() {
     admin
       .from("training_lessons")
       .select("id, training_module_id, title, lesson_type, content, youtube_url, sort_order")
-      .order("sort_order", { ascending: true }),
-    admin
-      .from("training_progress")
-      .select("id, ambassador_profile_id, training_module_id, training_lesson_id, status, completed_at")
+      .order("sort_order", { ascending: true })
   ]);
   const shouldRetrySessionsWithoutWithdrawals =
     sessionsResult.error?.message?.includes("withdrawal_reason") ||
@@ -298,7 +294,6 @@ async function loadPlatformDataUncached() {
     ? await admin
         .from("booking_sessions")
         .select(bookingSessionSelectBase)
-        .gte("starts_at", bookingWindowIso)
         .order("starts_at", { ascending: true })
     : null;
 
@@ -327,8 +322,7 @@ async function loadPlatformDataUncached() {
     faqs: faqsResult.data ?? [],
     bookingActivityLogs: bookingActivityLogsResult.data ?? [],
     trainingModules: trainingModulesResult.data ?? [],
-    trainingLessons: trainingLessonsResult.data ?? [],
-    trainingProgress: trainingProgressResult.data ?? []
+    trainingLessons: trainingLessonsResult.data ?? []
   };
 }
 
@@ -363,11 +357,19 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
       const downloadUrl =
         (resource.public_url as string | null) ??
         (resource.storage_path ? `/portal/download/${resource.id}` : null);
-      const legacyAudience = resource.audience as "school" | "ambassador" | "staff" | undefined;
+      const legacyAudience = resource.audience as ResourceAudience | undefined;
       const audiences =
         Array.isArray(resource.audiences) && resource.audiences.length > 0
-          ? (resource.audiences as Array<"school" | "ambassador" | "staff">)
+          ? (resource.audiences as ResourceAudience[])
           : [legacyAudience ?? ("staff" as const)];
+      const sharingScope =
+        typeof resource.sharing_scope === "string"
+          ? resource.sharing_scope === "public"
+            ? "public"
+            : "internal"
+          : audiences.some((audience) => audience === "school" || audience === "public")
+            ? "public"
+            : "internal";
 
       return {
         id: resource.id as string,
@@ -378,10 +380,14 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
         category: (resource.category as ResourceCategory | null | undefined) ?? "resource",
         audience: audiences[0] ?? "staff",
         audiences,
+        // Legacy databases without migration 0031 still use the school/public
+        // audience itself as the sharing signal.
+        sharingScope,
         tags: Array.isArray(resource.tags) ? (resource.tags as string[]) : [],
         presentationTypeId: (resource.presentation_type_id as string | null) ?? undefined,
         presentationSlug: (presentation?.slug as string | undefined) ?? undefined,
         presentationTitle: (presentation?.title as string | undefined) ?? undefined,
+        presentationAccentColor: (presentation?.accent_color as string | undefined) ?? undefined,
         storagePath: (resource.storage_path as string | null) ?? undefined,
         externalUrl: (resource.public_url as string | null) ?? undefined,
         youtubeUrl: (resource.youtube_url as string | null) ?? undefined,
@@ -414,6 +420,14 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
 
   const sessionsByBookingId = new Map<string, BookingSessionView[]>();
   const applicantsBySessionId = new Map<string, Array<{ id: string; name: string }>>();
+  const reportedAttendanceBySessionId = new Map(
+    data.reports
+      .filter((report) => Boolean(report.booking_session_id))
+      .map((report) => [
+        report.booking_session_id as string,
+        Number(report.attendee_count ?? 0)
+      ])
+  );
 
   for (const application of data.sessionApplications) {
     const ambassadorProfile = data.ambassadorProfiles.find(
@@ -432,7 +446,10 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       ...(applicantsBySessionId.get(sessionId) ?? []),
       {
         id: ambassadorProfile.id as string,
-        name: (user?.full_name as string | undefined) ?? "Ambassador"
+        name:
+          (user?.full_name as string | undefined) ??
+          (ambassadorProfile.display_name as string | null) ??
+          "Ambassador"
       }
     ]);
   }
@@ -487,10 +504,14 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       presentationTypeId: (session.presentation_type_id as string | null) ?? undefined,
       presentationSlug: (presentation?.slug as string | undefined) ?? "presentation",
       presentationTitle: (presentation?.title as string | undefined) ?? "Presentation",
+      presentationAccentColor: (presentation?.accent_color as string | undefined) ?? undefined,
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
       regionName: (region?.name as string | undefined) ?? undefined,
       schoolId: (session.school_id as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
+      schoolRollSize: school?.roll_size === null || school?.roll_size === undefined
+        ? undefined
+        : Number(school.roll_size),
       schoolAddress: schoolAddress || undefined,
       locationAddress: (session.location_address as string | null) ?? undefined,
       contactName: (sharedContact?.full_name as string | undefined) ?? undefined,
@@ -500,14 +521,25 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       endsAt: session.ends_at as string,
       yearLevels: (session.year_levels as string | null) ?? "Years 7 to 13",
       expectedStudentCount: Number(session.expected_student_count ?? 0),
-      actualStudentCount: session.actual_student_count
-        ? Number(session.actual_student_count)
-        : undefined,
+      actualStudentCount:
+        reportedAttendanceBySessionId.get(session.id as string) ??
+        (session.actual_student_count === null || session.actual_student_count === undefined
+          ? undefined
+          : Number(session.actual_student_count)),
       status: effectiveStatus,
       assignedAmbassadorId: (session.assigned_ambassador_id as string | null) ?? undefined,
-      assignedAmbassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
-      assignedAmbassadorEmail: (ambassadorUser?.email as string | undefined) ?? undefined,
-      assignedAmbassadorPhone: (ambassadorUser?.phone as string | undefined) ?? undefined,
+      assignedAmbassadorName:
+        (ambassadorUser?.full_name as string | undefined) ??
+        (ambassadorProfile?.display_name as string | null) ??
+        undefined,
+      assignedAmbassadorEmail:
+        (ambassadorUser?.email as string | undefined) ??
+        (ambassadorProfile?.contact_email as string | null) ??
+        undefined,
+      assignedAmbassadorPhone:
+        (ambassadorUser?.phone as string | undefined) ??
+        (ambassadorProfile?.contact_phone as string | null) ??
+        undefined,
       reportStatus: session.report_status as BookingSessionView["reportStatus"],
       paymentStatus: session.payment_status as BookingSessionView["paymentStatus"],
       applicants: applicantsBySessionId.get(session.id as string) ?? [],
@@ -534,6 +566,12 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     const school = schoolsById.get(request.school_id as string);
     const contact = contactsById.get(request.primary_contact_id as string);
     const region = regionsById.get(request.region_id as string) ?? regionsById.get(school?.region_id as string);
+    const sourcingAmbassador = ambassadorProfilesById.get(
+      request.ambassador_outreach_by as string
+    );
+    const sourcingUser = sourcingAmbassador?.user_id
+      ? profilesById.get(sourcingAmbassador.user_id as string)
+      : null;
 
     return {
       id: request.id as string,
@@ -544,12 +582,27 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
       status: request.status as BookingRequestView["status"],
       source: request.source as BookingRequestView["source"],
+      sourcedByAmbassadorId:
+        (request.ambassador_outreach_by as string | null) ?? undefined,
+      sourcedByAmbassadorName: sourcingAmbassador
+        ? ((sourcingUser?.full_name as string | undefined) ??
+          (sourcingAmbassador.display_name as string | null) ??
+          "Ambassador")
+        : undefined,
       schoolNotes: (request.school_notes as string | null) ?? undefined,
       internalNotes: (request.internal_notes as string | null) ?? undefined,
       createdAt: request.created_at as string,
       sessions: sessionsByBookingId.get(request.id as string) ?? []
     } satisfies BookingRequestView;
   });
+}
+
+// Internal notes are staff-only commentary. Staff and admin payloads keep
+// them, but school and ambassador portal payloads must never serialize them.
+function stripInternalNotes(booking: BookingRequestView): BookingRequestView {
+  const rest = { ...booking };
+  delete rest.internalNotes;
+  return rest;
 }
 
 function mapSchools(data: NonNullable<RawPlatformData>) {
@@ -584,8 +637,8 @@ function mapSchools(data: NonNullable<RawPlatformData>) {
   });
 }
 
-// Payments still owed to an ambassador: awaiting invoice, invoiced, or with finance.
-const outstandingPaymentStatuses = ["pending", "invoiced", "submitted_for_payment"];
+// Payments still owed to an ambassador: report received or approved for finance.
+const outstandingPaymentStatuses = ["pending", "approved"];
 
 function mapAmbassadors(data: NonNullable<RawPlatformData>) {
   const { profilesById, regionsById } = buildLookups(data);
@@ -604,7 +657,9 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
     );
   }
 
-  return data.ambassadorProfiles.map((profile) => {
+  return data.ambassadorProfiles
+    .filter((profile) => !profile.deleted_at)
+    .map((profile) => {
     const user = profilesById.get(profile.user_id as string);
     const payments = data.payments.filter(
       (payment) => payment.ambassador_profile_id === profile.id
@@ -614,10 +669,23 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
 
     return {
       id: profile.id as string,
-      name: (user?.full_name as string | undefined) ?? "Ambassador",
-      email: (user?.email as string | undefined) ?? "",
-      phone: (user?.phone as string | undefined) ?? undefined,
-      imageUrl: (user?.avatar_url as string | null) ?? null,
+      userId: (profile.user_id as string | null) ?? undefined,
+      name:
+        (user?.full_name as string | undefined) ??
+        (profile.display_name as string | null) ??
+        "Ambassador",
+      email:
+        (user?.email as string | undefined) ??
+        (profile.contact_email as string | null) ??
+        "",
+      phone:
+        (user?.phone as string | undefined) ??
+        (profile.contact_phone as string | null) ??
+        undefined,
+      imageUrl:
+        (user?.avatar_url as string | null) ??
+        (profile.avatar_url as string | null) ??
+        null,
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
       regionName: (region?.name as string | undefined) ?? undefined,
       status: profile.status as AmbassadorProfile["status"],
@@ -637,8 +705,8 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       bankAccountNumber: (profile.bank_account_number as string | null) ?? undefined,
       gstNumber: (profile.gst_number as string | null) ?? undefined,
       details: (profile.profile_details as AmbassadorProfile["details"] | null) ?? undefined
-    } satisfies AmbassadorProfile;
-  });
+      } satisfies AmbassadorProfile;
+    });
 }
 
 function mapReports(data: NonNullable<RawPlatformData>) {
@@ -647,7 +715,10 @@ function mapReports(data: NonNullable<RawPlatformData>) {
   const requestsById = new Map(
     data.bookingRequests.map((request) => [request.id as string, request])
   );
-  const mediaByReportId = new Map<string, Array<{ url: string; type: string; title?: string }>>();
+  const mediaByReportId = new Map<
+    string,
+    Array<{ id?: string; url: string; type: string; title?: string }>
+  >();
 
   for (const media of data.reportMedia) {
     const reportId = media.report_id as string;
@@ -660,6 +731,7 @@ function mapReports(data: NonNullable<RawPlatformData>) {
     mediaByReportId.set(reportId, [
       ...(mediaByReportId.get(reportId) ?? []),
       {
+        id: media.id as string,
         url,
         type: (media.media_type as string | null) ?? "image",
         title: (media.title as string | null) ?? undefined
@@ -681,16 +753,38 @@ function mapReports(data: NonNullable<RawPlatformData>) {
       ? profilesById.get(ambassadorProfile.user_id as string)
       : null;
 
+    const payment = data.payments.find(
+      (item) =>
+        item.booking_session_id === report.booking_session_id &&
+        item.ambassador_profile_id === report.ambassador_profile_id
+    );
+    const bankAccountName = String(ambassadorProfile?.bank_account_name ?? "").trim();
+    const bankAccountNumber = String(ambassadorProfile?.bank_account_number ?? "").trim();
+    const missingPaymentDetails = payment
+      ? [
+          ...(bankAccountName.length >= 2 ? [] : ["account name"]),
+          ...(/^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/.test(bankAccountNumber)
+            ? []
+            : ["valid bank account number"])
+        ]
+      : [];
+
     return {
       id: report.id as string,
+      ambassadorProfileId: (report.ambassador_profile_id as string | null) ?? undefined,
+      bookingSessionId: (report.booking_session_id as string | null) ?? undefined,
       schoolId: (session?.school_id as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
       presentationTypeId: (session?.presentation_type_id as string | null) ?? undefined,
       presentationTitle: (presentation?.title as string | undefined) ?? "Presentation",
+      presentationAccentColor: (presentation?.accent_color as string | undefined) ?? undefined,
       submittedAt: report.submitted_at as string,
       attendeeCount: Number(report.attendee_count ?? 0),
       status: report.reviewed_for_payment_at ? "reviewed" : "submitted",
-      ambassadorName: (ambassadorUser?.full_name as string | undefined) ?? undefined,
+      ambassadorName:
+        (ambassadorUser?.full_name as string | undefined) ??
+        (ambassadorProfile?.display_name as string | null) ??
+        undefined,
       presenterName: (report.presenter_name as string | null) ?? undefined,
       schoolRollSize: optionalNumber(report.school_roll_size),
       primaryContactName: (report.primary_contact_name as string | null) ?? undefined,
@@ -720,7 +814,10 @@ function mapReports(data: NonNullable<RawPlatformData>) {
         (requestsById.get(session?.booking_request_id as string)?.created_at as
           | string
           | undefined) ?? undefined,
-      reviewedAt: (report.reviewed_for_payment_at as string | null) ?? undefined
+      reviewedAt: (report.reviewed_for_payment_at as string | null) ?? undefined,
+      paymentRequired: Boolean(payment),
+      paymentDetailsComplete: !payment || missingPaymentDetails.length === 0,
+      missingPaymentDetails
     } satisfies ReportSummary;
   });
 }
@@ -765,21 +862,38 @@ function mapPayments(data: NonNullable<RawPlatformData>) {
 
     return {
       id: payment.id as string,
-      ambassadorName: (ambassadorUser?.full_name as string | undefined) ?? "Unassigned",
+      ambassadorProfileId: (payment.ambassador_profile_id as string | null) ?? undefined,
+      ambassadorName:
+        (ambassadorUser?.full_name as string | undefined) ??
+        (ambassadorProfile?.display_name as string | null) ??
+        "Unassigned",
       bookingSessionId: payment.booking_session_id as string,
       amountCents: Number(payment.amount_cents ?? 0),
+      baseAmountCents: Number(
+        payment.base_amount_cents ??
+          (Number(payment.amount_cents ?? 0) - Number(payment.sourcing_bonus_cents ?? 0))
+      ),
+      sourcingBonusCents: Number(payment.sourcing_bonus_cents ?? 0),
       status: payment.status as PaymentRecord["status"],
       eligibilityReason: (payment.eligibility_reason as string | null) ?? "Pending review",
       createdAt: (payment.created_at as string | null) ?? new Date(0).toISOString(),
       paidAt: (payment.paid_at as string | null) ?? undefined,
       invoiceNumber: (payment.invoice_number as string | null) ?? undefined,
-      invoiceSubmittedAt: (payment.invoice_submitted_at as string | null) ?? undefined,
+      invoiceGeneratedAt: (payment.invoice_generated_at as string | null) ?? undefined,
       sentToFinanceAt: (payment.sent_to_finance_at as string | null) ?? undefined,
       sentToEmail: (payment.sent_to_email as string | null) ?? undefined,
-      sentCcEmail: (payment.sent_cc_email as string | null) ?? undefined,
+      financeEmailStatus:
+        (payment.finance_email_status as PaymentRecord["financeEmailStatus"] | null) ?? undefined,
+      financeEmailAttempts: Number(payment.finance_email_attempts ?? 0),
+      financeEmailLastAttemptAt:
+        (payment.finance_email_last_attempt_at as string | null) ?? undefined,
+      financeEmailError: (payment.finance_email_error as string | null) ?? undefined,
+      financeConfirmationExpiresAt:
+        (payment.finance_confirmation_expires_at as string | null) ?? undefined,
+      financeConfirmedAt: (payment.finance_confirmed_at as string | null) ?? undefined,
+      bankAccountName: (payment.bank_account_name as string | null) ?? undefined,
       bankAccountNumber: (payment.bank_account_number as string | null) ?? undefined,
-      gstNumber: (payment.gst_number as string | null) ?? undefined,
-      invoiceNotes: (payment.invoice_notes as string | null) ?? undefined
+      gstNumber: (payment.gst_number as string | null) ?? undefined
     } satisfies PaymentRecord;
   });
 }
@@ -839,6 +953,7 @@ function mapPresentations(data: NonNullable<RawPlatformData>) {
     requiredEquipment: splitContentLines(presentation.required_equipment),
     youtubeUrl: (presentation.youtube_url as string | null) ?? undefined,
     imageUrl: (presentation.image_url as string | null) ?? undefined,
+    accentColor: (presentation.accent_color as string | null) ?? undefined,
     active: Boolean(presentation.is_active),
     public: Boolean(presentation.is_public)
   })) satisfies PresentationType[];
@@ -913,23 +1028,7 @@ function mapAuditLogs(data: NonNullable<RawPlatformData>) {
   }));
 }
 
-function mapTrainingModules(data: NonNullable<RawPlatformData>, ambassadorProfileId?: string) {
-  const completedProgress = new Set(
-    data.trainingProgress
-      .filter((progress) => {
-        if (ambassadorProfileId && progress.ambassador_profile_id !== ambassadorProfileId) {
-          return false;
-        }
-
-        return progress.status === "completed";
-      })
-      .map((progress) =>
-        progress.training_lesson_id
-          ? `lesson:${progress.training_lesson_id}`
-          : `module:${progress.training_module_id}`
-      )
-  );
-
+function mapTrainingModules(data: NonNullable<RawPlatformData>) {
   return data.trainingModules
     .filter((module) => module.is_active !== false && module.is_published !== false)
     .map((module) => {
@@ -939,22 +1038,16 @@ function mapTrainingModules(data: NonNullable<RawPlatformData>, ambassadorProfil
           id: lesson.id as string,
           title: lesson.title as string,
           type: (lesson.lesson_type as TrainingModule["lessons"][number]["type"]) ?? "video",
-          durationMinutes: 0
+          durationMinutes: 0,
+          youtubeUrl: (lesson.youtube_url as string | null) ?? undefined,
+          content: (lesson.content as string | null) ?? undefined
         }));
-      const completedLessons = lessons.filter((lesson) => completedProgress.has(`lesson:${lesson.id}`));
-      const moduleCompleted = completedProgress.has(`module:${module.id}`);
-      const progress =
-        lessons.length > 0
-          ? Math.round((completedLessons.length / lessons.length) * 100)
-          : moduleCompleted
-            ? 100
-            : 0;
 
       return {
         id: module.id as string,
+        presentationTypeId: (module.presentation_type_id as string | null) ?? undefined,
         title: module.title as string,
         description: (module.description as string | null) ?? "",
-        progress,
         lessons
       } satisfies TrainingModule;
     });
@@ -1001,6 +1094,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
         type: resource.type,
         category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
+        sharingScope: ["public", "school"].includes(resource.audience) ? "public" : "internal",
         tags: [],
         isActive: true,
         downloadUrl: resource.downloadUrl,
@@ -1083,7 +1177,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
             .filter((payment) => outstandingPaymentStatuses.includes(payment.status))
             .reduce((total, payment) => total + payment.amountCents, 0)
         ),
-        detail: "Waiting on invoice or finance"
+        detail: "Received or approved for finance"
       }
     ]
   };
@@ -1105,6 +1199,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
         type: resource.type,
         category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
+        sharingScope: ["public", "school"].includes(resource.audience) ? "public" : "internal",
         tags: [],
         isActive: true
       })),
@@ -1198,6 +1293,7 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
         type: resource.type,
         category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
+        sharingScope: ["public", "school"].includes(resource.audience) ? "public" : "internal",
         tags: [],
         isActive: true
       })),
@@ -1237,15 +1333,21 @@ export async function getSchoolPortalData(userId?: string): Promise<SchoolPortal
           contactPhone: (primaryContact?.phone as string | null) ?? ""
         }
       : null,
-    bookings: mappedBookings.filter((booking) => {
-      const request = data.bookingRequests.find((item) => item.id === booking.id);
-      return (
-        schoolIds.includes(request?.school_id as string) ||
-        request?.submitted_by_user_id === userId
-      );
-    }),
+    bookings: mappedBookings
+      .filter((booking) => {
+        const request = data.bookingRequests.find((item) => item.id === booking.id);
+        return (
+          schoolIds.includes(request?.school_id as string) ||
+          request?.submitted_by_user_id === userId
+        );
+      })
+      .map(stripInternalNotes),
     resources: (await mapResources(data)).filter(
-      (resource) => resource.audiences.includes("school") && resource.isActive
+      (resource) =>
+        resource.audiences.includes("school") &&
+        resource.sharingScope === "public" &&
+        resource.isActive &&
+        resource.isCurrent
     ),
     myReviews: mappedReviews.filter((review) => review.schoolId && schoolIds.includes(review.schoolId))
   };
@@ -1267,12 +1369,16 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
       assignedSessions: demoBookingRequests.flatMap((booking) =>
         booking.sessions.filter((session) => session.assignedAmbassadorName)
       ),
+      sourcedBookings: demoBookingRequests.filter(
+        (booking) => booking.source === "ambassador_booked"
+      ),
       reports: demoReports,
       resources: demoResources.filter((resource) => resource.audience === "ambassador").map((resource) => ({
         ...resource,
         type: resource.type,
         category: demoResourceCategory(resource.type, resource.audience),
         audiences: [resource.audience],
+        sharingScope: ["public", "school"].includes(resource.audience) ? "public" : "internal",
         tags: [],
         isActive: true
       })),
@@ -1326,6 +1432,11 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
     presentations: mapPresentations(data).filter((presentation) => presentation.active),
     openSessions,
     assignedSessions,
+    sourcedBookings: rawAmbassador
+      ? bookings
+          .filter((booking) => booking.sourcedByAmbassadorId === rawAmbassador.id)
+          .map(stripInternalNotes)
+      : [],
     reports: rawAmbassador
       ? reports.filter((report) => {
           const rawReport = data.reports.find((item) => item.id === report.id);
@@ -1333,7 +1444,10 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
         })
       : [],
     resources: (await mapResources(data)).filter(
-      (resource) => resource.audiences.includes("ambassador") && resource.isActive
+      (resource) =>
+        (resource.audiences.includes("ambassador") || resource.audiences.includes("public")) &&
+        resource.isActive &&
+        resource.isCurrent
     ),
     payments: mapPayments(data).filter((payment) => {
       const rawPayment = data.payments.find((item) => item.id === payment.id);
@@ -1343,7 +1457,7 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
 
       return rawAmbassador?.user_id === userId;
     }),
-    trainingModules: mapTrainingModules(data, rawAmbassador?.id as string | undefined),
+    trainingModules: mapTrainingModules(data),
     regions: data.regions
       .filter((region) => region.is_active !== false)
       .map((region) => ({

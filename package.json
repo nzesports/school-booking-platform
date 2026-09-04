@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "node scripts/dev-local.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
@@ -17,8 +18,11 @@
     "local:start": "node scripts/local-supabase.mjs start",
     "local:reset": "node scripts/local-supabase.mjs reset",
     "local:seed": "node scripts/local-supabase.mjs seed",
-    "local:status": "supabase status",
-    "local:stop": "supabase stop"
+    "local:demo:showcase": "node scripts/seed-ambassador-showcase.mjs",
+    "local:demo:remove": "node scripts/remove-demo-data.mjs",
+    "local:status": "node scripts/local-supabase.mjs status",
+    "local:stop": "node scripts/local-supabase.mjs stop",
+    "import:historical-data": "node scripts/import-historical-platform-data.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -32,7 +36,6 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^0.554.0",
     "next": "^16.0.0",
-    "pdf-lib": "^1.17.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sanitize-html": "^2.17.5",
@@ -57,6 +60,7 @@
     "supabase": "^2.116.0",
     "tailwindcss": "^4.1.12",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "xlsx": "^0.18.5"
   }
 }

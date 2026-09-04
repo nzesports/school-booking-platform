@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 const variants = {
   primary:
-    "border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)] hover:border-[#97c3de] hover:bg-[#c0dff2]",
+    "border-[#c4d9ed] bg-[#e8f1fd] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(67,111,151,0.12)] hover:border-[#afcce6] hover:bg-[#dceafa]",
   secondary:
     "border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)] hover:border-[color:rgba(4,15,75,0.18)] hover:bg-[#fbfdff]",
   ghost:
@@ -28,7 +28,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border px-3.5 py-1.5 text-[13px] font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] disabled:cursor-not-allowed disabled:opacity-60 [&>svg]:order-first [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0",
         variants[variant],
         className
       )}
@@ -52,7 +52,7 @@ export function ButtonLink({
   ...props
 }: ButtonLinkProps) {
   const classes = cn(
-    "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[16px] border px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)]",
+    "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border px-3.5 py-1.5 text-[13px] font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] [&>svg]:order-first [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0",
     variants[variant],
     className
   );

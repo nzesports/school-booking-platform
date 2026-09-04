@@ -5,17 +5,20 @@ import {
   Clock3,
   ExternalLink,
   FileDown,
+  Info,
   MonitorPlay,
   Projector,
   UsersRound,
   Youtube
 } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { splitYearGroups, yearGroupChipClass } from "@/lib/domain/year-groups";
+import { presentationPalette } from "@/lib/presentation-colors";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import {
   getPresentationBySlug,
@@ -46,6 +49,8 @@ export default async function PresentationDetailPage({
   const resources = await listPublicPresentationResources(presentation.id);
   const yearGroups = splitYearGroups(presentation.yearLevels);
   const videoEmbedUrl = toYouTubeEmbedUrl(presentation.youtubeUrl);
+  const isParentPresentation = presentation.slug === "understanding-esports";
+  const palette = presentationPalette(presentation);
 
   return (
     <main className="site-shell-wide py-8 md:py-10">
@@ -59,7 +64,7 @@ export default async function PresentationDetailPage({
       </ButtonLink>
 
       <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
-        <Card className="rounded-[30px] md:rounded-[38px]">
+        <Card className="rounded-[30px] md:rounded-[38px]" style={{ borderColor: palette.border }}>
           <div className="flex flex-wrap gap-2">
             {yearGroups.map((group) => (
               <span
@@ -74,7 +79,7 @@ export default async function PresentationDetailPage({
             {presentation.title}
           </h1>
           <div
-            className="rich-text-prose mt-5 max-w-3xl text-base leading-8 text-[color:var(--text-soft)] md:text-lg"
+            className="rich-text-prose mt-5 w-full text-base leading-8 text-[color:var(--text-soft)] md:text-lg"
             dangerouslySetInnerHTML={{
               __html: sanitizeRichText(presentation.fullDescription)
             }}
@@ -84,7 +89,11 @@ export default async function PresentationDetailPage({
             <DetailStat
               icon={<Clock3 className="h-4 w-4" />}
               label="Duration"
-              value={`${presentation.durationMinutes} mins`}
+              value={
+                isParentPresentation
+                  ? `${presentation.durationMinutes} mins, including Q&A`
+                  : `${presentation.durationMinutes} mins`
+              }
             />
             <DetailStat
               icon={<MonitorPlay className="h-4 w-4" />}
@@ -97,6 +106,31 @@ export default async function PresentationDetailPage({
               value={yearGroups.join(", ")}
             />
           </div>
+
+          {isParentPresentation ? (
+            <div className="mt-8 rounded-[28px] border border-[#efcf83] bg-[linear-gradient(135deg,#fff9e9,#fffdf7)] p-6 text-[color:var(--navy)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7)]">
+              <div className="flex items-start gap-3">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-[#9a6900]" />
+                <div>
+                  <h2 className="text-xl font-semibold tracking-[-0.03em]">
+                    Parent presentation attendance requirement
+                  </h2>
+                  <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
+                    This is a parent and whānau presentation, not a student assembly. Teachers and
+                    school staff are welcome to attend. A minimum of 30 parents must be confirmed
+                    before the session can be organised; otherwise, it will be cancelled. Please{" "}
+                    <Link
+                      href="/contact"
+                      className="font-semibold text-[#1e4fae] underline decoration-[#1e4fae]/30 underline-offset-4"
+                    >
+                      contact us
+                    </Link>{" "}
+                    for more information.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {videoEmbedUrl ? (
             <div className="mt-8">
@@ -126,12 +160,26 @@ export default async function PresentationDetailPage({
                     Learning outcomes
                   </h2>
                   <ul className="mt-4 grid gap-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                    {presentation.learningOutcomes.map((item) => (
-                      <li key={item} className="flex items-start gap-2.5">
-                        <CircleCheck className="mt-1 h-4 w-4 shrink-0 text-[color:var(--green)]" />
-                        {item}
-                      </li>
-                    ))}
+                    {presentation.learningOutcomes.map((item, index) => {
+                      const content = parseStructuredListItem(item);
+
+                      return (
+                        <li
+                          key={`${content.title}-${index}`}
+                          className="flex items-start gap-2.5"
+                        >
+                          <CircleCheck className="mt-1 h-4 w-4 shrink-0" style={{ color: palette.accent }} />
+                          <div>
+                            <p className="font-semibold text-[color:var(--navy)]">
+                              {content.title}
+                            </p>
+                            {content.description ? (
+                              <p className="mt-1">{content.description}</p>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ) : null}
@@ -142,15 +190,43 @@ export default async function PresentationDetailPage({
                     Required equipment
                   </h2>
                   <ul className="mt-4 grid gap-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                    {presentation.requiredEquipment.map((item) => (
-                      <li key={item} className="flex items-start gap-2.5">
-                        <Projector className="mt-1 h-4 w-4 shrink-0 text-[color:var(--navy)]" />
-                        {item}
-                      </li>
-                    ))}
+                    {presentation.requiredEquipment.map((item, index) => {
+                      const content = parseStructuredListItem(item);
+
+                      return (
+                        <li
+                          key={`${content.title}-${index}`}
+                          className="flex items-start gap-2.5"
+                        >
+                          <Projector className="mt-1 h-4 w-4 shrink-0 text-[color:var(--navy)]" />
+                          <div>
+                            <p className="font-semibold text-[color:var(--navy)]">
+                              {content.title}
+                            </p>
+                            {content.description ? (
+                              <p className="mt-1">{content.description}</p>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {presentation.contentSnippet ? (
+            <div className="mt-8 rounded-[28px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)] p-6 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]">
+              <h2 className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                What to expect
+              </h2>
+              <div
+                className="rich-text-prose mt-3 text-sm leading-7 text-[color:var(--text-soft)]"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeRichText(presentation.contentSnippet)
+                }}
+              />
             </div>
           ) : null}
 
@@ -263,4 +339,14 @@ function DetailStat({
       </p>
     </div>
   );
+}
+
+function parseStructuredListItem(value: string) {
+  const [title, ...descriptionParts] = value.split("::");
+  const description = descriptionParts.join("::").trim();
+
+  return {
+    title: title.trim(),
+    description: description || undefined
+  };
 }

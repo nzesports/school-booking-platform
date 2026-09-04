@@ -1,12 +1,12 @@
 "use client";
 
-import { CalendarDays, Info, Search } from "lucide-react";
-import Link from "next/link";
+import { CalendarClock, CalendarDays, CheckCircle2, Eye, Search, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { StatusBadge, schoolBookingStatusLabel } from "@/components/ui/status-badge";
 import { ButtonLink } from "@/components/ui/button";
 import type { BookingSessionView } from "@/lib/domain/types";
+import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime } from "@/lib/utils";
 
 export type SchoolSessionRow = {
@@ -105,17 +105,13 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
           ))}
         </div>
 
-        <p className="flex items-center gap-2 rounded-[12px] bg-[#eef4fd] px-3.5 py-2.5 text-sm font-medium text-[#1e4fae]">
-          <Info className="h-4 w-4 shrink-0" />
-          Pending bookings are awaiting approval from the NZ Esports delivery team.
-        </p>
       </div>
 
       <div className="overflow-x-auto rounded-[18px] border border-[color:var(--border-soft)] bg-white">
-        <table className="min-w-[760px] border-separate border-spacing-0 lg:min-w-full">
+        <table className="min-w-[920px] border-separate border-spacing-0 lg:min-w-full">
           <thead>
             <tr>
-              {["Presentation", "Date & time", "Status", "Ambassador", "Actions"].map((heading) => (
+              {["Presentation", "Date & time", "Status", "Ambassador", "Actions", "Review"].map((heading) => (
                 <th
                   key={heading}
                   className="border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
@@ -130,10 +126,10 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
               <tr key={row.session.id} className="align-middle">
                 <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
                   <span className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#e8f1fd] text-[#1e4fae]">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]" style={{ backgroundColor: colourWithAlpha(row.session.presentationAccentColor ?? "#18A83B", 0.1), color: row.session.presentationAccentColor ?? "#18A83B" }}>
                       <CalendarDays className="h-4 w-4" />
                     </span>
-                    <span className="font-semibold text-[color:var(--navy)]">
+                    <span className="font-semibold" style={{ color: row.session.presentationAccentColor ?? "var(--navy)" }}>
                       {row.session.presentationTitle}
                     </span>
                   </span>
@@ -156,29 +152,43 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                   <span className="flex flex-wrap items-center gap-2">
                     <ButtonLink
                       href={`/school/bookings/${row.bookingId}`}
-                      variant="secondary"
-                      className="min-h-[34px] rounded-[11px] border-[rgba(24,168,59,0.4)] px-3 py-1 text-[13px] text-[#117a2e]"
+                      className="min-h-[36px] rounded-[12px] px-3 py-1"
                     >
+                      <Eye className="h-4 w-4" />
                       View details
                     </ButtonLink>
-                    {row.isDelivered && !row.hasReview ? (
+                    {!row.isDelivered && reschedulableStatuses.has(row.session.status) ? (
                       <ButtonLink
-                        href={`/school/review/${row.session.id}`}
+                        href={`/school/bookings/${row.bookingId}/sessions/${row.session.id}/reschedule`}
                         variant="ghost"
-                        className="min-h-[34px] rounded-[11px] px-3 py-1 text-[13px]"
+                        className="min-h-[36px] rounded-[12px] px-3 py-1"
                       >
-                        Leave review
+                        <CalendarClock className="h-4 w-4" />
+                        Reschedule
                       </ButtonLink>
                     ) : null}
-                    {!row.isDelivered && reschedulableStatuses.has(row.session.status) ? (
-                      <Link
-                        href={`/school/bookings/${row.bookingId}/sessions/${row.session.id}/reschedule`}
-                        className="text-[13px] font-semibold text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
-                      >
-                        Reschedule
-                      </Link>
-                    ) : null}
                   </span>
+                </td>
+                <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                  {row.hasReview ? (
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#117a2e]">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Submitted
+                    </span>
+                  ) : row.isDelivered ? (
+                    <ButtonLink
+                      href={`/school/review/${row.session.id}`}
+                      variant="secondary"
+                      className="min-h-[36px] rounded-[12px] px-3 py-1"
+                    >
+                      <Star className="h-4 w-4" />
+                      Leave feedback
+                    </ButtonLink>
+                  ) : (
+                    <span className="text-xs font-medium text-[color:var(--text-soft)]">
+                      After presentation
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

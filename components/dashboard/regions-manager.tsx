@@ -28,12 +28,9 @@ export function RegionsManager({
             <MapPinned className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
               Add a region
             </h2>
-            <p className="text-sm text-[color:var(--text-soft)]">
-              New regions appear immediately in booking forms, signups, and filters.
-            </p>
           </div>
         </div>
 

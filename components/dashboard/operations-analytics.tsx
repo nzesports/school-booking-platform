@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   Bell,
   CalendarCheck2,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
+  CircleX,
   CircleDollarSign,
   ClipboardList,
   FilePlus2,
@@ -15,6 +18,8 @@ import {
   Globe2,
   Home,
   Hourglass,
+  Download,
+  Eye,
   Mail,
   MapPinned,
   School2,
@@ -23,11 +28,9 @@ import {
   UsersRound
 } from "lucide-react";
 
-import { markPaymentPaidAction } from "@/app/portal/actions";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StarRating } from "@/components/ui/star-rating";
-import { StatusBadge } from "@/components/ui/status-badge";
 import type {
   AmbassadorProfile,
   BookingRequestView,
@@ -40,7 +43,6 @@ import type {
 } from "@/lib/domain/types";
 import {
   bookingInRange,
-  bookingNeedsAction,
   buildYearGroupCoverage,
   isCancelledSession,
   isCompletedBooking,
@@ -49,17 +51,44 @@ import {
   reportInRange,
   reviewInRange,
   sessionInRange,
+  type DashboardCustomRange,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
+import type { ResourceRecord } from "@/lib/services/portal";
 import { cn, formatCurrency, formatTime, formatWeekdayDate } from "@/lib/utils";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const BOOKING_REVIEW_STATUSES = new Set([
+  "requested",
+  "tentative",
+  "applied",
+  "withdrawal_requested",
+  "reschedule_requested"
+]);
+const BOOKING_PENDING_STATUSES = new Set([
+  "requested",
+  "tentative",
+  "applied",
+  "reschedule_requested"
+]);
+const BOOKING_CONFIRMED_STATUSES = new Set(["ambassador_assigned", "confirmed"]);
+const BOOKING_COMPLETED_STATUSES = new Set([
+  "completed_pending_report",
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed"
+]);
+const BOOKING_CANCELLED_STATUSES = new Set(["cancelled", "declined"]);
 
 type RegionSummary = { id: string; name: string; slug: string; isActive: boolean };
 
 export function OperationsAnalytics({
   basePath,
   range,
+  customRange,
+  analyticsYear,
   periodLabel,
   bookings,
   reports,
@@ -68,6 +97,7 @@ export function OperationsAnalytics({
   payments,
   schools,
   presentations,
+  resources,
   regions,
   resourcesLiveCount,
   unreadActivityCount,
@@ -79,6 +109,8 @@ export function OperationsAnalytics({
 }: {
   basePath: string;
   range: DashboardRange;
+  customRange?: DashboardCustomRange | null;
+  analyticsYear?: number;
   periodLabel: string;
   bookings: BookingRequestView[];
   reports: ReportSummary[];
@@ -87,6 +119,7 @@ export function OperationsAnalytics({
   payments: PaymentRecord[];
   schools: School[];
   presentations: PresentationType[];
+  resources: ResourceRecord[];
   regions: RegionSummary[];
   resourcesLiveCount: number;
   unreadActivityCount: number;
@@ -99,39 +132,100 @@ export function OperationsAnalytics({
   const now = new Date();
   const year = now.getFullYear();
   const allSessions = bookings.flatMap((booking) => booking.sessions);
+  const availableAnalyticsYears = Array.from(
+    new Set([
+      year,
+      ...bookings.map((booking) => new Date(booking.createdAt).getFullYear()),
+      ...allSessions.map((session) => new Date(session.startsAt).getFullYear()),
+      ...reports.map((report) =>
+        new Date(report.sessionStartsAt ?? report.submittedAt).getFullYear()
+      )
+    ])
+  )
+    .filter((value) => Number.isFinite(value) && value >= 2000 && value <= year)
+    .sort((left, right) => left - right);
+  const selectedAnalyticsYear = availableAnalyticsYears.includes(analyticsYear ?? year)
+    ? (analyticsYear ?? year)
+    : (availableAnalyticsYears.at(-1) ?? year);
+  const selectedYearIndex = availableAnalyticsYears.indexOf(selectedAnalyticsYear);
+  const olderAnalyticsYear =
+    selectedYearIndex > 0 ? availableAnalyticsYears[selectedYearIndex - 1] : undefined;
+  const newerAnalyticsYear =
+    selectedYearIndex >= 0 && selectedYearIndex < availableAnalyticsYears.length - 1
+      ? availableAnalyticsYears[selectedYearIndex + 1]
+      : undefined;
+  const analyticsYearHref = (value: number) => {
+    const searchParams = new URLSearchParams({
+      range,
+      analyticsYear: String(value)
+    });
+
+    if (customRange) {
+      searchParams.set("from", customRange.from);
+      searchParams.set("to", customRange.to);
+    }
+
+    return `${basePath}?${searchParams.toString()}`;
+  };
 
   // Range-scoped data drives the glance strip and pipeline; yearly data drives the charts.
-  const rangeBookings = bookings.filter((booking) => bookingInRange(booking, range, now));
-  const rangeSessions = rangeBookings.flatMap((booking) =>
-    booking.sessions.filter((session) => sessionInRange(session, range, now))
+  const rangeBookings = bookings.filter((booking) =>
+    bookingInRange(booking, range, now, customRange)
   );
-  const rangeReports = reports.filter((report) => reportInRange(report, range, now));
-  const rangeReviews = schoolReviews.filter((review) => reviewInRange(review, range, now));
+  const rangeSessions = rangeBookings.flatMap((booking) =>
+    booking.sessions.filter((session) => sessionInRange(session, range, now, customRange))
+  );
+  const rangeReports = reports.filter((report) =>
+    reportInRange(report, range, now, customRange)
+  );
+  const rangeReviews = schoolReviews.filter((review) =>
+    reviewInRange(review, range, now, customRange)
+  );
   const deliveredRangeSessions = rangeSessions.filter((session) => isDeliveredSession(session, now));
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
   const pendingApplications = ambassadors.filter((ambassador) => ambassador.status === "applied");
+  const publicPresentations = presentations.filter(
+    (presentation) =>
+      presentation.active && presentation.public && presentation.slug !== "careers"
+  );
 
   const pipeline = buildBookingPipeline(rangeBookings, rangeSessions, now);
   const studentsReachedRange = countStudentsReached(rangeReports, deliveredRangeSessions);
 
-  const yearBookings = bookings.filter((booking) => new Date(booking.createdAt).getFullYear() === year);
-  const activity = buildYearlyActivity(bookings, allSessions, year);
-  const sources = buildSourceBreakdown(yearBookings);
-  const studentSeries = buildYearlyStudentSeries(reports, allSessions, year);
-  const yearStudentsTotal = studentSeries.reduce((total, point) => total + point.value, 0);
-  const lastYearStudentsTotal = buildYearlyStudentSeries(reports, allSessions, year - 1).reduce(
-    (total, point) => total + point.value,
-    0
+  const analyticsYearBookings = bookings.filter(
+    (booking) => new Date(booking.createdAt).getFullYear() === selectedAnalyticsYear
   );
+  const currentYearBookings = bookings.filter(
+    (booking) => new Date(booking.createdAt).getFullYear() === year
+  );
+  const activity = buildYearlyActivity(bookings, allSessions, selectedAnalyticsYear);
+  const sources = buildSourceBreakdown(analyticsYearBookings);
+  const bookingStatuses = buildBookingStatusBreakdown(analyticsYearBookings);
+  const previousYearSources = buildSourceBreakdown(
+    bookings.filter(
+      (booking) => new Date(booking.createdAt).getFullYear() === selectedAnalyticsYear - 1
+    )
+  );
+  const studentSeries = buildYearlyStudentSeries(reports, allSessions, selectedAnalyticsYear);
+  const yearStudentsTotal = studentSeries.reduce((total, point) => total + point.value, 0);
+  const lastYearStudentsTotal = buildYearlyStudentSeries(
+    reports,
+    allSessions,
+    selectedAnalyticsYear - 1
+  ).reduce((total, point) => total + point.value, 0);
   const yearSchoolsReached = new Set(
     allSessions
-      .filter((session) => new Date(session.startsAt).getFullYear() === year && isDeliveredSession(session, now))
+      .filter(
+        (session) =>
+          new Date(session.startsAt).getFullYear() === selectedAnalyticsYear &&
+          isDeliveredSession(session, now)
+      )
       .map((session) => session.schoolName)
   ).size;
 
   const paymentSummary = buildPaymentSummary(payments, year);
   const regionCoverage = buildRegionCoverage(approvedAmbassadors, regions);
-  const ambassadorFunnel = buildAmbassadorFunnel(yearBookings, now);
+  const ambassadorFunnel = buildAmbassadorFunnel(currentYearBookings, now);
   const sessionsAssignedThisYear = allSessions.filter(
     (session) =>
       new Date(session.startsAt).getFullYear() === year &&
@@ -148,7 +242,16 @@ export function OperationsAnalytics({
     .filter((session) => isFutureSession(session, now))
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 
-  const bookingsHref = (view: string) => `${basePath}/bookings?status=${view}&range=${range}`;
+  const bookingsHref = (view: string) => {
+    const searchParams = new URLSearchParams({ status: view, range });
+
+    if (customRange) {
+      searchParams.set("from", customRange.from);
+      searchParams.set("to", customRange.to);
+    }
+
+    return `${basePath}/bookings?${searchParams.toString()}`;
+  };
 
   return (
     <div className="grid gap-6">
@@ -183,7 +286,7 @@ export function OperationsAnalytics({
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
         <SectionKicker label="Bookings overview" />
-        <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-7">
           <PipelineCard
             icon={<FilePlus2 className="h-5 w-5 text-[#246bff]" />}
             label="New bookings"
@@ -207,9 +310,16 @@ export function OperationsAnalytics({
           />
           <PipelineCard
             icon={<CalendarDays className="h-5 w-5 text-[#246bff]" />}
-            label="Upcoming sessions"
+            label="Confirmed upcoming"
             value={pipeline.upcomingSessions}
             href={calendarHref ?? bookingsHref("future")}
+            withArrow
+          />
+          <PipelineCard
+            icon={<Hourglass className="h-5 w-5 text-[#c07a12]" />}
+            label="Pending bookings"
+            value={pipeline.pending}
+            href={bookingsHref("current")}
             withArrow
           />
           <PipelineCard
@@ -218,14 +328,31 @@ export function OperationsAnalytics({
             value={pipeline.completed}
             href={bookingsHref("past")}
           />
+          <PipelineCard
+            icon={<CircleX className="h-5 w-5 text-[#b3372e]" />}
+            label="Cancelled bookings"
+            value={pipeline.cancelled}
+            href={bookingsHref("cancelled")}
+          />
         </div>
         <PipelineTimeline />
       </Card>
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
-        <SectionKicker label="Key analytics" />
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <ChartPanel title={`Bookings and sessions over time (${year})`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionKicker label="Key analytics" />
+          <YearNavigator
+            year={selectedAnalyticsYear}
+            olderHref={
+              olderAnalyticsYear ? analyticsYearHref(olderAnalyticsYear) : undefined
+            }
+            newerHref={
+              newerAnalyticsYear ? analyticsYearHref(newerAnalyticsYear) : undefined
+            }
+          />
+        </div>
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(250px,0.775fr)_minmax(250px,0.775fr)]">
+          <ChartPanel title={`Bookings and sessions over time (${selectedAnalyticsYear})`}>
             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
               <LegendDot color="#18a83b" label="Bookings" />
               <LegendDot color="#246bff" label="Sessions" />
@@ -236,10 +363,10 @@ export function OperationsAnalytics({
             </ChartFootnote>
           </ChartPanel>
 
-          <ChartPanel title={`Where bookings come from (${year})`}>
-            <div className="grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
+          <ChartPanel title={`Where bookings come from (${selectedAnalyticsYear})`}>
+            <div className="grid gap-4">
               <DonutChart total={sources.total} segments={sources.segments} />
-              <div className="grid gap-3">
+              <div className="grid gap-2.5 border-t border-[color:rgba(4,15,75,0.07)] pt-4">
                 {sources.segments.map((segment) => (
                   <div key={segment.label} className="flex items-center justify-between gap-3 text-sm">
                     <span className="flex items-center gap-2 font-medium text-[color:var(--navy)]">
@@ -255,14 +382,57 @@ export function OperationsAnalytics({
               </div>
             </div>
             <ChartFootnote icon={<CheckCircle2 className="h-4 w-4 text-[color:var(--green)]" />}>
-              All booking data for Jan – Dec {year}
+              {previousYearSources.total > 0
+                ? `${formatSignedDelta(sources.total - previousYearSources.total)} bookings vs ${selectedAnalyticsYear - 1}`
+                : `All booking data for Jan – Dec ${selectedAnalyticsYear}`}
+            </ChartFootnote>
+          </ChartPanel>
+
+          <ChartPanel title={`Booking status (${selectedAnalyticsYear})`} tone="green">
+            <div className="grid gap-4">
+              <DonutChart total={bookingStatuses.total} segments={bookingStatuses.segments} />
+              <div className="grid gap-2.5 border-t border-[color:rgba(4,15,75,0.07)] pt-4">
+                {bookingStatuses.segments.map((segment) => (
+                  <div key={segment.label} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex items-center gap-2 font-medium text-[color:var(--navy)]">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: segment.color }}
+                      />
+                      {segment.label}
+                    </span>
+                    <span className="font-semibold text-[color:var(--navy)]">
+                      {segment.value}{" "}
+                      <span className="font-medium text-[color:var(--text-soft)]">
+                        ({segment.percent}%)
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <ChartFootnote icon={<CheckCircle2 className="h-4 w-4 text-[color:var(--green)]" />}>
+              {bookingStatuses.total > 0
+                ? `${bookingStatuses.completionRate}% of bookings completed`
+                : `No bookings recorded in ${selectedAnalyticsYear}`}
             </ChartFootnote>
           </ChartPanel>
         </div>
       </Card>
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
-        <SectionKicker label={`Students reached (${year})`} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionKicker label={`Students reached (${selectedAnalyticsYear})`} />
+          <YearNavigator
+            year={selectedAnalyticsYear}
+            olderHref={
+              olderAnalyticsYear ? analyticsYearHref(olderAnalyticsYear) : undefined
+            }
+            newerHref={
+              newerAnalyticsYear ? analyticsYearHref(newerAnalyticsYear) : undefined
+            }
+          />
+        </div>
         <div className="mt-5 grid gap-6 xl:grid-cols-[0.32fr_0.68fr] xl:items-center">
           <div>
             <p className="text-6xl font-semibold tracking-[-0.06em] text-[color:var(--navy)]">
@@ -286,7 +456,7 @@ export function OperationsAnalytics({
           <div>
             <MonthlyBarChart series={studentSeries} />
             <ChartFootnote icon={<UsersRound className="h-4 w-4 text-[#246bff]" />}>
-              Yearly trend (Jan – Dec {year})
+              Yearly trend (Jan – Dec {selectedAnalyticsYear})
             </ChartFootnote>
           </div>
         </div>
@@ -332,30 +502,16 @@ export function OperationsAnalytics({
           />
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <ChartPanel title={`Ambassador coverage by region (${year})`} tone="green">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr] xl:grid-rows-[auto_auto]">
+          <ChartPanel title="Ambassador coverage by region" tone="green" className="xl:row-span-2">
             {regionCoverage.length > 0 ? (
-              <>
-                <div className="grid gap-3">
-                  {regionCoverage.map((region) => (
-                    <HorizontalBar
-                      key={region.slug}
-                      label={region.name}
-                      value={region.count}
-                      max={regionCoverage[0]?.count ?? 1}
-                    />
-                  ))}
-                </div>
-                <p className="mt-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-                  Active ambassadors
-                </p>
-              </>
+              <AmbassadorCoverageMap regions={regionCoverage} />
             ) : (
               <EmptyStateCopy copy="No approved ambassadors are assigned to a region yet." />
             )}
           </ChartPanel>
 
-          <ChartPanel title={`Ambassador-sourced bookings (${year})`} tone="green">
+          <ChartPanel title="Ambassador-sourced bookings" tone="green">
             <StageBarChart
               stages={[
                 { label: "Submitted", value: ambassadorFunnel.submitted },
@@ -371,19 +527,12 @@ export function OperationsAnalytics({
                 : "No ambassador-referred bookings completed yet this year"}
             </ChartFootnote>
           </ChartPanel>
-        </div>
 
-        <div className="mt-5 rounded-[26px] border border-[color:rgba(4,15,75,0.08)] bg-white/92 p-5">
+        <div className="rounded-[26px] border border-[color:rgba(4,15,75,0.08)] bg-white/92 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[color:var(--navy)]">
-                Outstanding payment submissions
-              </p>
-              <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                Payment records created from submitted ambassador reports, waiting on an invoice or
-                finance.
-              </p>
-            </div>
+            <p className="text-sm font-semibold text-[color:var(--navy)]">
+              Outstanding payment submissions
+            </p>
             <ButtonLink href={`${basePath}/payments`} variant="ghost" className="min-h-[40px] px-3 py-2">
               Open payments
               <ArrowRight className="h-4 w-4" />
@@ -410,17 +559,6 @@ export function OperationsAnalytics({
                   <span className="rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#c07a12]">
                     {outstandingPaymentLabels[payment.status] ?? "Outstanding"}
                   </span>
-                  <form action={markPaymentPaidAction}>
-                    <input type="hidden" name="paymentId" value={payment.id} />
-                    <input type="hidden" name="returnTo" value={basePath} />
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      className="min-h-[38px] rounded-[14px] px-3 py-1.5"
-                    >
-                      Mark as paid
-                    </Button>
-                  </form>
                 </div>
               </div>
             ))}
@@ -433,6 +571,7 @@ export function OperationsAnalytics({
               </p>
             ) : null}
           </div>
+        </div>
         </div>
       </Card>
 
@@ -536,20 +675,39 @@ export function OperationsAnalytics({
         <SectionKicker label="Platform and content health" />
         <div className="mt-5 grid gap-5 xl:grid-cols-3">
           <div className="rounded-[26px] border border-[color:rgba(4,15,75,0.08)] bg-white/92 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-              Presentation catalogue
-            </p>
-            <div className="mt-4 grid gap-2.5">
-              {presentations.slice(0, 4).map((presentation) => (
-                <div key={presentation.id} className="flex items-center justify-between gap-3">
+            <div className="grid gap-2.5">
+              {publicPresentations.slice(0, 4).map((presentation) => {
+                const presentationResource = resources.find(
+                  (resource) =>
+                    resource.category === "presentation_material" &&
+                    resource.presentationTypeId === presentation.id &&
+                    resource.isActive &&
+                    resource.isCurrent
+                );
+                const viewHref = presentationResource
+                  ? presentationResource.youtubeUrl ??
+                    (presentationResource.storagePath
+                      ? `/portal/download/${encodeURIComponent(presentationResource.id)}`
+                      : presentationResource.externalUrl ?? presentationResource.downloadUrl)
+                  : presentation.public
+                    ? `/presentations/${presentation.slug}`
+                    : undefined;
+                const downloadHref = presentationResource?.storagePath
+                  ? `/portal/download/${encodeURIComponent(presentationResource.id)}?download=1`
+                  : presentationResource?.externalUrl ?? presentationResource?.downloadUrl;
+
+                return <div key={presentation.id} className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2.5 text-sm font-semibold text-[color:var(--navy)]">
                     <FileText className="h-4 w-4 text-[#246bff]" />
                     {presentation.title}
                   </span>
-                  <StatusBadge value={presentation.active ? "confirmed" : "cancelled"} />
-                </div>
-              ))}
-              {presentations.length === 0 ? (
+                  <span className="flex items-center gap-1.5">
+                    <PresentationFileAction href={viewHref} label={`View ${presentation.title}`} icon={<Eye className="h-4 w-4" />} />
+                    <PresentationFileAction href={downloadHref} label={`Download ${presentation.title}`} icon={<Download className="h-4 w-4" />} />
+                  </span>
+                </div>;
+              })}
+              {publicPresentations.length === 0 ? (
                 <EmptyStateCopy copy="No presentations have been published yet." />
               ) : null}
             </div>
@@ -638,6 +796,55 @@ function SectionKicker({ label }: { label: string }) {
     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[color:var(--navy)]">
       {label}
     </p>
+  );
+}
+
+function YearNavigator({
+  year,
+  olderHref,
+  newerHref
+}: {
+  year: number;
+  olderHref?: string;
+  newerHref?: string;
+}) {
+  const arrowClassName =
+    "inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] transition hover:border-[rgba(24,168,59,0.35)] hover:bg-[color:var(--green-soft)] hover:text-[color:var(--green)]";
+
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-[13px] border border-[color:var(--border-soft)] bg-white/90 p-1.5 shadow-[0_8px_20px_rgba(11,24,77,0.05)]">
+      {olderHref ? (
+        <Link
+          href={olderHref}
+          scroll={false}
+          aria-label="Show older analytics year"
+          className={arrowClassName}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Link>
+      ) : (
+        <span className={cn(arrowClassName, "cursor-not-allowed opacity-30")} aria-hidden="true">
+          <ChevronLeft className="h-4 w-4" />
+        </span>
+      )}
+      <span className="min-w-[64px] text-center text-sm font-semibold text-[color:var(--navy)]">
+        {year}
+      </span>
+      {newerHref ? (
+        <Link
+          href={newerHref}
+          scroll={false}
+          aria-label="Show newer analytics year"
+          className={arrowClassName}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      ) : (
+        <span className={cn(arrowClassName, "cursor-not-allowed opacity-30")} aria-hidden="true">
+          <ChevronRight className="h-4 w-4" />
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -736,24 +943,57 @@ function PipelineTimeline() {
 function ChartPanel({
   title,
   tone = "blue",
+  className,
   children
 }: {
   title: string;
   tone?: "blue" | "green";
+  className?: string;
   children: ReactNode;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[26px] border border-[color:rgba(4,15,75,0.08)] p-5",
+        "h-full rounded-[26px] border border-[color:rgba(4,15,75,0.08)] p-5",
         tone === "green"
           ? "bg-[linear-gradient(180deg,rgba(241,250,243,0.7),rgba(255,255,255,0.95))]"
-          : "bg-[linear-gradient(180deg,rgba(244,249,255,0.75),rgba(255,255,255,0.95))]"
+          : "bg-[linear-gradient(180deg,rgba(244,249,255,0.75),rgba(255,255,255,0.95))]",
+        className
       )}
     >
       <p className="text-sm font-semibold text-[color:var(--navy)]">{title}</p>
       <div className="mt-4">{children}</div>
     </div>
+  );
+}
+
+function PresentationFileAction({
+  href,
+  label,
+  icon
+}: {
+  href?: string;
+  label: string;
+  icon: ReactNode;
+}) {
+  const className =
+    "inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white text-[#246bff] transition hover:border-[#9bbcff] hover:bg-[#eef4ff]";
+
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={label}
+      title={label}
+      className={className}
+    >
+      {icon}
+    </a>
+  ) : (
+    <span aria-label={`${label} unavailable`} title={`${label} unavailable`} className={cn(className, "cursor-not-allowed opacity-35")}>
+      {icon}
+    </span>
   );
 }
 
@@ -781,7 +1021,7 @@ function DualLineChart({
   series: Array<{ label: string; bookings: number; sessions: number }>;
 }) {
   const width = 560;
-  const height = 210;
+  const height = 240;
   const paddingX = 18;
   const paddingY = 20;
   const chartWidth = width - paddingX * 2;
@@ -799,7 +1039,7 @@ function DualLineChart({
 
   return (
     <div className="mt-3">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[210px] w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[240px] w-full">
         {[0.25, 0.5, 0.75, 1].map((marker) => (
           <line
             key={marker}
@@ -925,21 +1165,163 @@ function MonthlyBarChart({ series }: { series: Array<{ label: string; value: num
   );
 }
 
-function HorizontalBar({ label, value, max }: { label: string; value: number; max: number }) {
-  const widthPercent = max > 0 ? Math.max(6, (value / max) * 100) : 0;
+function AmbassadorCoverageMap({
+  regions
+}: {
+  regions: Array<{ slug: string; name: string; count: number }>;
+}) {
+  const aucklandRegions = regions.filter((region) => isAucklandRegion(region));
+  const otherRegions = regions.filter((region) => !isAucklandRegion(region));
+  const points = [
+    ...(aucklandRegions.length > 0
+      ? [{
+          slug: "auckland",
+          name: "Auckland",
+          count: aucklandRegions.reduce((total, region) => total + region.count, 0),
+          breakdown: aucklandRegions,
+          position: { x: 69, y: 19 }
+        }]
+      : []),
+    ...otherRegions.map((region) => ({
+      ...region,
+      breakdown: [region],
+      position: regionMapPosition(region)
+    }))
+  ];
+  const locatedPoints = points.filter((point) => point.position);
+  const orderedRegions = [...regions].sort((left, right) => {
+    const rankDifference = regionNorthToSouthRank(left) - regionNorthToSouthRank(right);
+    return rankDifference || left.name.localeCompare(right.name);
+  });
 
   return (
-    <div className="grid grid-cols-[96px_1fr_auto] items-center gap-3 text-sm">
-      <span className="truncate font-medium text-[color:var(--navy)]">{label}</span>
-      <div className="h-3.5 rounded-full bg-[rgba(4,15,75,0.06)]">
-        <div
-          className="h-full rounded-full bg-[linear-gradient(90deg,#3fbf68,#18a83b)]"
-          style={{ width: `${widthPercent}%` }}
+    <div className="grid gap-5 md:grid-cols-[minmax(300px,1.15fr)_minmax(0,0.85fr)] md:items-start">
+      <div className="relative mx-auto h-[520px] w-full max-w-[440px]" aria-label="Map of ambassador coverage across New Zealand">
+        <Image
+          src="/media/new-zealand-regions.svg"
+          alt="Regional map of mainland New Zealand"
+          width={520}
+          height={645}
+          unoptimized
+          className="h-full w-full object-contain"
         />
+
+        {locatedPoints.map((point) => (
+          <button
+            key={point.slug}
+            type="button"
+            style={{ left: `${point.position?.x}%`, top: `${point.position?.y}%` }}
+            className="group absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(24,168,59,0.2)]"
+            aria-label={`${point.name}: ${point.count} active ambassador${point.count === 1 ? "" : "s"}`}
+          >
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-[#18a83b] text-xs font-bold text-white shadow-[0_7px_18px_rgba(17,122,46,0.3)] transition group-hover:scale-110 group-focus-visible:scale-110">
+              {point.count}
+              <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-[#18a83b]/25" />
+            </span>
+            <span
+              className={cn(
+                "pointer-events-none absolute z-20 w-48 rounded-[14px] border border-[#cce8d3] bg-white p-3 text-left opacity-0 shadow-[0_14px_34px_rgba(4,15,75,0.16)] transition group-hover:opacity-100 group-focus-visible:opacity-100",
+                (point.position?.x ?? 0) > 58 ? "right-10 top-0" : "left-10 top-0"
+              )}
+            >
+              <span className="block text-sm font-semibold text-[color:var(--navy)]">{point.name}</span>
+              <span className="mt-1.5 grid gap-1">
+                {point.breakdown.map((region) => (
+                  <span key={region.slug} className="flex items-center justify-between gap-3 text-xs text-[color:var(--text-soft)]">
+                    <span>{region.name}</span>
+                    <span className="font-semibold text-[#117a2e]">{region.count}</span>
+                  </span>
+                ))}
+              </span>
+            </span>
+          </button>
+        ))}
       </div>
-      <span className="font-semibold text-[color:var(--navy)]">{value}</span>
+
+      <div className="rounded-[20px] border border-[#d7efdd] bg-white/85 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#117a2e]">Active coverage</p>
+            <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+              {regions.length} {regions.length === 1 ? "area" : "areas"}
+            </p>
+          </div>
+          <MapPinned className="h-6 w-6 text-[#18a83b]" />
+        </div>
+        <ol className="mt-4 overflow-hidden rounded-[14px] border border-[#d7efdd] bg-[#f8fcf9]">
+          {orderedRegions.map((region, index) => (
+            <li
+              key={region.slug}
+              className={cn(
+                "flex items-center justify-between gap-4 px-3 py-2.5",
+                index > 0 && "border-t border-[#dfeee3]"
+              )}
+            >
+              <span className="min-w-0 truncate text-sm font-semibold text-[color:var(--navy)]">
+                {region.name}
+              </span>
+              <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-[#e5f6e9] px-2 text-xs font-bold text-[#117a2e]">
+                {region.count}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
+}
+
+function isAucklandRegion(region: { slug: string; name: string }) {
+  const value = `${region.slug} ${region.name}`.toLowerCase();
+  return value.includes("auckland") || value.includes("north shore");
+}
+
+function regionNorthToSouthRank(region: { slug: string; name: string }) {
+  const value = `${region.slug} ${region.name}`.toLowerCase();
+  const regionsNorthToSouth: Array<{ terms: string[]; rank: number }> = [
+    { terms: ["northland", "whangarei"], rank: 10 },
+    { terms: ["north shore"], rank: 20 },
+    { terms: ["auckland central", "central auckland", "auckland city"], rank: 30 },
+    { terms: ["south auckland"], rank: 40 },
+    { terms: ["auckland"], rank: 35 },
+    { terms: ["waikato", "hamilton"], rank: 50 },
+    { terms: ["bay of plenty", "tauranga", "rotorua"], rank: 60 },
+    { terms: ["gisborne"], rank: 70 },
+    { terms: ["taranaki", "new plymouth"], rank: 80 },
+    { terms: ["hawke", "napier", "hastings"], rank: 90 },
+    { terms: ["manawat", "palmerston"], rank: 100 },
+    { terms: ["wellington"], rank: 110 },
+    { terms: ["nelson"], rank: 120 },
+    { terms: ["tasman"], rank: 130 },
+    { terms: ["marlborough"], rank: 140 },
+    { terms: ["west coast"], rank: 150 },
+    { terms: ["canterbury", "christchurch"], rank: 160 },
+    { terms: ["otago", "dunedin", "queenstown"], rank: 170 },
+    { terms: ["southland", "invercargill"], rank: 180 }
+  ];
+  const match = regionsNorthToSouth.find(({ terms }) => terms.some((term) => value.includes(term)));
+  return match?.rank ?? Number.MAX_SAFE_INTEGER;
+}
+
+function regionMapPosition(region: { slug: string; name: string }) {
+  const value = `${region.slug} ${region.name}`.toLowerCase();
+  const positions: Array<{ terms: string[]; x: number; y: number }> = [
+    { terms: ["northland", "whangarei"], x: 59, y: 9 },
+    { terms: ["waikato", "hamilton"], x: 73, y: 27 },
+    { terms: ["bay of plenty", "tauranga", "rotorua"], x: 83, y: 29 },
+    { terms: ["gisborne"], x: 91, y: 29 },
+    { terms: ["taranaki", "new plymouth"], x: 64, y: 36 },
+    { terms: ["hawke", "napier", "hastings"], x: 84, y: 39 },
+    { terms: ["manawat", "palmerston"], x: 74, y: 40 },
+    { terms: ["wellington"], x: 72, y: 53 },
+    { terms: ["nelson", "tasman", "marlborough"], x: 57, y: 54 },
+    { terms: ["west coast"], x: 36, y: 66 },
+    { terms: ["canterbury", "christchurch"], x: 47, y: 72 },
+    { terms: ["otago", "dunedin", "queenstown"], x: 30, y: 88 },
+    { terms: ["southland", "invercargill"], x: 17, y: 90 }
+  ];
+  const match = positions.find(({ terms }) => terms.some((term) => value.includes(term)));
+  return match ? { x: match.x, y: match.y } : null;
 }
 
 function StageBarChart({ stages }: { stages: Array<{ label: string; value: number }> }) {
@@ -1073,14 +1455,39 @@ function buildBookingPipeline(
   rangeSessions: BookingSessionView[],
   now: Date
 ) {
+  const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+  const rangeSessionIds = new Set(rangeSessions.map((session) => session.id));
+  const cancelled = rangeBookings.filter((booking) =>
+    BOOKING_CANCELLED_STATUSES.has(booking.status)
+  );
+  const completed = rangeBookings.filter((booking) =>
+    BOOKING_COMPLETED_STATUSES.has(booking.status)
+  );
+  const needsReview = rangeBookings.filter(
+    (booking) =>
+      BOOKING_REVIEW_STATUSES.has(booking.status) ||
+      booking.sessions.some((session) => BOOKING_REVIEW_STATUSES.has(session.status))
+  );
+  const confirmed = rangeBookings.filter((booking) =>
+    BOOKING_CONFIRMED_STATUSES.has(booking.status)
+  );
+  const confirmedUpcoming = confirmed.flatMap((booking) =>
+    booking.sessions.filter(
+      (session) => rangeSessionIds.has(session.id) && isFutureSession(session, now)
+    )
+  );
+
   return {
-    newBookings: rangeBookings.filter((booking) => booking.status === "requested").length,
-    needsReview: rangeBookings.filter(bookingNeedsAction).length,
-    confirmed: rangeBookings.filter((booking) =>
-      ["confirmed", "ambassador_assigned"].includes(booking.status)
-    ).length,
-    upcomingSessions: rangeSessions.filter((session) => isFutureSession(session, now)).length,
-    completed: rangeBookings.filter(isCompletedBooking).length
+    newBookings: rangeBookings.filter((booking) => {
+      const createdAt = new Date(booking.createdAt).getTime();
+      return createdAt >= sevenDaysAgo && createdAt <= now.getTime();
+    }).length,
+    needsReview: needsReview.length,
+    confirmed: confirmed.length,
+    upcomingSessions: confirmedUpcoming.length,
+    pending: rangeBookings.filter((booking) => BOOKING_PENDING_STATUSES.has(booking.status)).length,
+    completed: completed.length,
+    cancelled: cancelled.length
   };
 }
 
@@ -1157,6 +1564,34 @@ function buildSourceBreakdown(yearBookings: BookingRequestView[]) {
   return { total, segments };
 }
 
+function buildBookingStatusBreakdown(yearBookings: BookingRequestView[]) {
+  const cancelled = yearBookings.filter((booking) =>
+    BOOKING_CANCELLED_STATUSES.has(booking.status)
+  );
+  const cancelledIds = new Set(cancelled.map((booking) => booking.id));
+  const completed = yearBookings.filter(
+    (booking) =>
+      !cancelledIds.has(booking.id) && BOOKING_COMPLETED_STATUSES.has(booking.status)
+  );
+  const completedIds = new Set(completed.map((booking) => booking.id));
+  const pending = yearBookings.filter(
+    (booking) => !completedIds.has(booking.id) && !cancelledIds.has(booking.id)
+  );
+  const total = yearBookings.length;
+  const percent = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
+  const segments = [
+    { label: "Completed", value: completed.length, color: "#18a83b" },
+    { label: "Pending", value: pending.length, color: "#98a2b3" },
+    { label: "Cancelled", value: cancelled.length, color: "#d75b52" }
+  ].map((segment) => ({ ...segment, percent: percent(segment.value) }));
+
+  return {
+    total,
+    segments,
+    completionRate: percent(completed.length)
+  };
+}
+
 function buildYearlyStudentSeries(
   reports: ReportSummary[],
   sessions: BookingSessionView[],
@@ -1198,10 +1633,9 @@ function buildYearlyStudentSeries(
 }
 
 const outstandingPaymentLabels: Record<string, string> = {
-  pending: "Awaiting invoice",
+  pending: "Report received",
   eligible: "Eligible",
-  invoiced: "Invoice received",
-  submitted_for_payment: "Sent to finance"
+  approved: "Approved"
 };
 
 function buildPaymentSummary(payments: PaymentRecord[], year: number) {
@@ -1211,7 +1645,7 @@ function buildPaymentSummary(payments: PaymentRecord[], year: number) {
       new Date(payment.paidAt ?? payment.createdAt).getFullYear() === year
   );
   const outstanding = payments.filter((payment) =>
-    ["pending", "eligible", "invoiced", "submitted_for_payment"].includes(payment.status)
+    ["pending", "eligible", "approved"].includes(payment.status)
   );
 
   return {
@@ -1239,8 +1673,7 @@ function buildRegionCoverage(approvedAmbassadors: AmbassadorProfile[], regions: 
 
   return Array.from(counts.entries())
     .map(([slug, count]) => ({ slug, name: regionNamesBySlug.get(slug) ?? slug, count }))
-    .sort((left, right) => right.count - left.count)
-    .slice(0, 6);
+    .sort((left, right) => right.count - left.count);
 }
 
 function buildAmbassadorFunnel(yearBookings: BookingRequestView[], now: Date) {

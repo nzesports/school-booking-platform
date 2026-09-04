@@ -705,8 +705,10 @@ const payments = [
     status: "paid",
     eligibility_reason: "Attendance over threshold",
     invoice_number: "DEMO-INV-001",
-    invoice_submitted_at: daysFromNow(-18),
+    invoice_generated_at: daysFromNow(-18),
     sent_to_finance_at: daysFromNow(-16),
+    finance_email_status: "sent",
+    finance_email_attempts: 1,
     paid_at: daysFromNow(-12)
   },
   {
@@ -714,7 +716,8 @@ const payments = [
     ambassador_profile_id: arohaProfileId,
     amount_cents: 25000,
     status: "pending",
-    eligibility_reason: "Attendance over threshold"
+    eligibility_reason: "Attendance over threshold",
+    finance_email_attempts: 0
   }
 ];
 

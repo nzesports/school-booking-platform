@@ -1,6 +1,14 @@
 "use client";
 
-import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  Headphones,
+  LogOut,
+  Settings,
+  ShieldCheck,
+  UserRound,
+  Users
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
@@ -17,11 +25,17 @@ type DashboardProfile = {
 export function DashboardAccountControl({
   profile,
   logoutAction,
-  notificationControl
+  notificationControl,
+  auditLogsHref,
+  usersHref,
+  settingsHref
 }: {
   profile: DashboardProfile;
   logoutAction?: (formData: FormData) => void | Promise<void>;
   notificationControl: ReactNode;
+  auditLogsHref?: string;
+  usersHref?: string;
+  settingsHref?: string;
 }) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -113,6 +127,48 @@ export function DashboardAccountControl({
               Profile
             </Link>
           ) : null}
+          {settingsHref ? (
+            <Link
+              href={settingsHref}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </Link>
+          ) : null}
+          {usersHref ? (
+            <Link
+              href={usersHref}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+            >
+              <Users className="h-4 w-4" />
+              Users
+            </Link>
+          ) : null}
+          {auditLogsHref ? (
+            <Link
+              href={auditLogsHref}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Audit logs
+            </Link>
+          ) : null}
+          <Link
+            href="/contact"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+          >
+            <Headphones className="h-4 w-4" />
+            Support
+          </Link>
           {logoutAction ? (
             <form action={logoutAction} role="none">
               <button

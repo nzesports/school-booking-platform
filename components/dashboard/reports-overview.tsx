@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { dataTableHeadingClassName } from "@/components/dashboard/data-table";
 import type { ReportSummary } from "@/lib/domain/types";
 import { cn } from "@/lib/utils";
 
@@ -66,12 +67,9 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
 
   return (
     <section className="surface-panel rounded-[28px] p-5 md:p-6">
-      <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+      <h2 className={dataTableHeadingClassName}>
         Across all reports
       </h2>
-      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-        A rolled-up view of how presentations are landing, straight from ambassador reports.
-      </p>
 
       <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
         <OverviewTile

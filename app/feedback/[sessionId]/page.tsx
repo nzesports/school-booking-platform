@@ -8,6 +8,16 @@ import { Card } from "@/components/ui/card";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatWeekdayDate } from "@/lib/utils";
 
+const FEEDBACK_ELIGIBLE_STATUSES = new Set([
+  "confirmed",
+  "ambassador_assigned",
+  "completed_pending_report",
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed"
+]);
+
 // Public post-session feedback page, reached from the "How was your session?"
 // email. No login required — the unguessable session UUID is the capability.
 export default async function PublicFeedbackPage({
@@ -38,7 +48,7 @@ export default async function PublicFeedbackPage({
 
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("id, starts_at, ends_at, school_id, presentation_type_id, assigned_ambassador_id")
+    .select("id, starts_at, ends_at, school_id, presentation_type_id, assigned_ambassador_id, status")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -109,6 +119,18 @@ export default async function PublicFeedbackPage({
           icon={<Clock3 className="h-8 w-8" />}
           title="This session hasn't happened yet"
           copy={`Feedback opens after your session on ${formatWeekdayDate(session.starts_at as string)}. Come back once it has been delivered.`}
+        />
+      </FeedbackShell>
+    );
+  }
+
+  if (!FEEDBACK_ELIGIBLE_STATUSES.has(String(session.status))) {
+    return (
+      <FeedbackShell>
+        <StateCard
+          icon={<HelpCircle className="h-8 w-8" />}
+          title="Feedback isn't available for this session"
+          copy="This link only opens for presentations that went ahead. Contact schools@esf.nz if you think this is incorrect."
         />
       </FeedbackShell>
     );

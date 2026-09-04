@@ -12,7 +12,15 @@ import type {
 } from "@/lib/domain/types";
 import { formatShortDate } from "@/lib/utils";
 
-export type DashboardRange = "week" | "month" | "term" | "biannual" | "year" | "all";
+export type DashboardRange =
+  | "week"
+  | "month"
+  | "term"
+  | "biannual"
+  | "year"
+  | "all"
+  | "custom";
+export type DashboardCustomRange = { from: string; to: string };
 export type BookingLifecycleView = "current" | "future" | "past" | "cancelled" | "all";
 
 export const dashboardRangeOptions: Array<{ value: DashboardRange; label: string }> = [
@@ -21,7 +29,8 @@ export const dashboardRangeOptions: Array<{ value: DashboardRange; label: string
   { value: "term", label: "This term" },
   { value: "biannual", label: "Bi-annual" },
   { value: "year", label: "This year" },
-  { value: "all", label: "All time" }
+  { value: "all", label: "All time" },
+  { value: "custom", label: "Custom range" }
 ];
 
 export const bookingLifecycleOptions: Array<{ value: BookingLifecycleView; label: string }> = [
@@ -32,7 +41,13 @@ export const bookingLifecycleOptions: Array<{ value: BookingLifecycleView; label
   { value: "all", label: "All bookings" }
 ];
 
-const deliveredStatuses = new Set<BookingStatus>([
+// Mirrors the server's review-eligibility rule in submitSchoolReviewAction: a
+// session only counts as delivered when it reached a delivered-capable status.
+// Tentative/applied/requested sessions whose date merely elapsed never happened
+// and must not read as delivered anywhere (badges, feedback buttons, analytics).
+const deliveredCapableStatuses = new Set<BookingStatus>([
+  "confirmed",
+  "ambassador_assigned",
   "completed_pending_report",
   "report_submitted",
   "payment_pending",
@@ -54,6 +69,16 @@ const actionStatuses = new Set<BookingStatus>([
 ]);
 
 const targetYearGroups = [7, 8, 9, 10, 11, 12, 13];
+const nzDatePartsFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Pacific/Auckland",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23"
+});
 
 export function readDashboardRange(value?: string | string[] | null): DashboardRange {
   const range = Array.isArray(value) ? value[0] : value;
@@ -69,13 +94,97 @@ export function readBookingLifecycleView(value?: string | string[] | null): Book
     : "current";
 }
 
-export function dashboardRangeLabel(range: DashboardRange) {
+export function readDashboardCustomRange(
+  fromValue?: string | string[] | null,
+  toValue?: string | string[] | null
+): DashboardCustomRange | null {
+  const from = Array.isArray(fromValue) ? fromValue[0] : fromValue;
+  const to = Array.isArray(toValue) ? toValue[0] : toValue;
+  const isDateValue = (value?: string | null): value is string => {
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return false;
+    }
+
+    const [year, month, day] = value.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  };
+
+  if (!isDateValue(from) || !isDateValue(to) || from > to) {
+    return null;
+  }
+
+  return { from, to };
+}
+
+function formatCustomRangeDate(value: string) {
+  return new Intl.DateTimeFormat("en-NZ", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+export function dashboardRangeLabel(
+  range: DashboardRange,
+  customRange?: DashboardCustomRange | null
+) {
+  if (range === "custom" && customRange) {
+    return `${formatCustomRangeDate(customRange.from)} – ${formatCustomRangeDate(customRange.to)}`;
+  }
+
   return dashboardRangeOptions.find((option) => option.value === range)?.label ?? "This month";
 }
 
-export function dashboardRangeWindow(range: DashboardRange, now = new Date()) {
+function customDateBoundary(value: string, addDay = false) {
+  const [year, month, day] = value.split("-").map(Number);
+  const intendedUtc = Date.UTC(year, month - 1, day + (addDay ? 1 : 0));
+  let boundary = new Date(intendedUtc);
+
+  // Convert a calendar date selected in New Zealand into its exact UTC
+  // instant. Repeating once accounts for DST offsets around the boundary.
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const parts = Object.fromEntries(
+      nzDatePartsFormatter
+        .formatToParts(boundary)
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, Number(part.value)])
+    );
+    const renderedAsUtc = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second
+    );
+    boundary = new Date(intendedUtc - (renderedAsUtc - boundary.getTime()));
+  }
+
+  return boundary;
+}
+
+export function dashboardRangeWindow(
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
   if (range === "all") {
     return { start: null, end: null };
+  }
+
+  if (range === "custom") {
+    return customRange
+      ? {
+          start: customDateBoundary(customRange.from),
+          end: customDateBoundary(customRange.to, true)
+        }
+      : { start: null, end: null };
   }
 
   const start = new Date(now);
@@ -125,8 +234,13 @@ export function dashboardRangeWindow(range: DashboardRange, now = new Date()) {
   return { start, end };
 }
 
-export function sessionInRange(session: BookingSessionView, range: DashboardRange, now = new Date()) {
-  const { start, end } = dashboardRangeWindow(range, now);
+export function sessionInRange(
+  session: BookingSessionView,
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
+  const { start, end } = dashboardRangeWindow(range, now, customRange);
 
   if (!start || !end) {
     return true;
@@ -136,8 +250,13 @@ export function sessionInRange(session: BookingSessionView, range: DashboardRang
   return sessionTime >= start.getTime() && sessionTime < end.getTime();
 }
 
-export function reportInRange(report: ReportSummary, range: DashboardRange, now = new Date()) {
-  const { start, end } = dashboardRangeWindow(range, now);
+export function reportInRange(
+  report: ReportSummary,
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
+  const { start, end } = dashboardRangeWindow(range, now, customRange);
 
   if (!start || !end) {
     return true;
@@ -147,8 +266,13 @@ export function reportInRange(report: ReportSummary, range: DashboardRange, now 
   return reportTime >= start.getTime() && reportTime < end.getTime();
 }
 
-export function reviewInRange(review: SchoolFeedbackSummary, range: DashboardRange, now = new Date()) {
-  const { start, end } = dashboardRangeWindow(range, now);
+export function reviewInRange(
+  review: SchoolFeedbackSummary,
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
+  const { start, end } = dashboardRangeWindow(range, now, customRange);
 
   if (!start || !end) {
     return true;
@@ -158,8 +282,13 @@ export function reviewInRange(review: SchoolFeedbackSummary, range: DashboardRan
   return reviewTime >= start.getTime() && reviewTime < end.getTime();
 }
 
-function bookingCreatedInRange(booking: BookingRequestView, range: DashboardRange, now = new Date()) {
-  const { start, end } = dashboardRangeWindow(range, now);
+function bookingCreatedInRange(
+  booking: BookingRequestView,
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
+  const { start, end } = dashboardRangeWindow(range, now, customRange);
 
   if (!start || !end) {
     return true;
@@ -169,8 +298,13 @@ function bookingCreatedInRange(booking: BookingRequestView, range: DashboardRang
   return createdTime >= start.getTime() && createdTime < end.getTime();
 }
 
-export function bookingInRange(booking: BookingRequestView, range: DashboardRange, now = new Date()) {
-  const { start, end } = dashboardRangeWindow(range, now);
+export function bookingInRange(
+  booking: BookingRequestView,
+  range: DashboardRange,
+  now = new Date(),
+  customRange?: DashboardCustomRange | null
+) {
+  const { start, end } = dashboardRangeWindow(range, now, customRange);
 
   if (!start || !end) {
     return true;
@@ -179,17 +313,18 @@ export function bookingInRange(booking: BookingRequestView, range: DashboardRang
   const createdTime = new Date(booking.createdAt).getTime();
   return (
     (createdTime >= start.getTime() && createdTime < end.getTime()) ||
-    booking.sessions.some((session) => sessionInRange(session, range, now))
+    booking.sessions.some((session) => sessionInRange(session, range, now, customRange))
   );
 }
 
 export function isDeliveredSession(session: BookingSessionView, now = new Date()) {
+  // Both conditions are required, matching the server: a delivered-capable
+  // status AND a session end time in the past. Callers deciding feedback
+  // eligibility must pass the session's REAL status (not a masked display
+  // status such as withdrawal_requested shown as ambassador_assigned).
   return (
-    deliveredStatuses.has(session.status) ||
-    session.reportStatus === "submitted" ||
-    session.reportStatus === "reviewed" ||
-    Boolean(session.actualStudentCount) ||
-    (new Date(session.endsAt).getTime() < now.getTime() && !cancelledStatuses.has(session.status))
+    deliveredCapableStatuses.has(session.status) &&
+    new Date(session.endsAt).getTime() < now.getTime()
   );
 }
 
@@ -596,14 +731,23 @@ export function buildFilteredDashboardData(
   schoolReviews: SchoolFeedbackSummary[],
   range: DashboardRange,
   activityLogs: BookingActivityLogSummary[] = [],
+  customRange?: DashboardCustomRange | null,
   now = new Date()
 ) {
-  const rangeBookings = bookings.filter((booking) => bookingInRange(booking, range, now));
-  const createdBookings = bookings.filter((booking) => bookingCreatedInRange(booking, range, now));
-  const rangeReports = reports.filter((report) => reportInRange(report, range, now));
-  const rangeSchoolReviews = schoolReviews.filter((review) => reviewInRange(review, range, now));
+  const rangeBookings = bookings.filter((booking) =>
+    bookingInRange(booking, range, now, customRange)
+  );
+  const createdBookings = bookings.filter((booking) =>
+    bookingCreatedInRange(booking, range, now, customRange)
+  );
+  const rangeReports = reports.filter((report) =>
+    reportInRange(report, range, now, customRange)
+  );
+  const rangeSchoolReviews = schoolReviews.filter((review) =>
+    reviewInRange(review, range, now, customRange)
+  );
   const rangeSessions = rangeBookings.flatMap((booking) =>
-    booking.sessions.filter((session) => sessionInRange(session, range, now))
+    booking.sessions.filter((session) => sessionInRange(session, range, now, customRange))
   );
   const upcomingSessions = rangeSessions
     .filter((session) => isFutureSession(session, now))

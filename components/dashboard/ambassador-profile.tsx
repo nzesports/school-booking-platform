@@ -53,8 +53,8 @@ const BOOKING_TYPE_OPTIONS = [
 
 export type AmbassadorProfileStats = {
   schoolVisits: number;
-  invoicesSubmittedCount: number;
-  latestInvoiceSubmittedAt?: string;
+  invoicesGeneratedCount: number;
+  latestInvoiceGeneratedAt?: string;
   ratingAverage: number | null;
   ratingCount: number;
 };
@@ -209,12 +209,12 @@ export function AmbassadorProfileWorkspace({
             <HeaderStat
               icon={<FileText className="h-5 w-5" />}
               iconClassName="bg-[color:var(--green-soft)] text-[color:var(--green)]"
-              label="Invoices"
-              value={String(stats.invoicesSubmittedCount)}
+              label="Invoice references"
+              value={String(stats.invoicesGeneratedCount)}
               hint={
-                stats.latestInvoiceSubmittedAt
-                  ? `Latest ${formatShortDate(stats.latestInvoiceSubmittedAt)}`
-                  : "None submitted yet"
+                stats.latestInvoiceGeneratedAt
+                  ? `Latest ${formatShortDate(stats.latestInvoiceGeneratedAt)}`
+                  : "Generated after approval"
               }
             />
             <HeaderStat
@@ -381,7 +381,12 @@ export function AmbassadorProfileWorkspace({
           />
           <p className="mt-1 flex items-center gap-2 rounded-[14px] bg-[#eef4fd] px-3.5 py-2.5 text-[13px] leading-5 text-[#1e4fae]">
             <Info className="h-4 w-4 shrink-0" />
-            Invoices are paid via bank transfer to your account.
+            {ambassador.bankAccountName &&
+            /^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/.test(
+              ambassador.bankAccountNumber ?? ""
+            )
+              ? "Payment details are ready. Approved reports will be sent to finance automatically."
+              : "Add both an account name and valid bank account number before a payable report can be approved."}
           </p>
         </ProfileSection>
 

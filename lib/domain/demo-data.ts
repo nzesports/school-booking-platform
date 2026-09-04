@@ -52,18 +52,26 @@ export const presentations: PresentationType[] = [
     slug: "digital-wellbeing",
     title: "Digital Wellbeing",
     shortSummary:
-      "Promote healthy habits, screen balance, and positive digital choices.",
+      "Help students build healthier gaming and screen habits through practical lessons on breaks, movement, sleep, hydration and nutrition.",
     fullDescription:
-      "A practical school presentation focused on digital habits, online wellbeing, and helping students build healthy relationships with technology and gaming.",
+      "<p>A practical, student-friendly presentation that helps young people build healthier relationships with gaming and technology. Students learn how to recognise when their brain needs a break and explore how movement, sleep, hydration and nutrition can affect focus, mood and performance.</p><p>The presentation takes a positive approach to gaming while giving students simple, practical habits they can use both on and away from screens.</p>",
+    contentSnippet:
+      "<p>This is a practical wellbeing presentation rather than a lecture about reducing or stopping gaming. It acknowledges the positive social and personal experiences gaming can provide while helping students understand how to look after themselves when spending time on screens.</p><p>Students are introduced to simple concepts around brain fatigue, movement, sleep, hydration and nutrition, with advice designed to be easy to understand and put into practice.</p>",
     durationMinutes: 10,
     yearLevels: "Years 5 to 6, Years 7 to 8, Years 9 to 13",
-    deliveryFormats: ["assembly", "classroom"],
+    deliveryFormats: ["Assembly", "classroom"],
     learningOutcomes: [
-      "Healthy screen routines",
-      "Digital citizenship",
-      "Positive online behaviour"
+      "Recognise the signs of screen fatigue :: Learn to identify signs such as tired eyes, headaches, frustration, reduced focus and the urge to keep playing when it is time to take a break.",
+      "Build healthier gaming routines :: Understand why regular breaks and physical activity are important for maintaining focus, energy and wellbeing during gaming and screen time.",
+      "Understand the importance of sleep and hydration :: Explore how sleep and hydration can affect concentration, cognitive performance, mood and emotional regulation.",
+      "Make better choices for sustained energy and focus :: Learn how everyday food and drink choices can support concentration and performance, with practical examples students can apply in their daily routines."
     ],
-    requiredEquipment: ["Projector or screen", "Microphone if needed"],
+    requiredEquipment: [
+      "Projector or screen",
+      "Microphone if needed",
+      "No gaming equipment, computers or student devices are required."
+    ],
+    accentColor: "#18A83B",
     active: true,
     public: true
   },
@@ -72,58 +80,58 @@ export const presentations: PresentationType[] = [
     slug: "esports-pathways",
     title: "Esports Pathways",
     shortSummary:
-      "Show students how esports connects to teamwork, leadership, and future opportunities.",
+      "Explore the careers, study pathways and transferable skills behind gaming and esports, from school competition through to the wider global industry.",
     fullDescription:
-      "An engaging overview of the wider esports ecosystem, highlighting event operations, coaching, production, and the positive skills students can build through organised play.",
-    durationMinutes: 10,
-    yearLevels: "Years 7 to 8, Years 9 to 13",
-    deliveryFormats: ["assembly", "workshop"],
-    learningOutcomes: [
-      "Understanding esports roles",
-      "Teamwork and communication",
-      "Structured competition awareness"
-    ],
-    requiredEquipment: ["Projector or screen"],
-    active: true,
-    public: true
-  },
-  {
-    id: "careers",
-    slug: "careers",
-    title: "Careers",
-    shortSummary:
-      "Explore real education and career pathways connected to digital industries.",
-    fullDescription:
-      "A careers-focused session that connects student interests to higher education, training, creative industries, and technology-adjacent jobs.",
+      "<p>A practical presentation showing students where gaming and esports can lead beyond becoming a professional player. Students explore competitive pathways, career opportunities, further study options and the transferable skills they may already be developing through gaming.</p><p>The presentation also helps teachers recognise gaming as a useful way to engage students in conversations about learning, skills and future careers.</p>",
+    contentSnippet:
+      "<p>This is not a presentation about simply becoming a professional gamer. It uses students' existing interest in gaming to show the much wider range of careers, study options and transferable skills connected to the gaming and esports industries.</p><p>Students will see the competitive esports pathway, but will also learn that professional competition represents only a very small part of the wider industry.</p>",
     durationMinutes: 10,
     yearLevels: "Years 9 to 13",
-    deliveryFormats: ["assembly", "classroom"],
+    deliveryFormats: ["Assembly", "classroom", "careers session"],
     learningOutcomes: [
-      "Career awareness",
-      "Pathway planning",
-      "Industry role discovery"
+      "Understand esports pathways :: Explore how students can progress from school esports into university competition, community events, national qualifiers, Junior E Blacks and national team opportunities.",
+      "Discover careers beyond professional gaming :: Learn about the wide range of careers connected to gaming and esports, including game development, live production, coaching, design, marketing, events, broadcasting and management.",
+      "Recognise transferable skills :: Understand how gaming can develop useful skills including communication, teamwork, problem solving, leadership, organisation, critical thinking, adaptability, budgeting and technical literacy.",
+      "Explore study and experience options :: Discover different pathways into the gaming, esports and creative industries through universities, polytechnics, private training establishments and volunteering."
     ],
-    requiredEquipment: ["Projector or screen"],
+    requiredEquipment: [
+      "Projector or screen",
+      "Microphone if needed",
+      "No gaming equipment, computers or student devices are required."
+    ],
+    accentColor: "#E0A11A",
     active: true,
     public: true
   },
   {
     id: "understanding-esports",
     slug: "understanding-esports",
-    title: "Understanding Esports",
+    title: "Understanding the Gaming World",
     shortSummary:
-      "Help schools and students understand what esports is and how it can be delivered safely.",
+      "A positive, practical introduction that helps parents and whānau understand young people's gaming and support healthier habits and conversations.",
     fullDescription:
-      "A foundational session for educators and students covering what esports is, how it works in school settings, and how structured programmes can support engagement and belonging.",
-    durationMinutes: 10,
-    yearLevels: "Years 5 to 6, Years 7 to 8, Years 9 to 13",
-    deliveryFormats: ["assembly", "online"],
-    learningOutcomes: [
-      "Esports literacy",
-      "Safety and inclusion",
-      "School implementation basics"
+      "<p>A practical introduction to gaming and esports for parents and whānau. This presentation helps families better understand what gaming means to young people, addresses common concerns and tension points, and provides practical ways to support a healthier, more balanced relationship with gaming.</p><p>The presentation also introduces school esports, the E Blacks national team and the wide range of career opportunities connected to gaming and esports.</p>",
+    contentSnippet:
+      "<p><strong>This is a positive, practical presentation rather than an anti-gaming talk.</strong> It helps parents understand why gaming matters to young people, puts common concerns into context and gives families practical ways to have better conversations and set healthier boundaries.</p>",
+    durationMinutes: 25,
+    yearLevels: "Parents & whānau, Teachers & school staff",
+    deliveryFormats: [
+      "Parent evening",
+      "whānau information session",
+      "school community event"
     ],
-    requiredEquipment: ["Projector or screen", "Stable internet for online mode"],
+    learningOutcomes: [
+      "Understand the role gaming plays in young people's lives :: Recognise gaming as a space for social connection, identity, achievement, competition and recreation.",
+      "Recognise common gaming-related tension points :: Understand issues such as difficulty stopping, sleep, time management, online behaviour, stranger interactions and emotional regulation.",
+      "Use practical strategies for healthier conversations about gaming :: Learn how timing, curiosity, boundaries and a balanced lifestyle can reduce conflict around gaming.",
+      "Understand where gaming and esports can lead :: Explore pathways ranging from game development and design through to events, marketing, teaching, psychology, sports science and other careers."
+    ],
+    requiredEquipment: [
+      "Projector or presentation screen :: For displaying the presentation.",
+      "Microphone for larger audiences :: Recommended for parent evenings, halls or larger community sessions.",
+      "Audience phones for Q&A, optional :: The presentation includes QR-based audience questions, so attendees can submit questions from their phones if that functionality is being used."
+    ],
+    accentColor: "#2563EB",
     active: true,
     public: true
   }
@@ -131,44 +139,74 @@ export const presentations: PresentationType[] = [
 
 export const testimonials: Testimonial[] = [
   {
-    id: "t1",
+    id: "feedback-st-peters-college-palmerston-north",
     quote:
-      "The session landed brilliantly with our senior students and gave them a realistic view of digital pathways.",
-    attribution: "Deputy Principal",
-    school: "Harbour Secondary College",
-    presentationTitle: "Careers",
-    feedbackDate: "May 2026",
+      "He hooked them in with the ESports which really helped him to get the message across. The year 10s were super engaged in it. I would recommend it for others too.",
+    attribution: "School feedback",
+    school: "St Peter's College, Palmerston North",
+    feedbackDate: "Aug 2026",
     rating: 5
   },
   {
-    id: "t2",
-    quote:
-      "Professional, engaging, and easy to organise. The booking flow and follow-up were excellent.",
-    attribution: "Careers Lead",
-    school: "South Coast High School",
-    presentationTitle: "Esports Pathways",
-    feedbackDate: "Apr 2026",
-    rating: 5
+    id: "feedback-havelock-north-intermediate",
+    quote: "That was the best special assembly we've had",
+    attribution: "Attendee feedback",
+    school: "Havelock North Intermediate",
+    feedbackDate: "Aug 2026",
+    rating: 4.6
   },
   {
-    id: "t3",
+    id: "feedback-north-west-college",
     quote:
-      "Students stayed engaged the whole time and the ambassador connected the content to real opportunities.",
-    attribution: "Teacher in Charge",
-    school: "Aoraki College",
-    presentationTitle: "Digital Wellbeing",
-    feedbackDate: "May 2026",
-    rating: 5
-  },
-  {
-    id: "t4",
-    quote:
-      "The messaging felt balanced and practical for our students. It supported wider wellbeing conversations we were already having at school.",
-    attribution: "Head of Year 10",
-    school: "Westlake Girls High School",
-    presentationTitle: "Digital Wellbeing",
+      "Everyone loved it, including all of the teachers - most of whom were very skeptical of the presentation going into it.",
+    attribution: "School feedback",
+    school: "North West College",
     feedbackDate: "Jun 2026",
     rating: 5
+  },
+  {
+    id: "feedback-waiheke-high-school",
+    quote:
+      "They really enjoyed it and wished there was longer to do more and ask more questions.",
+    attribution: "School feedback",
+    school: "Waiheke High School",
+    feedbackDate: "Jun 2025",
+    rating: 5
+  },
+  {
+    id: "feedback-ani",
+    quote:
+      "The students loved the presentation they all want me to set up an esports club now, which is my next step.",
+    attribution: "School feedback",
+    school: "ANI",
+    feedbackDate: "Jun 2025",
+    rating: 5
+  },
+  {
+    id: "feedback-huntly-college",
+    quote:
+      "They loved the idea of Esports and are very keen to start something like it at school. Sam was an excellent presenter and held their attention. Especially in the game.",
+    attribution: "School feedback",
+    school: "Huntly College",
+    feedbackDate: "Jun 2025",
+    rating: 5
+  },
+  {
+    id: "feedback-ormiston-primary",
+    quote:
+      "Belinda was great. The presentation was pitched at the right level for our year 5/6 learners",
+    attribution: "School feedback",
+    school: "Ormiston Primary",
+    feedbackDate: "Aug 2024",
+    rating: 5
+  },
+  {
+    id: "feedback-wairarapa-cobham-intermediate",
+    quote: "Really engaging, insightful with useful info for future esporters",
+    attribution: "School feedback",
+    school: "Wairarapa Cobham Intermediate",
+    feedbackDate: "Jun 2024",
+    rating: 4.6
   }
 ];
 
@@ -262,6 +300,7 @@ export const bookingRequests: BookingRequestView[] = [
         id: "session-1001",
         presentationSlug: "digital-wellbeing",
         presentationTitle: "Digital Wellbeing",
+        presentationAccentColor: "#18A83B",
         regionSlug: "north-shore",
         schoolName: "Harbour Secondary College",
         startsAt: "2026-06-18T09:00:00.000Z",
@@ -278,6 +317,7 @@ export const bookingRequests: BookingRequestView[] = [
         id: "session-1002",
         presentationSlug: "careers",
         presentationTitle: "Careers",
+        presentationAccentColor: "#18A83B",
         regionSlug: "north-shore",
         schoolName: "Harbour Secondary College",
         startsAt: "2026-06-18T11:00:00.000Z",
@@ -305,6 +345,7 @@ export const bookingRequests: BookingRequestView[] = [
         id: "session-1003",
         presentationSlug: "esports-pathways",
         presentationTitle: "Esports Pathways",
+        presentationAccentColor: "#E0A11A",
         regionSlug: "south-auckland",
         schoolName: "South Coast High School",
         startsAt: "2026-06-24T09:30:00.000Z",
@@ -330,7 +371,8 @@ export const bookingRequests: BookingRequestView[] = [
       {
         id: "session-1004",
         presentationSlug: "understanding-esports",
-        presentationTitle: "Understanding Esports",
+        presentationTitle: "Understanding the Gaming World",
+        presentationAccentColor: "#2563EB",
         regionSlug: "christchurch",
         schoolName: "Aoraki College",
         startsAt: "2026-06-30T13:00:00.000Z",
@@ -351,7 +393,6 @@ export const trainingModules: TrainingModule[] = [
     title: "Presenter Induction",
     description:
       "Core onboarding for tone, safeguarding, expectations, and delivery standards.",
-    progress: 100,
     lessons: [
       { id: "lesson-1", title: "Welcome and role overview", type: "video", durationMinutes: 12 },
       { id: "lesson-2", title: "School safety checklist", type: "checklist", durationMinutes: 10 }
@@ -359,10 +400,10 @@ export const trainingModules: TrainingModule[] = [
   },
   {
     id: "training-2",
+    presentationTypeId: "digital-wellbeing",
     title: "Digital Wellbeing Delivery Pack",
     description:
       "Presentation-specific walkthrough for Digital Wellbeing structure and facilitation.",
-    progress: 40,
     lessons: [
       { id: "lesson-3", title: "Session run sheet", type: "video", durationMinutes: 18 },
       { id: "lesson-4", title: "Audience prompts", type: "quiz", durationMinutes: 8 }
@@ -373,11 +414,42 @@ export const trainingModules: TrainingModule[] = [
 export const resources: ResourceItem[] = [
   {
     id: "resource-1",
-    title: "School booking prep checklist",
-    description: "Short PDF schools can use before a confirmed session.",
+    title: "School esports club launch checklist",
+    description: "A practical checklist for preparing and launching a student-led esports club.",
     type: "pdf",
     audience: "school",
-    isCurrent: true
+    isCurrent: true,
+    downloadUrl:
+      "https://www.nzesports.org.nz/wp-content/uploads/2025/01/The-Ultimate-Guide-How-To-Start-An-Esports-Club.pdf"
+  },
+  {
+    id: "resource-school-guide",
+    title: "The ultimate guide to starting an esports club",
+    description: "A step-by-step guide for creating a safe, sustainable school esports club.",
+    type: "pdf",
+    audience: "school",
+    isCurrent: true,
+    downloadUrl:
+      "https://www.nzesports.org.nz/wp-content/uploads/2025/01/The-Ultimate-Guide-How-To-Start-An-Esports-Club.pdf"
+  },
+  {
+    id: "resource-school-video",
+    title: "Digital wellbeing: recognising when your brain needs a break",
+    description: "A short student-friendly video to revisit after the presentation.",
+    type: "youtube",
+    audience: "school",
+    presentationSlug: "digital-wellbeing",
+    isCurrent: true,
+    downloadUrl: "https://www.youtube.com/watch?v=K5_uQXgS0tI"
+  },
+  {
+    id: "resource-school-wellbeing-guide",
+    title: "How esports can improve student wellbeing",
+    description: "A practical guide to belonging, confidence, resilience and leadership.",
+    type: "file",
+    audience: "school",
+    isCurrent: true,
+    downloadUrl: "https://www.nzesports.org.nz/knowledge-base/how-esports-improves-your-wellbeing/"
   },
   {
     id: "resource-2",
@@ -428,48 +500,68 @@ export const paymentRecords: PaymentRecord[] = [
     ambassadorName: "Alex Tane",
     bookingSessionId: "session-1001",
     amountCents: 25000,
+    baseAmountCents: 25000,
+    sourcingBonusCents: 0,
     status: "pending",
     eligibilityReason: "168 attendees, report submitted",
-    createdAt: "2026-06-19T02:30:00.000Z"
+    createdAt: "2026-06-19T02:30:00.000Z",
+    financeEmailAttempts: 0
   },
   {
     id: "payment-2",
     ambassadorName: "Mia Rangi",
     bookingSessionId: "session-0907",
     amountCents: 25000,
+    baseAmountCents: 25000,
+    sourcingBonusCents: 0,
     status: "paid",
     eligibilityReason: "Manual override by staff",
     createdAt: "2026-05-02T21:00:00.000Z",
     paidAt: "2026-05-09T03:00:00.000Z",
     invoiceNumber: "INV-2026-9A11B2C3",
-    invoiceSubmittedAt: "2026-05-03T20:00:00.000Z",
+    invoiceGeneratedAt: "2026-05-03T20:00:00.000Z",
     sentToFinanceAt: "2026-05-05T22:00:00.000Z",
-    sentToEmail: "info@esf.nz"
+    sentToEmail: "info@esf.nz",
+    financeEmailStatus: "sent",
+    financeEmailAttempts: 1,
+    financeConfirmedAt: "2026-05-09T03:00:00.000Z"
   },
   {
     id: "payment-3",
     ambassadorName: "Alex Tane",
     bookingSessionId: "session-0912",
     amountCents: 25000,
-    status: "invoiced",
+    baseAmountCents: 25000,
+    sourcingBonusCents: 0,
+    status: "approved",
     eligibilityReason: "142 attendees, report submitted",
     createdAt: "2026-06-10T01:00:00.000Z",
     invoiceNumber: "INV-2026-4D55E6F7",
-    invoiceSubmittedAt: "2026-06-12T21:30:00.000Z",
-    bankAccountNumber: "12-3456-7890123-00"
+    invoiceGeneratedAt: "2026-06-12T21:30:00.000Z",
+    bankAccountName: "Alex Tane",
+    bankAccountNumber: "12-3456-7890123-00",
+    financeEmailStatus: "failed",
+    financeEmailAttempts: 1,
+    financeEmailError: "Finance email delivery failed"
   },
   {
     id: "payment-4",
     ambassadorName: "Mia Rangi",
     bookingSessionId: "session-0920",
     amountCents: 25000,
-    status: "submitted_for_payment",
+    baseAmountCents: 25000,
+    sourcingBonusCents: 0,
+    status: "approved",
     eligibilityReason: "205 attendees, report submitted",
     createdAt: "2026-06-01T01:00:00.000Z",
     invoiceNumber: "INV-2026-8G99H0I1",
-    invoiceSubmittedAt: "2026-06-03T20:00:00.000Z",
+    invoiceGeneratedAt: "2026-06-03T20:00:00.000Z",
     sentToFinanceAt: "2026-06-05T02:00:00.000Z",
-    sentToEmail: "info@esf.nz"
+    sentToEmail: "info@esf.nz",
+    financeEmailStatus: "sent",
+    financeEmailAttempts: 1,
+    bankAccountName: "Mia Rangi",
+    financeConfirmationExpiresAt: "2026-07-05T02:00:00.000Z"
   }
 ];
 

@@ -14,6 +14,13 @@ export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
   loginUrl: "https://example.org/login",
   invoiceNumber: "INV-2026-014",
   amount: "$250.00",
+  amountLabel: "$250.00 NZD",
+  sessionDescription: "Digital Wellbeing — Rangitoto College — 15 September 2026",
+  bankAccountName: "Aroha Ngata",
+  bankAccountNumber: "12-3456-7890123-00",
+  gstLine: "",
+  confirmationButton:
+    '<p><a href="https://example.org/finance/payment/sample" style="display:inline-block;border-radius:12px;background:#18a83b;color:#fff;padding:13px 22px;font-weight:700;text-decoration:none;">Payment made</a></p>',
   calendarLinks: buildCalendarLinksEmailHtml(
     {
       title: "Digital Wellbeing — NZ Esports presentation",

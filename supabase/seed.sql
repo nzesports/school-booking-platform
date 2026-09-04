@@ -34,6 +34,7 @@ insert into public.presentation_types (
   delivery_formats,
   learning_outcomes,
   required_equipment,
+  accent_color,
   is_active,
   is_public,
   sort_order
@@ -42,13 +43,14 @@ values
   (
     'Digital Wellbeing',
     'digital-wellbeing',
-    'Promote healthy habits, screen balance and positive digital choices.',
-    'A practical presentation that helps students build healthy relationships with technology and gaming.',
+    'Help students build healthier gaming and screen habits through practical lessons on breaks, movement, sleep, hydration and nutrition.',
+    '<p>A practical, student-friendly presentation that helps young people build healthier relationships with gaming and technology. Students learn how to recognise when their brain needs a break and explore how movement, sleep, hydration and nutrition can affect focus, mood and performance.</p><p>The presentation takes a positive approach to gaming while giving students simple, practical habits they can use both on and away from screens.</p>',
     'Years 5 to 6, Years 7 to 8, Years 9 to 13',
-    60,
-    array['assembly', 'classroom'],
-    E'Healthy screen routines\nDigital citizenship\nPositive online behaviour',
-    E'Projector or screen\nMicrophone if needed',
+    10,
+    array['Assembly', 'classroom'],
+    E'Recognise the signs of screen fatigue :: Learn to identify signs such as tired eyes, headaches, frustration, reduced focus and the urge to keep playing when it is time to take a break.\nBuild healthier gaming routines :: Understand why regular breaks and physical activity are important for maintaining focus, energy and wellbeing during gaming and screen time.\nUnderstand the importance of sleep and hydration :: Explore how sleep and hydration can affect concentration, cognitive performance, mood and emotional regulation.\nMake better choices for sustained energy and focus :: Learn how everyday food and drink choices can support concentration and performance, with practical examples students can apply in their daily routines.',
+    E'Projector or screen\nMicrophone if needed\nNo gaming equipment, computers or student devices are required.',
+    '#18A83B',
     true,
     true,
     1
@@ -56,46 +58,42 @@ values
   (
     'Esports Pathways',
     'esports-pathways',
-    'Explore structured esports and the roles around it.',
-    'An engaging session covering teamwork, competition, events, production, and future opportunities in esports.',
-    'Years 7 to 8, Years 9 to 13',
-    50,
-    array['assembly', 'workshop'],
-    E'Understanding esports roles\nTeamwork and communication\nStructured competition awareness',
-    E'Projector or screen',
+    'Explore the careers, study pathways and transferable skills behind gaming and esports, from school competition through to the wider global industry.',
+    '<p>A practical presentation showing students where gaming and esports can lead beyond becoming a professional player. Students explore competitive pathways, career opportunities, further study options and the transferable skills they may already be developing through gaming.</p><p>The presentation also helps teachers recognise gaming as a useful way to engage students in conversations about learning, skills and future careers.</p>',
+    'Years 9 to 13',
+    10,
+    array['Assembly', 'classroom', 'careers session'],
+    E'Understand esports pathways :: Explore how students can progress from school esports into university competition, community events, national qualifiers, Junior E Blacks and national team opportunities.\nDiscover careers beyond professional gaming :: Learn about the wide range of careers connected to gaming and esports, including game development, live production, coaching, design, marketing, events, broadcasting and management.\nRecognise transferable skills :: Understand how gaming can develop useful skills including communication, teamwork, problem solving, leadership, organisation, critical thinking, adaptability, budgeting and technical literacy.\nExplore study and experience options :: Discover different pathways into the gaming, esports and creative industries through universities, polytechnics, private training establishments and volunteering.',
+    E'Projector or screen\nMicrophone if needed\nNo gaming equipment, computers or student devices are required.',
+    '#E0A11A',
     true,
     true,
     2
   ),
   (
-    'Careers',
-    'careers',
-    'Connect digital interests to real education and career pathways.',
-    'A careers-focused session that helps students connect esports, media, and tech interests to real opportunities.',
-    'Years 9 to 13',
-    45,
-    array['assembly', 'classroom'],
-    E'Career awareness\nPathway planning\nIndustry role discovery',
-    E'Projector or screen',
+    'Understanding the Gaming World',
+    'understanding-esports',
+    'A positive, practical introduction that helps parents and whānau understand young people''s gaming and support healthier habits and conversations.',
+    '<p>A practical introduction to gaming and esports for parents and whānau. This presentation helps families better understand what gaming means to young people, addresses common concerns and tension points, and provides practical ways to support a healthier, more balanced relationship with gaming.</p><p>The presentation also introduces school esports, the E Blacks national team and the wide range of career opportunities connected to gaming and esports.</p>',
+    'Parents & whānau, Teachers & school staff',
+    25,
+    array['Parent evening', 'whānau information session', 'school community event'],
+    E'Understand the role gaming plays in young people''s lives :: Recognise gaming as a space for social connection, identity, achievement, competition and recreation.\nRecognise common gaming-related tension points :: Understand issues such as difficulty stopping, sleep, time management, online behaviour, stranger interactions and emotional regulation.\nUse practical strategies for healthier conversations about gaming :: Learn how timing, curiosity, boundaries and a balanced lifestyle can reduce conflict around gaming.\nUnderstand where gaming and esports can lead :: Explore pathways ranging from game development and design through to events, marketing, teaching, psychology, sports science and other careers.',
+    E'Projector or presentation screen :: For displaying the presentation.\nMicrophone for larger audiences :: Recommended for parent evenings, halls or larger community sessions.\nAudience phones for Q&A, optional :: The presentation includes QR-based audience questions, so attendees can submit questions from their phones if that functionality is being used.',
+    '#2563EB',
     true,
     true,
     3
-  ),
-  (
-    'Understanding Esports',
-    'understanding-esports',
-    'Help schools understand esports in a safe, structured education context.',
-    'A foundational overview of esports for schools, students, and whānau-facing contexts.',
-    'Years 5 to 6, Years 7 to 8, Years 9 to 13',
-    45,
-    array['assembly', 'online'],
-    E'Esports literacy\nSafety and inclusion\nSchool implementation basics',
-    E'Projector or screen\nStable internet for online mode',
-    true,
-    true,
-    4
   )
 on conflict (slug) do nothing;
+
+update public.presentation_types
+set content_snippet = case slug
+  when 'digital-wellbeing' then '<p>This is a practical wellbeing presentation rather than a lecture about reducing or stopping gaming. It acknowledges the positive social and personal experiences gaming can provide while helping students understand how to look after themselves when spending time on screens.</p><p>Students are introduced to simple concepts around brain fatigue, movement, sleep, hydration and nutrition, with advice designed to be easy to understand and put into practice.</p>'
+  when 'esports-pathways' then '<p>This is not a presentation about simply becoming a professional gamer. It uses students'' existing interest in gaming to show the much wider range of careers, study options and transferable skills connected to the gaming and esports industries.</p><p>Students will see the competitive esports pathway, but will also learn that professional competition represents only a very small part of the wider industry.</p>'
+  when 'understanding-esports' then '<p><strong>This is a positive, practical presentation rather than an anti-gaming talk.</strong> It helps parents understand why gaming matters to young people, puts common concerns into context and gives families practical ways to have better conversations and set healthier boundaries.</p>'
+end
+where slug in ('digital-wellbeing', 'esports-pathways', 'understanding-esports');
 
 insert into public.availability_rules (
   name,
@@ -286,9 +284,9 @@ values
   ),
   (
     'invoice_to_finance',
-    'Ambassador invoice to finance',
-    'Ambassador invoice {{invoiceNumber}} - {{ambassadorName}}',
-    '<p>Kia ora,</p><p>Invoice <strong>{{invoiceNumber}}</strong> from <strong>{{ambassadorName}}</strong> for <strong>{{sessionDescription}}</strong> is attached.</p><p>Amount payable: <strong>{{amountLabel}}</strong></p><p>Please process this payment and reply to confirm once complete.</p>',
-    'Invoice {{invoiceNumber}} from {{ambassadorName}} for {{sessionDescription}} is attached. Amount payable: {{amountLabel}}.'
+    'Ambassador payment approval to finance',
+    'Payment {{invoiceNumber}} - {{ambassadorName}}',
+    '<p>Kia ora,</p><p>The ambassador payment below has been approved.</p><p><strong>Invoice reference:</strong> {{invoiceNumber}}<br><strong>Ambassador:</strong> {{ambassadorName}}<br><strong>Session:</strong> {{sessionDescription}}<br><strong>Amount:</strong> {{amountLabel}}<br><strong>Account name:</strong> {{bankAccountName}}<br><strong>Bank account:</strong> {{bankAccountNumber}}{{gstLine}}</p><p>Use <strong>{{invoiceNumber}}</strong> as the bank payment reference.</p>{{confirmationButton}}<p>This confirmation link expires after 30 days.</p>',
+    'Approved payment {{invoiceNumber}} for {{ambassadorName}}. Amount: {{amountLabel}}. Account name: {{bankAccountName}}. Bank account: {{bankAccountNumber}}. Use {{invoiceNumber}} as the bank reference.'
   )
 on conflict (template_key) do nothing;

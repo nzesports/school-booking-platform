@@ -1,10 +1,24 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = join(root, "node_modules", "supabase", "dist", "supabase.js");
+const dockerDesktopBin = "/Applications/Docker.app/Contents/Resources/bin";
+
+// Docker Desktop can be installed successfully on macOS before its CLI
+// symlink has been added to the shell PATH. Supabase invokes `docker`
+// internally, so make the bundled CLI discoverable for this local command.
+if (
+  process.platform === "darwin" &&
+  existsSync(join(dockerDesktopBin, "docker")) &&
+  !(process.env.PATH ?? "")
+    .split(delimiter)
+    .some((entry) => entry && existsSync(join(entry, "docker")))
+) {
+  process.env.PATH = [dockerDesktopBin, process.env.PATH].filter(Boolean).join(delimiter);
+}
 
 if (!existsSync(cli)) {
   console.error("Supabase CLI is missing. Run `npm install` first.");
@@ -82,6 +96,12 @@ function seed() {
   syncLocalEnv();
   run(process.execPath, ["scripts/seed-local-users.mjs"]);
   run(process.execPath, ["scripts/seed-demo-data.mjs"]);
+  run(process.execPath, ["scripts/seed-ambassador-showcase.mjs"]);
+}
+
+function applyPendingMigrations() {
+  console.log("Applying pending local database migrations…");
+  runSupabase(["migration", "up", "--local"]);
 }
 
 const action = process.argv[2] ?? "start";
@@ -89,8 +109,9 @@ const action = process.argv[2] ?? "start";
 switch (action) {
   case "start":
     runSupabase(["start"]);
+    applyPendingMigrations();
     seed();
-    console.log("\nLocal platform data is ready. Run `npm run dev`.");
+    console.log("\nLocal platform data is ready.");
     break;
   case "reset":
     runSupabase(["db", "reset"]);
@@ -98,10 +119,17 @@ switch (action) {
     console.log("\nLocal database reset and demo data are complete.");
     break;
   case "seed":
+    applyPendingMigrations();
     seed();
+    break;
+  case "status":
+    runSupabase(["status"]);
+    break;
+  case "stop":
+    runSupabase(["stop"]);
     break;
   default:
     console.error(`Unknown action: ${action}`);
-    console.error("Use start, reset, or seed.");
+    console.error("Use start, reset, seed, status, or stop.");
     process.exit(1);
 }

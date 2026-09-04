@@ -73,7 +73,13 @@ export function BookingDialogShell({
             bodyClassName
           )}
         >
-          <div className="relative">
+          <div
+            className={cn(
+              "relative",
+              headerAside &&
+                "lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-8 lg:pr-20"
+            )}
+          >
             <Button
               type="button"
               variant="ghost"
@@ -83,7 +89,7 @@ export function BookingDialogShell({
               <X className="h-4 w-4" />
             </Button>
 
-            <div className="pr-16 lg:pr-20">
+            <div className={cn("pr-16 lg:pr-20", headerAside && "lg:pr-0")}>
               {kicker ? (
                 <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                   {kicker}
@@ -109,7 +115,7 @@ export function BookingDialogShell({
             </div>
 
             {headerAside ? (
-              <div className="mt-6 flex justify-start sm:justify-end lg:mt-4 lg:pr-20">
+              <div className="mt-6 flex justify-start sm:justify-end lg:mt-0 lg:pr-0">
                 {headerAside}
               </div>
             ) : null}

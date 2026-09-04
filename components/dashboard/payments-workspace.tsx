@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { ArrowRight, CircleDollarSign, Download, Hourglass, Mail, ReceiptText } from "lucide-react";
+import { CircleDollarSign, Hourglass, Mail, RefreshCw, TriangleAlert } from "lucide-react";
 
-import { markPaymentPaidAction, sendInvoiceToFinanceAction } from "@/app/portal/actions";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { retryFinancePaymentEmailAction } from "@/app/portal/actions";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { BookingSessionView, PaymentRecord } from "@/lib/domain/types";
+import { isFinanceConfirmationExpired } from "@/lib/services/payment-automation";
 import { cn, formatCurrency, formatShortDate } from "@/lib/utils";
 
 export function getPaymentsNotice(
@@ -17,15 +17,8 @@ export function getPaymentsNotice(
     return Array.isArray(value) ? value[0] : value;
   };
 
-  if (read("sent") === "invoice") {
-    return {
-      tone: "success",
-      message: "Invoice sent to finance and the ambassador has been notified."
-    };
-  }
-
-  if (read("paid") === "1") {
-    return { tone: "success", message: "Payment marked as paid and the ambassador notified." };
+  if (read("sent") === "finance-email") {
+    return { tone: "success", message: "The payment email was sent to finance." };
   }
 
   const error = read("error");
@@ -33,28 +26,15 @@ export function getPaymentsNotice(
   if (error === "invoice-email-failed") {
     return {
       tone: "error",
-      message: "The invoice email could not be sent. The invoice is still queued — try again."
+      message: "The finance email still could not be sent. The approval and invoice number are safe; try again later."
     };
   }
 
-  if (error === "invalid-finance-email") {
-    return { tone: "error", message: "Check the finance email and CC addresses, then try again." };
+  if (error === "finance-email-not-retryable") {
+    return { tone: "error", message: "That finance email no longer needs to be retried." };
   }
 
-  if (error === "invoice-not-ready") {
-    return { tone: "error", message: "That payment doesn't have a submitted invoice to send yet." };
-  }
-
-  if (error === "payment-not-payable") {
-    return { tone: "error", message: "That payment has already been marked as paid." };
-  }
-
-  if (
-    error === "payment-not-found" ||
-    error === "payment-update-failed" ||
-    error === "invoice-update-failed" ||
-    error === "invalid-payment"
-  ) {
+  if (error === "invalid-payment") {
     return { tone: "error", message: "The payment could not be updated. Please try again." };
   }
 
@@ -81,14 +61,28 @@ export function PaymentsWorkspace({
       ? `${session.presentationTitle} · ${session.schoolName} · ${formatShortDate(session.startsAt)}`
       : payment.bookingSessionId;
   };
-  // Anchor keeps the page at the payment queues after a status update
-  // instead of jumping back to the top.
   const returnTo = `${basePath}/payments#payments-queue`;
+  const linkExpired = (payment: PaymentRecord) =>
+    Boolean(
+      payment.financeConfirmationExpiresAt &&
+        isFinanceConfirmationExpired(payment.financeConfirmationExpiresAt)
+    );
 
-  const awaitingInvoice = payments.filter((payment) => payment.status === "pending");
-  const invoiceReceived = payments.filter((payment) => payment.status === "invoiced");
-  const submittedForPayment = payments.filter(
-    (payment) => payment.status === "submitted_for_payment"
+  const awaitingApproval = payments.filter((payment) =>
+    ["pending", "eligible"].includes(payment.status)
+  );
+  const deliveryIssues = payments.filter(
+    (payment) =>
+      payment.status === "approved" &&
+      (payment.financeEmailStatus === "failed" ||
+        payment.financeEmailStatus === "pending" ||
+        linkExpired(payment))
+  );
+  const withFinance = payments.filter(
+    (payment) =>
+      payment.status === "approved" &&
+      payment.financeEmailStatus === "sent" &&
+      !linkExpired(payment)
   );
   const recentlyPaid = payments
     .filter((payment) => payment.status === "paid")
@@ -116,128 +110,85 @@ export function PaymentsWorkspace({
 
       <PaymentSection
         icon={<Hourglass className="h-5 w-5 text-[#c07a12]" />}
-        kicker="Awaiting invoice"
-        title="Waiting on ambassador invoices"
-        description="Eligible session payments where the ambassador hasn't submitted an invoice yet."
+        kicker="Received"
+        title="Awaiting report approval"
       >
-        {awaitingInvoice.map((payment) => (
+        {awaitingApproval.map((payment) => (
           <PaymentRow key={payment.id}>
             <PaymentSummary
               name={payment.ambassadorName}
               detail={sessionLabel(payment)}
-              subDetail={payment.eligibilityReason}
+              subDetail="Report received — approve it from the reports workspace."
             />
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                {formatCurrency(payment.amountCents)}
-              </p>
-              <StatusBadge value={payment.status} />
-              <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />
-            </div>
+            <PaymentAmount payment={payment} />
           </PaymentRow>
         ))}
-        {awaitingInvoice.length === 0 ? (
-          <EmptyRow copy="No payments are waiting on an ambassador invoice." />
-        ) : null}
+        {awaitingApproval.length === 0 ? <EmptyRow copy="No payments are awaiting approval." /> : null}
       </PaymentSection>
 
       <PaymentSection
-        icon={<ReceiptText className="h-5 w-5 text-[#246bff]" />}
-        kicker="Invoice received"
-        title="Ready to send to finance"
-        description="Download the generated invoice PDF, confirm the finance address, and send it on. Sending notifies the ambassador that their invoice has been submitted for payment."
+        icon={<TriangleAlert className="h-5 w-5 text-[#b42318]" />}
+        kicker="Action required"
+        title="Finance delivery issues"
       >
-        {invoiceReceived.map((payment) => (
-          <PaymentRow key={payment.id} highlight>
+        {deliveryIssues.map((payment) => (
+          <PaymentRow key={payment.id} highlight="error">
             <PaymentSummary
               name={payment.ambassadorName}
               detail={sessionLabel(payment)}
-              subDetail={`Invoice ${payment.invoiceNumber ?? "pending"} · submitted ${
-                payment.invoiceSubmittedAt ? formatShortDate(payment.invoiceSubmittedAt) : "recently"
-              }`}
+              subDetail={
+                linkExpired(payment)
+                  ? `Invoice ${payment.invoiceNumber ?? ""} · confirmation link expired`
+                  : `Invoice ${payment.invoiceNumber ?? ""} · ${payment.financeEmailError ?? "email delivery was not completed"}`
+              }
             />
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                {formatCurrency(payment.amountCents)}
-              </p>
-              <ButtonLink
-                href={`/portal/invoice/${payment.id}`}
-                variant="secondary"
-                className="min-h-[42px] rounded-[16px] px-4 py-2"
-              >
-                <Download className="h-4 w-4" />
-                Invoice PDF
-              </ButtonLink>
+              <PaymentAmount payment={payment} />
+              <form action={retryFinancePaymentEmailAction}>
+                <input type="hidden" name="paymentId" value={payment.id} />
+                <input type="hidden" name="returnTo" value={returnTo} />
+                <PendingSubmitButton
+                  type="submit"
+                  pendingLabel="Retrying..."
+                  className="min-h-[42px] rounded-[16px] px-4 py-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Retry email
+                </PendingSubmitButton>
+              </form>
             </div>
-            <form
-              action={sendInvoiceToFinanceAction}
-              className="mt-4 grid w-full gap-3 border-t border-[color:rgba(4,15,75,0.08)] pt-4 md:grid-cols-[1fr_1fr_auto]"
-            >
-              <input type="hidden" name="paymentId" value={payment.id} />
-              <input type="hidden" name="returnTo" value={returnTo} />
-              <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
-                Send to
-                <Input name="toEmail" type="email" required defaultValue={financeEmail} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
-                CC (optional, comma-separated)
-                <Input name="ccEmail" placeholder="name@example.com" />
-              </label>
-              <div className="grid items-end">
-                <Button type="submit" className="min-h-[48px]">
-                  <Mail className="h-4 w-4" />
-                  Send to finance
-                </Button>
-              </div>
-            </form>
           </PaymentRow>
         ))}
-        {invoiceReceived.length === 0 ? (
-          <EmptyRow copy="No submitted invoices are waiting to be sent to finance." />
-        ) : null}
+        {deliveryIssues.length === 0 ? <EmptyRow copy="No finance emails need attention." /> : null}
       </PaymentSection>
 
       <PaymentSection
         icon={<Mail className="h-5 w-5 text-[#5d41b8]" />}
-        kicker="Submitted for payment"
+        kicker="Approved"
         title="With finance"
-        description="Invoices emailed to finance. Mark them as paid once the payment has gone out — the ambassador is notified."
       >
-        {submittedForPayment.map((payment) => (
+        {withFinance.map((payment) => (
           <PaymentRow key={payment.id}>
             <PaymentSummary
               name={payment.ambassadorName}
               detail={sessionLabel(payment)}
-              subDetail={`Invoice ${payment.invoiceNumber ?? ""} sent to ${payment.sentToEmail ?? "finance"}${
+              subDetail={`Invoice ${payment.invoiceNumber ?? ""} sent to ${payment.sentToEmail ?? financeEmail}${
                 payment.sentToFinanceAt ? ` on ${formatShortDate(payment.sentToFinanceAt)}` : ""
               }`}
             />
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                {formatCurrency(payment.amountCents)}
-              </p>
-              <ButtonLink
-                href={`/portal/invoice/${payment.id}`}
-                variant="ghost"
-                className="min-h-[42px] rounded-[16px] px-3 py-2"
-              >
-                <Download className="h-4 w-4" />
-                PDF
-              </ButtonLink>
-              <MarkPaidForm paymentId={payment.id} returnTo={returnTo} emphasized />
+              <PaymentAmount payment={payment} />
+              <StatusBadge value="approved" label="Awaiting finance confirmation" />
             </div>
           </PaymentRow>
         ))}
-        {submittedForPayment.length === 0 ? (
-          <EmptyRow copy="Nothing is currently with finance." />
-        ) : null}
+        {withFinance.length === 0 ? <EmptyRow copy="Nothing is currently with finance." /> : null}
       </PaymentSection>
 
       <PaymentSection
         icon={<CircleDollarSign className="h-5 w-5 text-[color:var(--green)]" />}
         kicker="Paid"
         title="Recently completed payments"
-        description="The most recent payments confirmed as paid."
       >
         {recentlyPaid.map((payment) => (
           <PaymentRow key={payment.id}>
@@ -249,20 +200,8 @@ export function PaymentsWorkspace({
               }`}
             />
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                {formatCurrency(payment.amountCents)}
-              </p>
-              <StatusBadge value={payment.status} />
-              {payment.invoiceNumber ? (
-                <ButtonLink
-                  href={`/portal/invoice/${payment.id}`}
-                  variant="ghost"
-                  className="min-h-[42px] rounded-[16px] px-3 py-2"
-                >
-                  <Download className="h-4 w-4" />
-                  PDF
-                </ButtonLink>
-              ) : null}
+              <PaymentAmount payment={payment} />
+              <StatusBadge value="paid" />
             </div>
           </PaymentRow>
         ))}
@@ -276,13 +215,11 @@ function PaymentSection({
   icon,
   kicker,
   title,
-  description,
   children
 }: {
   icon: ReactNode;
   kicker: string;
   title: string;
-  description: string;
   children: ReactNode;
 }) {
   return (
@@ -298,7 +235,6 @@ function PaymentSection({
           <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
             {title}
           </h2>
-          <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{description}</p>
         </div>
       </div>
       <div className="mt-5 grid gap-3">{children}</div>
@@ -306,13 +242,35 @@ function PaymentSection({
   );
 }
 
-function PaymentRow({ children, highlight }: { children: ReactNode; highlight?: boolean }) {
+function PaymentAmount({ payment }: { payment: PaymentRecord }) {
+  return (
+    <div className="text-right">
+      <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+        {formatCurrency(payment.amountCents)}
+      </p>
+      {payment.sourcingBonusCents > 0 ? (
+        <p className="mt-0.5 text-xs font-semibold text-[#1d6f35]">
+          {formatCurrency(payment.baseAmountCents)} delivery +{" "}
+          {formatCurrency(payment.sourcingBonusCents)} sourced-school bonus
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PaymentRow({
+  children,
+  highlight
+}: {
+  children: ReactNode;
+  highlight?: "error";
+}) {
   return (
     <div
       className={cn(
         "flex flex-wrap items-center justify-between gap-4 rounded-[24px] border px-5 py-4",
-        highlight
-          ? "border-[rgba(36,107,255,0.16)] bg-[linear-gradient(135deg,#f6faff,#fbfdff)]"
+        highlight === "error"
+          ? "border-[#f2c6c6] bg-[#fff8f8]"
           : "border-[color:rgba(4,15,75,0.08)] bg-white/92"
       )}
     >
@@ -331,36 +289,11 @@ function PaymentSummary({
   subDetail?: string;
 }) {
   return (
-    <div className="min-w-[220px]">
+    <div className="min-w-[220px] max-w-2xl">
       <p className="font-semibold text-[color:var(--navy)]">{name}</p>
       <p className="mt-0.5 text-sm text-[color:var(--text-soft)]">{detail}</p>
       {subDetail ? <p className="mt-0.5 text-sm text-[color:var(--text-soft)]">{subDetail}</p> : null}
     </div>
-  );
-}
-
-function MarkPaidForm({
-  paymentId,
-  returnTo,
-  emphasized
-}: {
-  paymentId: string;
-  returnTo: string;
-  emphasized?: boolean;
-}) {
-  return (
-    <form action={markPaymentPaidAction}>
-      <input type="hidden" name="paymentId" value={paymentId} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <Button
-        type="submit"
-        variant={emphasized ? "primary" : "secondary"}
-        className="min-h-[42px] rounded-[16px] px-4 py-2"
-      >
-        Mark as paid
-        <ArrowRight className="h-4 w-4" />
-      </Button>
-    </form>
   );
 }
 

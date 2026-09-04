@@ -29,8 +29,16 @@ function report(step, error, count) {
   }
 }
 
-const { data: demoSchools } = await admin.from("schools").select("id").ilike("name", "Demo %");
-const schoolIds = (demoSchools ?? []).map((school) => school.id);
+const [{ data: demoSchools }, { data: demoSchoolContacts }] = await Promise.all([
+  admin.from("schools").select("id").ilike("name", "Demo %"),
+  admin.from("school_contacts").select("school_id").ilike("email", `%@${DEMO_EMAIL_DOMAIN}`)
+]);
+const schoolIds = Array.from(
+  new Set([
+    ...(demoSchools ?? []).map((school) => school.id),
+    ...(demoSchoolContacts ?? []).map((contact) => contact.school_id)
+  ])
+);
 
 const { data: demoSessions } = schoolIds.length
   ? await admin.from("booking_sessions").select("id").in("school_id", schoolIds)
@@ -43,6 +51,14 @@ const { data: demoRequests } = schoolIds.length
 const requestIds = (demoRequests ?? []).map((request) => request.id);
 
 if (sessionIds.length) {
+  report(
+    "session email logs",
+    (await admin.from("email_logs").delete().in("related_booking_session_id", sessionIds)).error
+  );
+  report(
+    "session media",
+    (await admin.from("media_library").delete().in("booking_session_id", sessionIds)).error
+  );
   report("payments", (await admin.from("payments").delete().in("booking_session_id", sessionIds)).error);
   report(
     "session applications",
@@ -55,6 +71,10 @@ if (sessionIds.length) {
 }
 
 if (requestIds.length) {
+  report(
+    "request email logs",
+    (await admin.from("email_logs").delete().in("related_booking_request_id", requestIds)).error
+  );
   report(
     "activity logs",
     (await admin.from("booking_activity_logs").delete().in("booking_request_id", requestIds)).error
@@ -74,6 +94,12 @@ report(
   "reviews",
   (await admin.from("presentation_reviews").delete().ilike("attribution", "%demo%")).error
 );
+if (schoolIds.length) {
+  report(
+    "reviews linked to demo schools",
+    (await admin.from("presentation_reviews").delete().in("school_id", schoolIds)).error
+  );
+}
 report("notifications", (await admin.from("notifications").delete().ilike("title", "%demo%")).error);
 
 // Seeded training modules (lessons + progress cascade with the module).
@@ -114,8 +140,82 @@ const { data: demoProfiles } = await admin
   .select("id, email")
   .ilike("email", `%@${DEMO_EMAIL_DOMAIN}`);
 
+const demoProfileIds = (demoProfiles ?? []).map((profile) => profile.id);
+if (demoProfileIds.length) {
+  report(
+    "demo account audit logs",
+    (await admin.from("audit_logs").delete().in("actor_id", demoProfileIds)).error
+  );
+
+  const { data: demoAmbassadorProfiles } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .in("user_id", demoProfileIds);
+  const demoAmbassadorProfileIds = (demoAmbassadorProfiles ?? []).map((profile) => profile.id);
+
+  if (demoAmbassadorProfileIds.length) {
+    report(
+      "demo ambassador session assignments",
+      (
+        await admin
+          .from("booking_sessions")
+          .update({ assigned_ambassador_id: null })
+          .in("assigned_ambassador_id", demoAmbassadorProfileIds)
+      ).error
+    );
+    report(
+      "demo ambassador outreach assignments",
+      (
+        await admin
+          .from("booking_requests")
+          .update({ ambassador_outreach_by: null })
+          .in("ambassador_outreach_by", demoAmbassadorProfileIds)
+      ).error
+    );
+    report(
+      "demo ambassador applications",
+      (
+        await admin
+          .from("booking_session_applications")
+          .delete()
+          .in("ambassador_profile_id", demoAmbassadorProfileIds)
+      ).error
+    );
+    report(
+      "demo ambassador reports",
+      (
+        await admin
+          .from("ambassador_reports")
+          .delete()
+          .in("ambassador_profile_id", demoAmbassadorProfileIds)
+      ).error
+    );
+    report(
+      "demo ambassador payments",
+      (
+        await admin
+          .from("payments")
+          .delete()
+          .in("ambassador_profile_id", demoAmbassadorProfileIds)
+      ).error
+    );
+  }
+}
+
 for (const profile of demoProfiles ?? []) {
-  const { error } = await admin.auth.admin.deleteUser(profile.id);
+  let { error } = await admin.auth.admin.deleteUser(profile.id);
+
+  if (error) {
+    const { error: profileError } = await admin.from("profiles").delete().eq("id", profile.id);
+
+    if (profileError) {
+      report(`profile ${profile.email}`, profileError);
+      continue;
+    }
+
+    ({ error } = await admin.auth.admin.deleteUser(profile.id));
+  }
+
   report(`auth user ${profile.email}`, error);
 }
 

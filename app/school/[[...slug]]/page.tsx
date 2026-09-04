@@ -4,6 +4,7 @@ import {
   CalendarCheck2,
   CalendarClock,
   CalendarDays,
+  ChevronLeft,
   CircleCheck,
   FolderOpen,
   Hourglass,
@@ -45,6 +46,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
+import type { BookingSessionView } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import { isDeliveredSession } from "@/lib/services/dashboard-insights";
@@ -56,8 +58,7 @@ const navItems = [
   { href: "/school", label: "Overview", icon: School2 },
   { href: "/school/bookings", label: "Bookings", icon: BookOpen },
   { href: "/school/resources", label: "Resources", icon: CalendarClock },
-  { href: "/school/reviews", label: "Reviews", icon: MessageSquare },
-  { href: "/school/profile", label: "Profile", icon: UserRound }
+  { href: "/school/reviews", label: "Reviews", icon: MessageSquare }
 ];
 
 type OverviewResource = {
@@ -82,6 +83,17 @@ const reschedulableStatuses = new Set([
   "ambassador_assigned",
   "confirmed"
 ]);
+
+// Schools see an ambassador's pending withdrawal as a still-assigned session.
+// This masking is DISPLAY-only — feedback eligibility and delivered checks must
+// always use the session's real status (see isDeliveredSession).
+function schoolDisplayStatus(status: BookingSessionView["status"]) {
+  return status === "withdrawal_requested" ? ("ambassador_assigned" as const) : status;
+}
+
+const quickActionClassName =
+  "min-h-[52px] w-full justify-start gap-3 rounded-[14px] px-5 text-sm font-semibold";
+const quickActionLabelClassName = "text-sm font-semibold leading-none";
 
 export default async function SchoolPortalPage({
   params,
@@ -110,12 +122,19 @@ export default async function SchoolPortalPage({
       session.status === "withdrawal_requested"
         ? ({ ...session, status: "ambassador_assigned" as const })
         : session;
+    const hasReview = reviewedSessionIds.has(session.id);
 
     return {
       session: schoolVisibleSession,
       bookingId,
-      isDelivered: isDeliveredSession(schoolVisibleSession, now),
-      hasReview: reviewedSessionIds.has(session.id)
+      // Delivered-ness (and therefore feedback eligibility) is decided from the
+      // session's REAL status — the withdrawal_requested masking above is for
+      // display only, and the server refuses reviews for masked statuses.
+      // Submitted feedback is definitive evidence that the session belongs in
+      // school history, even if an older booking row was never advanced to a
+      // final delivery status.
+      isDelivered: isDeliveredSession(session, now) || hasReview,
+      hasReview
     };
   });
   const activeStatuses = new Set([
@@ -201,16 +220,20 @@ export default async function SchoolPortalPage({
     route === ""
       ? `Welcome back, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
-        ? "Track pending and confirmed bookings"
-        : route.startsWith("resources")
-          ? "Resources"
-          : route.startsWith("reviews")
-            ? "Share feedback on your sessions"
-            : route === "profile"
-              ? "Your school profile"
-              : route.startsWith("review")
-                ? "Leave session feedback"
-                : "School portal";
+        ? "Bookings"
+        : selectedBooking
+          ? "Booking details"
+          : rescheduleBooking
+            ? "Request a reschedule"
+            : route.startsWith("resources")
+              ? "Resources"
+              : route.startsWith("reviews")
+                ? "Share feedback on your sessions"
+                : route === "profile"
+                  ? "Your school profile"
+                  : route.startsWith("review")
+                    ? "Leave session feedback"
+                    : "School portal";
 
   return (
     <main className="min-h-screen">
@@ -220,10 +243,15 @@ export default async function SchoolPortalPage({
         navItems={navItems}
         currentPath={`/school${route ? `/${route}` : ""}`}
         headline={headline}
-        subheadline={
-          route === "" ? "Here's what's happening with your bookings, resources and school activity." : undefined
-        }
         dateLabel="Upcoming term"
+        headerAction={
+          route === "bookings" ? (
+            <BookPresentationButton className="min-h-[44px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white shadow-[0_12px_28px_rgba(24,168,59,0.2)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+              <Plus className="h-4 w-4" />
+              Book presentation
+            </BookPresentationButton>
+          ) : undefined
+        }
         notifications={notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
@@ -296,7 +324,7 @@ export default async function SchoolPortalPage({
                           className="min-h-[42px] rounded-[14px] px-4"
                         >
                           <Star className="h-4 w-4" />
-                          Leave review
+                          Leave feedback
                         </ButtonLink>
                       ) : reschedulableStatuses.has(whatsNext.session.status) ? (
                         <ButtonLink
@@ -420,19 +448,13 @@ export default async function SchoolPortalPage({
                     </span>
                     Quick actions
                   </p>
-                  <p className="mt-1.5 text-sm text-[color:var(--text-soft)]">
-                    Need to make a change or manage your bookings?
-                  </p>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="mt-5 grid gap-3 md:grid-cols-3">
                     <BookPresentationButton
                       variant="secondary"
-                      className="min-h-[52px] justify-between rounded-[16px] px-4 text-left text-sm font-semibold"
+                      className={quickActionClassName}
                     >
-                      <span className="flex items-center gap-2.5 whitespace-nowrap">
-                        <CalendarDays className="h-4 w-4" />
-                        Book presentation
-                      </span>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+                      <CalendarDays className="h-4 w-4" />
+                      <span className={quickActionLabelClassName}>Book presentation</span>
                     </BookPresentationButton>
                     <QuickAction
                       href="/school/reviews"
@@ -470,7 +492,7 @@ export default async function SchoolPortalPage({
                   </div>
                 ) : (
                   <div className="mt-4 grid gap-3">
-                    {portal.resources.slice(0, 4).map((resource) => {
+                    {portal.resources.slice(0, 3).map((resource) => {
                       const actionUrl = overviewResourceUrl(resource);
                       const isVideoResource = isOverviewVideoResource(resource);
 
@@ -517,13 +539,6 @@ export default async function SchoolPortalPage({
 
         {route === "bookings" ? (
           <div className="grid gap-5">
-            <div className="flex justify-end">
-              <BookPresentationButton className="min-h-[44px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white shadow-[0_12px_28px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
-                <Plus className="h-4 w-4" />
-                Book Presentation
-              </BookPresentationButton>
-            </div>
-
             <div className="grid gap-4 md:grid-cols-3">
               <SchoolStatTile
                 icon={<CalendarDays className="h-5 w-5" />}
@@ -553,64 +568,72 @@ export default async function SchoolPortalPage({
             </div>
 
             {whatsNext ? (
-              <Card
-                className="rounded-[28px]"
-                style={{ borderLeft: "4px solid var(--green)" }}
+              <DismissibleCard
+                storageKey={`school-bookings-whats-next:${whatsNext.session.id}:${whatsNext.isDelivered ? "review" : "upcoming"}`}
               >
-                <div className="flex flex-wrap items-center gap-5">
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--green-soft)] text-[#117a2e]">
-                    <UsersRound className="h-6 w-6" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                      What&apos;s next
-                    </p>
-                    <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                      {whatsNext.session.presentationTitle}
-                    </h2>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[color:var(--navy)]">
-                      <span className="inline-flex items-center gap-2">
-                        <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
-                        {formatWeekdayDate(whatsNext.session.startsAt)} ·{" "}
-                        {formatTime(whatsNext.session.startsAt)}
-                      </span>
-                      <span aria-hidden className="h-4 w-px bg-[rgba(4,15,75,0.14)]" />
-                      <StatusBadge
-                        value={whatsNext.isDelivered ? "completed" : whatsNext.session.status}
-                        label={schoolBookingStatusLabel(
-                          whatsNext.isDelivered ? "completed" : whatsNext.session.status
-                        )}
-                      />
-                      {whatsNext.session.assignedAmbassadorName ? (
-                        <>
-                          <span aria-hidden className="h-4 w-px bg-[rgba(4,15,75,0.14)]" />
-                          <span className="inline-flex items-center gap-2 text-[color:var(--navy)]">
-                            <UserRound className="h-4 w-4 text-[color:var(--text-soft)]" />
-                            {whatsNext.session.assignedAmbassadorName}
-                          </span>
-                        </>
+                <Card
+                  className="rounded-[28px] pr-14"
+                  style={{ borderLeft: "4px solid var(--green)" }}
+                >
+                  <div className="flex flex-wrap items-center gap-5">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--green-soft)] text-[#117a2e]">
+                      <UsersRound className="h-6 w-6" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                        What&apos;s next
+                      </p>
+                      <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                        {whatsNext.session.presentationTitle}
+                      </h2>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[color:var(--navy)]">
+                        <span className="inline-flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
+                          {formatWeekdayDate(whatsNext.session.startsAt)} ·{" "}
+                          {formatTime(whatsNext.session.startsAt)}
+                        </span>
+                        <span aria-hidden className="h-4 w-px bg-[rgba(4,15,75,0.14)]" />
+                        <StatusBadge
+                          value={whatsNext.isDelivered ? "completed" : whatsNext.session.status}
+                          label={schoolBookingStatusLabel(
+                            whatsNext.isDelivered ? "completed" : whatsNext.session.status
+                          )}
+                        />
+                        {whatsNext.session.assignedAmbassadorName ? (
+                          <>
+                            <span
+                              aria-hidden
+                              className="h-4 w-px bg-[rgba(4,15,75,0.14)]"
+                            />
+                            <span className="inline-flex items-center gap-2 text-[color:var(--navy)]">
+                              <UserRound className="h-4 w-4 text-[color:var(--text-soft)]" />
+                              {whatsNext.session.assignedAmbassadorName}
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <ButtonLink
+                        href={`/school/bookings/${whatsNext.bookingId}`}
+                        className="min-h-[42px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                      >
+                        View details
+                      </ButtonLink>
+                      {whatsNext.isDelivered && !whatsNext.hasReview ? (
+                        <ButtonLink
+                          href={`/school/review/${whatsNext.session.id}`}
+                          variant="secondary"
+                          className="min-h-[42px] rounded-[14px] px-4"
+                        >
+                          <Star className="h-4 w-4" />
+                          Leave feedback
+                        </ButtonLink>
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <ButtonLink
-                      href={`/school/bookings/${whatsNext.bookingId}`}
-                      className="min-h-[42px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
-                    >
-                      View details
-                    </ButtonLink>
-                    {whatsNext.isDelivered && !whatsNext.hasReview ? (
-                      <ButtonLink
-                        href={`/school/review/${whatsNext.session.id}`}
-                        variant="secondary"
-                        className="min-h-[42px] rounded-[14px] px-4"
-                      >
-                        Leave review
-                      </ButtonLink>
-                    ) : null}
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              </DismissibleCard>
             ) : null}
 
             <Card className="rounded-[28px]">
@@ -621,85 +644,122 @@ export default async function SchoolPortalPage({
                 <SchoolBookingsExplorer rows={sessionRows} />
               </div>
             </Card>
-
-            <SchoolContactCallout />
           </div>
         ) : null}
 
         {selectedBooking ? (
-          <Card className="rounded-[34px]">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Booking detail
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                  {selectedBooking.schoolName}
-                </h2>
-                <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                  {selectedBooking.primaryContactName} · {selectedBooking.primaryContactEmail}
-                </p>
-              </div>
-              <StatusBadge
-                value={selectedBooking.status}
-                label={schoolBookingStatusLabel(selectedBooking.status)}
-              />
-            </div>
+          <div className="grid gap-3">
+            <ButtonLink
+              href="/school/bookings"
+              variant="ghost"
+              className="w-fit justify-start px-2 shadow-none"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to bookings
+            </ButtonLink>
 
-            {selectedBooking.schoolNotes ? (
-              <div className="mt-5 rounded-[22px] border border-[color:var(--border-soft)] bg-white/90 px-4 py-4 text-sm leading-7 text-[color:var(--text-soft)]">
-                {selectedBooking.schoolNotes}
-              </div>
-            ) : null}
+            <Card className="overflow-hidden rounded-[28px] p-0">
+              <header className="flex flex-wrap items-start justify-between gap-5 border-b border-[color:var(--border-soft)] bg-[linear-gradient(135deg,#f8fcff,#f7fcf8)] px-6 py-5 md:px-7">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">
+                    {selectedBooking.referenceCode
+                      ? `Booking ${selectedBooking.referenceCode}`
+                      : "Booking summary"}
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                    {selectedBooking.sessions.length === 1
+                      ? selectedBooking.sessions[0]?.presentationTitle
+                      : `${selectedBooking.sessions.length} presentation sessions`}
+                  </h2>
+                  <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <School2 className="h-4 w-4" />
+                      {selectedBooking.schoolName}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <UserRound className="h-4 w-4" />
+                      {selectedBooking.primaryContactName}
+                    </span>
+                  </p>
+                </div>
+                <StatusBadge
+                  value={selectedBooking.status}
+                  label={schoolBookingStatusLabel(selectedBooking.status)}
+                />
+              </header>
 
-            <div className="mt-6 grid gap-4">
-              {selectedBooking.sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm text-[color:var(--text-soft)]">
-                        {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}
-                      </p>
-                      <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                        {session.presentationTitle}
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {session.yearLevels} · {session.expectedStudentCount} expected students
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        Ambassador: {session.assignedAmbassadorName ?? "Pending assignment"}
-                      </p>
-                    </div>
-                    <StatusBadge
-                      value={session.status}
-                      label={schoolBookingStatusLabel(session.status)}
-                    />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {isDeliveredSession(session, now) ? (
-                      !reviewedSessionIds.has(session.id) ? (
-                        <ButtonLink href={`/school/review/${session.id}`}>
-                          <Star className="h-4 w-4" />
-                          Leave review
-                        </ButtonLink>
-                      ) : (
-                        <span className="inline-flex items-center gap-2 rounded-full bg-[#eaf8ee] px-3.5 py-1.5 text-sm font-semibold text-[#117a2e]">
-                          <CircleCheck className="h-4 w-4" />
-                          Feedback submitted
+              {selectedBooking.schoolNotes ? (
+                <div className="border-b border-[color:var(--border-soft)] px-6 py-4 text-sm leading-6 text-[color:var(--text-soft)] md:px-7">
+                  <span className="font-semibold text-[color:var(--navy)]">Booking note: </span>
+                  {selectedBooking.schoolNotes}
+                </div>
+              ) : null}
+
+              <div className="divide-y divide-[color:var(--border-soft)]">
+                {selectedBooking.sessions.map((session) => (
+                  <section key={session.id} className="px-6 py-5 md:px-7 md:py-6">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[color:var(--green-soft)] text-[#117a2e]">
+                          <CalendarDays className="h-5 w-5" />
                         </span>
-                      )
-                    ) : session.status !== "cancelled" ? (
-                      <>
+                        <div className="min-w-0">
+                          <h3 className="text-xl font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                            {session.presentationTitle}
+                          </h3>
+                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                            {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <StatusBadge
+                        value={
+                          isDeliveredSession(session, now)
+                            ? "completed"
+                            : schoolDisplayStatus(session.status)
+                        }
+                        label={schoolBookingStatusLabel(
+                          isDeliveredSession(session, now)
+                            ? "completed"
+                            : schoolDisplayStatus(session.status)
+                        )}
+                      />
+                    </div>
+
+                    <dl className="mt-5 grid overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-[#f8fbfd] sm:grid-cols-3 sm:divide-x sm:divide-[color:var(--border-soft)]">
+                      <BookingDetailValue label="Audience" value={session.yearLevels} />
+                      <BookingDetailValue
+                        label={session.actualStudentCount !== undefined ? "Students reached" : "Expected students"}
+                        value={String(session.actualStudentCount ?? session.expectedStudentCount)}
+                      />
+                      <BookingDetailValue
+                        label="Ambassador"
+                        value={session.assignedAmbassadorName ?? "Pending assignment"}
+                      />
+                    </dl>
+
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                      {isDeliveredSession(session, now) ? (
+                        !reviewedSessionIds.has(session.id) ? (
+                          <ButtonLink href={`/school/review/${session.id}`}>
+                            <Star className="h-4 w-4" />
+                            Leave feedback
+                          </ButtonLink>
+                        ) : (
+                          <span className="inline-flex min-h-[40px] items-center gap-2 rounded-[14px] bg-[#eaf8ee] px-3.5 text-[13px] font-semibold text-[#117a2e]">
+                            <CircleCheck className="h-4 w-4" />
+                            Feedback submitted
+                          </span>
+                        )
+                      ) : session.status !== "cancelled" ? (
+                        <>
                           {reschedulableStatuses.has(session.status) ? (
                             <ButtonLink
                               href={`/school/bookings/${selectedBooking.id}/sessions/${session.id}/reschedule`}
                               variant="secondary"
                             >
                               <CalendarClock className="h-4 w-4" />
-                              Reschedule
+                              Request reschedule
                             </ButtonLink>
                           ) : null}
                           <ButtonLink
@@ -708,13 +768,14 @@ export default async function SchoolPortalPage({
                           >
                             Cancel booking
                           </ButtonLink>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
+                        </>
+                      ) : null}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </Card>
+          </div>
         ) : null}
 
         {rescheduleBooking && rescheduleSession ? (
@@ -785,103 +846,111 @@ export default async function SchoolPortalPage({
         ) : null}
 
         {route === "reviews" ? (
-          <div className="grid gap-5">
-            <div className="grid gap-4 md:grid-cols-3">
-              <ReviewMetricTile
-                icon={<MessageSquare className="h-6 w-6" />}
-                iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
-                value={String(readyForFeedbackRows.length)}
-                label="Ready for feedback"
-                hint="Sessions awaiting your feedback"
-              />
-              <ReviewMetricTile
-                icon={<CircleCheck className="h-6 w-6" />}
-                iconClassName="bg-[#e6f5ec] text-[#117a2e]"
-                value={String(portal.myReviews.length)}
-                label="Feedback submitted"
-                hint="Sessions you've completed"
-              />
-              <ReviewMetricTile
-                icon={<Star className="h-6 w-6" />}
-                iconClassName="bg-[#fdf3dc] text-[#b7822c]"
-                value={averageReviewRating}
-                label="Average rating"
-                hint="From your submitted feedback"
-              />
-            </div>
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <Card className="overflow-hidden rounded-[28px] border-[#d7e5f6] p-0">
+              <header className="flex items-center justify-between gap-4 border-b border-[#d7e5f6] bg-[#f7faff] px-5 py-5 md:px-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#e8f1fd] text-[#1e4fae]">
+                    <MessageSquare className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
+                      Ready for feedback
+                    </h2>
+                    <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                      Completed presentations awaiting your review
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-[#e8f1fd] px-3 text-sm font-semibold text-[#1e4fae]">
+                  {readyForFeedbackRows.length}
+                </span>
+              </header>
 
-            <Card className="rounded-[28px]">
-              <ReviewPanelHeading
-                icon={<MessageSquare className="h-5 w-5" />}
-                iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
-                title="Sessions ready for feedback"
-                hint="Your feedback goes straight to the NZ Esports team and helps shape future presentations. It takes about two minutes per session."
-              />
-              <div className="mt-5 grid gap-3">
+              <div className="divide-y divide-[color:var(--border-soft)] px-5 md:px-6">
                 {readyForFeedbackRows.length === 0 ? (
-                  <p className="rounded-[22px] border border-dashed border-[color:var(--border-soft)] bg-white/85 px-4 py-8 text-center text-sm text-[color:var(--text-soft)]">
-                    You&apos;re all caught up. Delivered sessions will appear here when they are
-                    ready for feedback.
-                  </p>
+                  <div className="grid justify-items-center gap-3 py-12 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eaf8ee] text-[#117a2e]">
+                      <CircleCheck className="h-5 w-5" />
+                    </span>
+                    <p className="text-sm leading-6 text-[color:var(--text-soft)]">
+                      You&apos;re all caught up. Delivered sessions will appear here when feedback is
+                      ready.
+                    </p>
+                  </div>
                 ) : null}
                 {readyForFeedbackRows.map((row) => (
                   <div
                     key={row.session.id}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-[#b9d7fb] bg-[linear-gradient(135deg,#fbfdff,#f8fcff)] px-5 py-5"
+                    className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                   >
-                    <div className="flex min-w-0 items-center gap-4">
-                      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] bg-[#e8f1fd] text-[#1e4fae]">
-                        <CalendarDays className="h-7 w-7" />
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#e8f1fd] text-[#1e4fae]">
+                        <CalendarDays className="h-5 w-5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="text-xl font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                        <p className="font-semibold text-[color:var(--navy)]">
                           {row.session.presentationTitle}
                         </p>
-                        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[color:var(--text-soft)]">
-                          <span className="inline-flex items-center gap-1.5">
-                            <CalendarDays className="h-4 w-4 text-[color:var(--navy)]" />
-                            {formatShortDate(row.session.startsAt)} -{" "}
-                            {formatTime(row.session.startsAt)}
-                          </span>
-                          {row.session.assignedAmbassadorName ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <UserRound className="h-4 w-4 text-[color:var(--navy)]" />
-                              {row.session.assignedAmbassadorName}
-                            </span>
-                          ) : null}
+                        <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                          {formatShortDate(row.session.startsAt)} ·{" "}
+                          {formatTime(row.session.startsAt)}
+                          {row.session.assignedAmbassadorName
+                            ? ` · ${row.session.assignedAmbassadorName}`
+                            : ""}
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-[#eaf8ee] px-4 py-2 text-sm font-semibold text-[#117a2e]">
-                        <span className="h-2 w-2 rounded-full bg-[color:var(--green)]" />
-                        Ready now
-                      </span>
-                      <ButtonLink
-                        href={`/school/review/${row.session.id}`}
-                        className="min-h-[48px] rounded-[15px] border-[#155bd4] bg-[#1765dc] px-5 text-white shadow-[0_14px_28px_rgba(23,101,220,0.2)] hover:border-[#124fb7] hover:bg-[#1458c4]"
-                      >
-                        <Star className="h-4 w-4" />
-                        Leave feedback
-                      </ButtonLink>
-                    </div>
+                    <ButtonLink
+                      href={`/school/review/${row.session.id}`}
+                      className="min-h-[38px] rounded-[12px] px-3"
+                    >
+                      <Star className="h-4 w-4" />
+                      Leave feedback
+                    </ButtonLink>
                   </div>
                 ))}
               </div>
             </Card>
 
-            <Card className="rounded-[28px]">
-              <ReviewPanelHeading
-                icon={<MessageSquare className="h-5 w-5" />}
-                iconClassName="bg-[#e6f5ec] text-[#117a2e]"
-                title="Feedback you've shared"
-                hint="Thanks for helping us improve future sessions."
-              />
-              <div className="mt-5 grid gap-3">
+            <Card className="overflow-hidden rounded-[28px] border-[#d7eadc] p-0">
+              <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d7eadc] bg-[#f7fcf8] px-5 py-5 md:px-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#e6f5ec] text-[#117a2e]">
+                    <CircleCheck className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
+                      Feedback history
+                    </h2>
+                    <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                      Reviews your school has already submitted
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-lg font-semibold leading-none text-[color:var(--navy)]">
+                      {averageReviewRating}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[color:var(--text-soft)]">Average rating</p>
+                  </div>
+                  <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-[#e6f5ec] px-3 text-sm font-semibold text-[#117a2e]">
+                    {portal.myReviews.length}
+                  </span>
+                </div>
+              </header>
+
+              <div className="divide-y divide-[color:var(--border-soft)] px-5 md:px-6">
                 {portal.myReviews.length === 0 ? (
-                  <p className="rounded-[22px] border border-dashed border-[color:var(--border-soft)] bg-white/85 px-4 py-8 text-center text-sm text-[color:var(--text-soft)]">
-                    Submitted feedback will appear here after you complete a review.
-                  </p>
+                  <div className="grid justify-items-center gap-3 py-12 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eef3f8] text-[color:var(--text-soft)]">
+                      <MessageSquare className="h-5 w-5" />
+                    </span>
+                    <p className="text-sm text-[color:var(--text-soft)]">
+                      Submitted feedback will appear here after you complete a review.
+                    </p>
+                  </div>
                 ) : null}
                 {portal.myReviews.map((review) => {
                   const row = review.bookingSessionId
@@ -892,42 +961,26 @@ export default async function SchoolPortalPage({
                   return (
                     <div
                       key={review.id}
-                      className="grid gap-4 rounded-[24px] border border-[#c9ead1] bg-[linear-gradient(135deg,#fbfffc,#f8fcff)] px-5 py-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,1fr)_auto_auto] lg:items-center"
+                      className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
                     >
-                      <div className="flex min-w-0 items-center gap-4">
-                        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] bg-[#e6f5ec] text-[#117a2e]">
-                          <CalendarDays className="h-6 w-6" />
-                        </span>
-                        <div className="min-w-0">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <p className="font-semibold text-[color:var(--navy)]">
                             {review.presentationTitle}
                           </p>
-                          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[color:var(--text-soft)]">
-                            <span>
-                              {row
-                                ? `${formatShortDate(row.session.startsAt)} - ${formatTime(row.session.startsAt)}`
-                                : formatShortDate(review.createdAt)}
-                            </span>
-                            {row?.session.assignedAmbassadorName ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <UserRound className="h-4 w-4 text-[color:var(--navy)]" />
-                                {row.session.assignedAmbassadorName}
-                              </span>
-                            ) : null}
-                          </p>
+                          <ReviewRatingStars rating={rating} />
                         </div>
-                      </div>
-                      <p className="border-y border-[rgba(4,15,75,0.08)] py-4 text-sm font-medium italic leading-6 text-[color:var(--navy)] lg:border-x lg:border-y-0 lg:px-6 lg:py-0">
-                        <span className="mr-2 text-2xl font-semibold text-[color:var(--green)]">
-                          &ldquo;
-                        </span>
-                        {review.quote}
-                      </p>
-                      <div className="grid justify-items-start gap-1 lg:justify-items-center">
-                        <ReviewRatingStars rating={rating} />
-                        {review.rating ? (
-                          <p className="text-sm font-semibold text-[color:var(--navy)]">
-                            {review.rating} / 5
+                        <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+                          {row
+                            ? `${formatShortDate(row.session.startsAt)} · ${formatTime(row.session.startsAt)}`
+                            : formatShortDate(review.createdAt)}
+                          {row?.session.assignedAmbassadorName
+                            ? ` · ${row.session.assignedAmbassadorName}`
+                            : ""}
+                        </p>
+                        {review.quote ? (
+                          <p className="mt-2 line-clamp-2 text-sm italic leading-6 text-[color:var(--navy)]">
+                            &ldquo;{review.quote}&rdquo;
                           </p>
                         ) : null}
                       </div>
@@ -941,7 +994,7 @@ export default async function SchoolPortalPage({
                               }
                             : undefined
                         }
-                        className="min-h-[42px] rounded-[13px] px-4 text-[13px]"
+                        className="min-h-[38px] rounded-[12px] px-3 text-[13px]"
                       />
                     </div>
                   );
@@ -1278,38 +1331,13 @@ function SchoolStatTile({
   );
 }
 
-function ReviewMetricTile({
-  icon,
-  iconClassName,
-  value,
-  label,
-  hint
-}: {
-  icon: ReactNode;
-  iconClassName: string;
-  value: string;
-  label: string;
-  hint: string;
-}) {
+function BookingDetailValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-6">
-      <div className="flex items-center gap-5">
-        <span
-          className={cn(
-            "flex h-16 w-16 shrink-0 items-center justify-center rounded-full",
-            iconClassName
-          )}
-        >
-          {icon}
-        </span>
-        <div>
-          <p className="text-4xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-            {value}
-          </p>
-          <p className="mt-1 font-semibold text-[color:var(--navy)]">{label}</p>
-          <p className="mt-1 text-sm text-[color:var(--text-soft)]">{hint}</p>
-        </div>
-      </div>
+    <div className="px-4 py-3.5">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.13em] text-[color:var(--text-soft)]">
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm font-semibold text-[color:var(--navy)]">{value}</dd>
     </div>
   );
 }
@@ -1323,7 +1351,7 @@ function ReviewPanelHeading({
   icon: ReactNode;
   iconClassName: string;
   title: string;
-  hint: string;
+  hint?: string;
 }) {
   return (
     <div className="flex items-start gap-4">
@@ -1339,7 +1367,7 @@ function ReviewPanelHeading({
         <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           {title}
         </h2>
-        <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{hint}</p>
+        {hint ? <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{hint}</p> : null}
       </div>
     </div>
   );
@@ -1371,13 +1399,10 @@ function QuickAction({
     <ButtonLink
       href={href}
       variant="secondary"
-      className="min-h-[52px] justify-between rounded-[16px] px-4 text-left text-sm"
+      className={quickActionClassName}
     >
-      <span className="flex items-center gap-2.5">
-        {icon}
-        {label}
-      </span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+      {icon}
+      <span className={quickActionLabelClassName}>{label}</span>
     </ButtonLink>
   );
 }
@@ -1403,7 +1428,7 @@ function SchoolContactCallout({ className }: { className?: string }) {
         </p>
       </div>
       <ButtonLink
-        href="mailto:schools@esf.nz"
+        href="/contact"
         className="mt-5 min-h-[50px] min-w-[144px] whitespace-nowrap rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_32px_rgba(24,168,59,0.22)] hover:border-[#0f7c2e] hover:bg-[#128a30] md:mt-0"
       >
         <Mail className="h-4 w-4" />

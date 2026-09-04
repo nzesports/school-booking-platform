@@ -15,7 +15,7 @@ describe("ContactForm", () => {
       "type",
       "email"
     );
-    expect(screen.getByRole("textbox", { name: "School or organisation" })).not.toBeRequired();
+    expect(screen.getByRole("textbox", { name: "School or organisation" })).toBeRequired();
     expect(screen.getByRole("textbox", { name: "Subject" })).toBeRequired();
     expect(screen.getByRole("textbox", { name: "How can we help?" })).toBeRequired();
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
@@ -31,6 +31,10 @@ describe("ContactForm", () => {
 
     await user.type(screen.getByRole("textbox", { name: "Your name" }), "Aroha Rangi");
     await user.type(screen.getByRole("textbox", { name: "Email address" }), "aroha@example.nz");
+    await user.type(
+      screen.getByRole("textbox", { name: "School or organisation" }),
+      "Harbour College"
+    );
     await user.type(screen.getByRole("textbox", { name: "Subject" }), "Session question");
     await user.type(
       screen.getByRole("textbox", { name: "How can we help?" }),

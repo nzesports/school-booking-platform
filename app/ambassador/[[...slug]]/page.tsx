@@ -1,68 +1,63 @@
 import {
+  ArrowLeft,
   BookOpenCheck,
-  CalendarCheck2,
   CheckCircle2,
+  Clock3,
   Coins,
-  FileSpreadsheet,
-  FolderOpen,
+  FileText,
   GraduationCap,
+  LockKeyhole,
+  MapPin,
   Presentation,
+  ShieldCheck,
   UserRound,
-  Wallet
+  UsersRound
 } from "lucide-react";
+import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 import { logoutAction } from "@/app/auth/actions";
 import {
+  acceptAmbassadorMaterialsConsentAction,
   applyToSessionAction,
   markNotificationReadAction,
-  markTrainingCompleteAction,
   requestSessionWithdrawalAction,
   saveAmbassadorBookingAction,
   saveAmbassadorProfileAction,
   submitAmbassadorReportAction,
-  submitPaymentInvoiceAction,
   withdrawApplicationAction
 } from "@/app/portal/actions";
-import { AmbassadorOpenSessionDialog } from "@/components/dashboard/ambassador-open-session-dialog";
 import { AmbassadorApplicationWithdrawDialog } from "@/components/dashboard/ambassador-application-withdraw-dialog";
+import {
+  AmbassadorBookingsWorkspace,
+  type AmbassadorBookingsTab
+} from "@/components/dashboard/ambassador-bookings-workspace";
+import { AmbassadorDashboard, EarningsYearChart } from "@/components/dashboard/ambassador-dashboard";
 import { AmbassadorManualBookingDialog } from "@/components/dashboard/ambassador-manual-booking-dialog";
-import { AmbassadorWithdrawDialog } from "@/components/dashboard/ambassador-withdraw-dialog";
 import { AmbassadorProfileWorkspace } from "@/components/dashboard/ambassador-profile";
+import { PresentationMaterialsWorkspace } from "@/components/dashboard/presentation-materials-workspace";
 import { AmbassadorReportForm } from "@/components/dashboard/ambassador-report-form";
+import { AmbassadorReportsWorkspace } from "@/components/dashboard/ambassador-reports-workspace";
+import { CopyTextButton } from "@/components/dashboard/copy-text-button";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
-import { MetricGrid } from "@/components/dashboard/metric-grid";
-import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
-import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
-import {
-  ResourceLibraryWorkspace,
-  TrainingWorkspace
-} from "@/components/dashboard/training-workspace";
+import { TrainingWorkspace } from "@/components/dashboard/training-workspace";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { DashboardMetric } from "@/lib/domain/types";
+import type { PaymentRecord } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
 import { getAmbassadorPortalData, loadUserNotifications } from "@/lib/services/portal";
-import {
-  formatCurrency,
-  formatShortDate,
-  formatTime,
-  formatWeekdayDate
-} from "@/lib/utils";
+import { formatCurrency, formatShortDate } from "@/lib/utils";
 
 const navItems = [
-  { href: "/ambassador", label: "Overview", icon: UserRound },
-  { href: "/ambassador/open-bookings", label: "Open bookings", icon: BookOpenCheck },
-  { href: "/ambassador/upcoming", label: "Upcoming", icon: CalendarCheck2 },
-  { href: "/ambassador/completed", label: "Completed", icon: FileSpreadsheet },
-  { href: "/ambassador/earnings", label: "Earnings", icon: Coins },
-  { href: "/ambassador/materials", label: "Materials", icon: Presentation },
-  { href: "/ambassador/training", label: "Training", icon: GraduationCap },
-  { href: "/ambassador/resources", label: "Resources", icon: FolderOpen },
-  { href: "/ambassador/profile", label: "Profile", icon: Wallet }
+  { href: "/ambassador", label: "Dashboard", icon: UserRound },
+  { href: "/ambassador/bookings", label: "Bookings", icon: BookOpenCheck },
+  { href: "/ambassador/reports", label: "Reports", icon: FileText },
+  { href: "/ambassador/earnings", label: "Earnings", icon: Coins, separatorBefore: true },
+  { href: "/ambassador/training", label: "Training", icon: GraduationCap, separatorBefore: true },
+  { href: "/ambassador/materials", label: "Materials", icon: Presentation }
 ];
 
 export default async function AmbassadorPortalPage({
@@ -75,6 +70,11 @@ export default async function AmbassadorPortalPage({
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
+
+  if (route === "resources") {
+    redirect("/ambassador/training");
+  }
+
   const actor = await requirePortalAccess("ambassador");
   const portal = await getAmbassadorPortalData(actor.id);
   const notifications = await loadUserNotifications(actor.id);
@@ -86,31 +86,33 @@ export default async function AmbassadorPortalPage({
   const completedSessions = ownedSessions.filter(
     (session) => new Date(session.endsAt).getTime() <= now.getTime() && session.status !== "cancelled"
   );
+  const nextReportSession = completedSessions.find(
+    (session) => session.reportStatus === "not_submitted"
+  );
+  const reportableSessions = completedSessions.filter(
+    (session) => session.reportStatus === "not_submitted"
+  );
   const ambassadorPayments = portal.payments;
   const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
   const paymentSessionLabel = (bookingSessionId: string) => {
     const session = sessionsById.get(bookingSessionId);
     return session ? `${session.presentationTitle} · ${session.schoolName}` : bookingSessionId;
   };
-  const selectedInvoicePayment = route.startsWith("earnings/invoice/")
-    ? ambassadorPayments.find((payment) => payment.id === slug?.[2]) ?? null
-    : null;
   const selectedReportSessionId = route.startsWith("report/")
     ? slug?.[1]
     : route.startsWith("reports/")
       ? slug?.[1]
       : null;
-  const trainingProgress =
-    portal.trainingModules.length > 0
-      ? Math.round(
-          portal.trainingModules.reduce((total, module) => total + module.progress, 0) /
-            portal.trainingModules.length
-        )
-      : 0;
-  const trainingResources = portal.resources.filter((resource) => resource.category === "training");
-  const presentationMaterials = portal.resources.filter(
-    (resource) => resource.category === "presentation_material"
+  const trainingResources = portal.resources.filter(
+    (resource) =>
+      resource.category === "training" && resource.audiences.includes("ambassador")
   );
+  const presentationMaterials = portal.resources.filter(
+    (resource) =>
+      resource.category === "presentation_material" ||
+      (resource.category === "resource" && Boolean(resource.presentationTypeId))
+  );
+  const materialsConsentAcceptedAt = portal.ambassador.details?.materialsConsentAcceptedAt;
   const notice = getAmbassadorNotice(resolvedSearchParams);
   const reportRatings = portal.reports.flatMap((report) =>
     [report.teacherResponseRating, report.studentEngagementRating].filter(
@@ -119,11 +121,11 @@ export default async function AmbassadorPortalPage({
   );
   const profileStats = {
     schoolVisits: completedSessions.length,
-    invoicesSubmittedCount: ambassadorPayments.filter(
-      (payment) => payment.invoiceNumber || payment.invoiceSubmittedAt
+    invoicesGeneratedCount: ambassadorPayments.filter(
+      (payment) => payment.invoiceNumber || payment.invoiceGeneratedAt
     ).length,
-    latestInvoiceSubmittedAt: ambassadorPayments
-      .map((payment) => payment.invoiceSubmittedAt)
+    latestInvoiceGeneratedAt: ambassadorPayments
+      .map((payment) => payment.invoiceGeneratedAt)
       .filter((date): date is string => Boolean(date))
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0],
     ratingAverage:
@@ -135,67 +137,55 @@ export default async function AmbassadorPortalPage({
   const selectedOpenSession = route.startsWith("open-bookings/")
     ? portal.openSessions.find((session) => session.id === slug?.[1]) ?? null
     : null;
-
-  const metrics: DashboardMetric[] = [
-    {
-      label: "Total earned",
-      value: formatCurrency(portal.ambassador.estimatedEarningsCents),
-      trend: "To date",
-      detail: "Across assigned and eligible sessions",
-      icon: "banknote",
-      tone: "green"
-    },
-    {
-      label: "Upcoming sessions",
-      value: String(upcomingSessions.length),
-      trend: "Assigned to you",
-      detail: "Confirmed and report-ready",
-      icon: "calendar",
-      tone: "blue"
-    },
-    {
-      label: "Training progress",
-      value: `${trainingProgress}%`,
-      trend: "Across current modules",
-      detail: "Presenter induction plus session packs",
-      icon: "sparkles",
-      tone: "navy"
-    }
+  const isBookingsWorkspaceRoute = [
+    "bookings",
+    "open-bookings",
+    "upcoming",
+    "completed",
+    "sourced-booking"
+  ].includes(route);
+  const requestedBookingsTab = readSearchParam(resolvedSearchParams, "tab");
+  const validBookingsTabs: AmbassadorBookingsTab[] = [
+    "calendar",
+    "open",
+    "applied",
+    "upcoming",
+    "sourced",
+    "completed"
   ];
+  const initialBookingsTab: AmbassadorBookingsTab =
+    route === "upcoming"
+      ? "upcoming"
+      : route === "completed"
+        ? "completed"
+        : route === "sourced-booking"
+          ? "sourced"
+          : validBookingsTabs.includes(requestedBookingsTab as AmbassadorBookingsTab)
+            ? (requestedBookingsTab as AmbassadorBookingsTab)
+            : "open";
 
   const headline =
     route === ""
       ? `Kia ora, ${actor.fullName.split(" ")[0]}`
+      : isBookingsWorkspaceRoute
+        ? "Bookings"
       : route.startsWith("open-bookings")
-        ? "Review open opportunities"
+        ? "Find open school bookings"
         : route.startsWith("reports")
-          ? "Submit post-session reports"
-          : route.startsWith("earnings/invoice/")
-            ? "Submit your invoice for payment"
-            : route === "earnings"
+          ? "Reports"
+          : route === "earnings"
               ? "Track earnings"
               : route === "profile"
                 ? "Manage your profile and payment details"
                 : route === "training" || route.startsWith("training/")
-                  ? "Complete your training modules"
+                  ? "Training"
                   : route === "materials"
                     ? "Download your presentation materials"
-                    : route === "resources"
-                      ? "Browse the resource library"
-                      : route === "upcoming"
+                    : route === "upcoming"
                         ? "Your upcoming presentation schedule"
                         : route === "completed"
-                          ? "Completed Bookings"
+                          ? "Completed bookings"
                         : "Ambassador portal";
-
-  const subheadline =
-    route === ""
-      ? "Here’s what’s happening across your upcoming presentations, applications, and reporting work."
-      : route === "materials"
-        ? "Quick access to the current presentation decks — download the latest version before each session."
-        : route === "training" || route === "resources" || route.startsWith("training/")
-          ? "Build your confidence and access everything you need to deliver great sessions."
-          : undefined;
 
   return (
     <main className="min-h-screen">
@@ -203,10 +193,45 @@ export default async function AmbassadorPortalPage({
         title="Ambassador Portal"
         role="ambassador"
         navItems={navItems}
-        currentPath={`/ambassador${route ? `/${route}` : ""}`}
+        currentPath={isBookingsWorkspaceRoute ? "/ambassador/bookings" : `/ambassador${route ? `/${route}` : ""}`}
         headline={headline}
-        subheadline={subheadline}
         dateLabel="This month"
+        headerAction={
+          isBookingsWorkspaceRoute ? (
+            <AmbassadorManualBookingDialog
+              schools={portal.schools}
+              regions={portal.regions}
+              presentations={portal.presentations.map(
+                ({ id, title, durationMinutes, yearLevels }) => ({
+                  id,
+                  title,
+                  durationMinutes,
+                  yearLevels
+                })
+              )}
+              action={saveAmbassadorBookingAction}
+              triggerLabel="Submit sourced booking"
+              triggerClassName="min-h-[44px] rounded-[14px] border-[#d8c8f4] bg-[#f8f5ff] px-4 text-[#6941c6] shadow-[0_10px_24px_rgba(105,65,198,0.10)] hover:border-[#c5afea] hover:bg-[#f1edfd]"
+              returnTo="/ambassador/bookings?tab=sourced"
+            />
+          ) : route === "training" || route.startsWith("training/") ? (
+            <div className="inline-flex items-center gap-2 rounded-[14px] border border-[#efd7a8] bg-white/90 px-3.5 py-2.5 text-sm text-[color:var(--navy)] shadow-sm">
+              <LockKeyhole className="h-4 w-4 text-[#a45c00]" aria-hidden="true" />
+              <span><span className="font-semibold">Internal training</span> · Ambassador access only</span>
+            </div>
+          ) : route === "reports" ? (
+            nextReportSession ? (
+              <ButtonLink href="/ambassador/report/new">
+                <FileText className="h-4 w-4" aria-hidden="true" />
+                Submit report
+              </ButtonLink>
+            ) : (
+              <ButtonLink href="/ambassador/bookings?tab=completed" variant="secondary">
+                View completed bookings
+              </ButtonLink>
+            )
+          ) : undefined
+        }
         notifications={notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
@@ -231,359 +256,69 @@ export default async function AmbassadorPortalPage({
         ) : null}
 
         {route === "" ? (
-          <AmbassadorManualBookingDialog
-            schools={portal.schools.filter((school) => school.status === "active")}
-            regions={portal.regions}
-            presentations={portal.presentations
-              .filter((presentation) => presentation.active)
-              .map(({ id, title, durationMinutes, yearLevels }) => ({
-                id,
-                title,
-                durationMinutes,
-                yearLevels
-              }))}
-            action={saveAmbassadorBookingAction}
+          <AmbassadorDashboard
+            ambassador={portal.ambassador}
+            openSessions={portal.openSessions}
+            upcomingSessions={upcomingSessions}
+            completedSessions={completedSessions}
+            reports={portal.reports}
+            payments={ambassadorPayments}
+            trainingModules={portal.trainingModules}
+            resources={portal.resources}
+            presentations={portal.presentations}
+            materialsConsentAcceptedAt={materialsConsentAcceptedAt}
+            applyAction={applyToSessionAction}
+            withdrawApplicationAction={withdrawApplicationAction}
+            requestWithdrawalAction={requestSessionWithdrawalAction}
           />
         ) : null}
-
-        {route === "" ? (
-          <>
-            <MetricGrid metrics={metrics} />
-
-            <div className="grid gap-5 xl:grid-cols-[1.04fr_0.96fr]">
-              <Card className="rounded-[34px]">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                      Open opportunities
-                    </p>
-                    <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                      Available bookings you can apply for
-                    </h2>
-                  </div>
-                  <ButtonLink
-                    href="/ambassador/open-bookings"
-                    variant="ghost"
-                    className="shrink-0 whitespace-nowrap"
-                  >
-                    View all
-                  </ButtonLink>
-                </div>
-
-                <div className="mt-6 grid gap-4">
-                  {portal.openSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <p className="font-semibold text-[color:var(--navy)]">
-                            {session.presentationTitle}
-                          </p>
-                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)} ·{" "}
-                            {session.yearLevels}
-                          </p>
-                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {session.expectedStudentCount} students · {session.regionSlug}
-                          </p>
-                        </div>
-                        <StatusBadge
-                          value={session.myApplicationStatus === "applied" ? "applied" : "tentative"}
-                          label={session.myApplicationStatus === "applied" ? "Applied" : "Open"}
-                        />
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <AmbassadorOpenSessionDialog
-                          session={session}
-                          action={applyToSessionAction}
-                          withdrawAction={withdrawApplicationAction}
-                          returnTo="/ambassador"
-                          className="min-h-[48px]"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card className="rounded-[34px]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                      Upcoming bookings
-                    </p>
-                    <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                      Your confirmed schedule
-                    </h2>
-                  </div>
-                  <ButtonLink href="/ambassador/upcoming" variant="ghost">
-                    View all
-                  </ButtonLink>
-                </div>
-
-                <div className="mt-6 grid gap-4">
-                  {upcomingSessions.length === 0 ? (
-                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                      No confirmed sessions yet. Apply for an open opportunity and it will appear
-                      here once staff assign you.
-                    </p>
-                  ) : null}
-                  {upcomingSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      className="rounded-[24px] bg-[linear-gradient(135deg,#f7fbff,#f9fcff)] p-5 shadow-[inset_0_0_0_1px_rgba(4,15,75,0.05)]"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm text-[color:var(--text-soft)]">
-                            {formatShortDate(session.startsAt)} Â· {formatTime(session.startsAt)}
-                          </p>
-                          <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                            {session.presentationTitle}
-                          </p>
-                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {session.schoolName}
-                          </p>
-                        </div>
-                        <StatusBadge value={session.status} />
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <SessionDetailsButton session={session} />
-                        <AmbassadorWithdrawDialog
-                          session={session}
-                          action={requestSessionWithdrawalAction}
-                          returnTo="/ambassador"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-
-            <div className="grid gap-5 xl:grid-cols-[1fr_1fr_0.9fr]">
-              <Card className="rounded-[34px]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                    Training progress
-                  </p>
-                  <ButtonLink
-                    href="/ambassador/training"
-                    variant="ghost"
-                    className="min-h-[36px] px-3 py-1.5 text-xs"
-                  >
-                    Training materials
-                  </ButtonLink>
-                </div>
-                <div className="mt-5 grid gap-5">
-                  <div className="grid gap-4">
-                    {portal.trainingModules.length === 0 ? (
-                      <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                        No training modules have been published yet. They&apos;ll appear here as
-                        soon as the team adds them.
-                      </p>
-                    ) : null}
-                    {portal.trainingModules.map((module) => (
-                      <div key={module.id}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-[color:var(--navy)]">{module.title}</p>
-                            <p className="text-sm text-[color:var(--text-soft)]">
-                              {module.description}
-                            </p>
-                          </div>
-                          <span className="text-sm font-semibold text-[color:var(--green)]">
-                            {module.progress}%
-                          </span>
-                        </div>
-                        <div className="mt-3 h-2 rounded-full bg-[color:var(--blue-soft)]">
-                          <div
-                            className="h-full rounded-full bg-[linear-gradient(135deg,var(--green),var(--green-bright))]"
-                            style={{ width: `${module.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="border-t border-[color:var(--border-soft)] pt-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                        Quick presentation downloads
-                      </p>
-                      <ButtonLink
-                        href="/ambassador/materials"
-                        variant="ghost"
-                        className="min-h-[32px] px-2.5 py-1 text-xs"
-                      >
-                        View all
-                      </ButtonLink>
-                    </div>
-                    <div className="mt-3 grid gap-3">
-                      {presentationMaterials.length === 0 ? (
-                        <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                          Presentation decks will appear here once the team publishes them.
-                        </p>
-                      ) : null}
-                      {presentationMaterials.slice(0, 3).map((resource) => (
-                        <div
-                          key={resource.id}
-                          className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3"
-                        >
-                          <span className="text-sm font-semibold text-[color:var(--navy)]">
-                            {resource.title}
-                          </span>
-                          {resource.downloadUrl ? (
-                            <ButtonLink
-                              href={resource.downloadUrl}
-                              variant="secondary"
-                              className="min-h-[34px] rounded-[12px] px-3 py-1 text-xs"
-                            >
-                              Download
-                            </ButtonLink>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="rounded-[34px]">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Recent reports
-                </p>
-                <div className="mt-5 grid gap-4">
-                  {portal.reports.length === 0 ? (
-                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                      Reports you submit after each session will appear here.
-                    </p>
-                  ) : null}
-                  {portal.reports.map((report) => (
-                    <div
-                      key={report.id}
-                      className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-[color:var(--navy)]">{report.schoolName}</p>
-                          <p className="text-sm text-[color:var(--text-soft)]">
-                            {report.presentationTitle}
-                          </p>
-                        </div>
-                        <StatusBadge value={report.status} />
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm text-[color:var(--text-soft)]">
-                          {report.attendeeCount} attendees · {formatShortDate(report.submittedAt)}
-                        </p>
-                        <ReportDetailsButton
-                          report={report}
-                          label="View"
-                          className="min-h-[32px] rounded-[11px] px-2.5 py-1 text-xs"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card className="rounded-[34px] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                    Resource library
-                  </p>
-                  <ButtonLink href="/ambassador/training" variant="ghost" className="min-h-[36px] px-3 py-1.5 text-xs">
-                    View all
-                  </ButtonLink>
-                </div>
-                <div className="mt-5 grid gap-4">
-                  {portal.resources.length === 0 ? (
-                    <p className="text-sm leading-7 text-[color:var(--text-soft)]">
-                      Presentation decks, delivery checklists, and guides will appear here once the
-                      team publishes them.
-                    </p>
-                  ) : null}
-                  {portal.resources.slice(0, 3).map((resource) => (
-                    <div
-                      key={resource.id}
-                      className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4"
-                    >
-                      <p className="font-semibold text-[color:var(--navy)]">{resource.title}</p>
-                      <p className="mt-1 text-sm leading-7 text-[color:var(--text-soft)]">
-                        {resource.description}
-                      </p>
-                      {resource.downloadUrl ? (
-                        <ButtonLink
-                          href={resource.downloadUrl}
-                          variant="secondary"
-                          className="mt-3 min-h-[38px] rounded-[14px] px-3.5 py-1.5 text-xs"
-                        >
-                          Open resource
-                        </ButtonLink>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-          </>
-        ) : null}
-
-        {route === "open-bookings" ? (
-          <DataTable
-            title="Open booking opportunities"
-            columns={["School", "Presentation", "Schedule", "Region", "Status", "Action"]}
-            rows={portal.openSessions.map((session) => [
-              session.schoolName,
-              session.presentationTitle,
-              `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
-              session.regionName ?? session.regionSlug,
-              <StatusBadge
-                key={`${session.id}-status`}
-                value={session.myApplicationStatus === "applied" ? "applied" : "tentative"}
-                label={session.myApplicationStatus === "applied" ? "Applied" : "Open"}
-              />,
-              <div key={`${session.id}-action`} className="flex flex-wrap items-center gap-2">
-                <AmbassadorOpenSessionDialog
-                  session={session}
-                  action={applyToSessionAction}
-                  withdrawAction={withdrawApplicationAction}
-                  returnTo="/ambassador/open-bookings"
-                  className="min-h-[40px] rounded-[14px] px-3 py-1.5 text-xs"
-                />
-              </div>
-            ])}
+        {isBookingsWorkspaceRoute ? (
+          <AmbassadorBookingsWorkspace
+            key={initialBookingsTab}
+            initialTab={initialBookingsTab}
+            openSessions={portal.openSessions}
+            upcomingSessions={upcomingSessions}
+            completedSessions={completedSessions}
+            sourcedBookings={portal.sourcedBookings}
+            nowIso={now.toISOString()}
+            applyAction={applyToSessionAction}
+            withdrawApplicationAction={withdrawApplicationAction}
+            requestWithdrawalAction={requestSessionWithdrawalAction}
           />
         ) : null}
 
         {route.startsWith("open-bookings/") ? (
           <Card className="rounded-[34px]">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              Apply for this session
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-              The staff team will review applications and decide assignment. Teacher contact
-              details stay hidden at this stage.
-            </p>
+            <ButtonLink href="/ambassador/bookings" variant="ghost" className="mb-5 min-h-[38px] rounded-[12px] px-2">
+              <ArrowLeft className="h-4 w-4" /> Back to open bookings
+            </ButtonLink>
+            {selectedOpenSession ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">{selectedOpenSession.presentationTitle}</p>
+                    <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{selectedOpenSession.schoolName}</h2>
+                  </div>
+                  <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
+                </div>
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatShortDate(selectedOpenSession.startsAt)} · ${new Intl.DateTimeFormat("en-NZ", { hour: "numeric", minute: "2-digit", timeZone: "Pacific/Auckland" }).format(new Date(selectedOpenSession.startsAt))}`} />
+                  <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
+                  <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSession.expectedStudentCount} students · ${selectedOpenSession.yearLevels}`} />
+                </div>
+              </>
+            ) : null}
             {selectedOpenSession?.myApplicationStatus === "applied" ? (
               <div className="mt-6 flex flex-wrap items-center gap-3">
-              <p className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
-                <CheckCircle2 className="h-4 w-4" />
-                You&apos;ve applied for this session — staff are reviewing applications now.
-              </p>
-              <AmbassadorApplicationWithdrawDialog
-                sessionId={selectedOpenSession.id}
-                action={withdrawApplicationAction}
-                returnTo="/ambassador/open-bookings"
-              />
+                <p className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
+                  <CheckCircle2 className="h-4 w-4" /> You&apos;ve applied. Staff are reviewing applications now.
+                </p>
+                <AmbassadorApplicationWithdrawDialog sessionId={selectedOpenSession.id} action={withdrawApplicationAction} returnTo="/ambassador/bookings?tab=applied" />
               </div>
-            ) : (
+            ) : selectedOpenSession ? (
               <form action={applyToSessionAction} className="mt-6 grid gap-4">
                 <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
-                <input type="hidden" name="returnTo" value="/ambassador/open-bookings" />
+                <input type="hidden" name="returnTo" value="/ambassador/bookings?tab=applied" />
                 <Textarea
                   name="message"
                   placeholder="Share why you're a strong fit for this presentation."
@@ -591,189 +326,115 @@ export default async function AmbassadorPortalPage({
                 />
                 <Button type="submit">Submit application</Button>
               </form>
+            ) : (
+              <p className="mt-4 text-sm text-[color:var(--text-soft)]">This booking is no longer available.</p>
             )}
           </Card>
         ) : null}
 
-        {route === "upcoming" || route === "completed" ? (
-          <DataTable
-            title={route === "upcoming" ? "Assigned upcoming sessions" : "Completed sessions"}
-            columns={[
-              "Presentation",
-              "School",
-              "Time",
-              "Status",
-              route === "upcoming" ? "Details" : "Report"
-            ]}
-            rows={(route === "upcoming" ? upcomingSessions : completedSessions).map((session) => [
-              session.presentationTitle,
-              session.schoolName,
-              `${formatWeekdayDate(session.startsAt)} · ${formatTime(session.startsAt)}`,
-              <StatusBadge key={`${session.id}-session`} value={session.status} />,
-              route === "completed" && session.reportStatus === "not_submitted" ? (
-                <ButtonLink
-                  key={`${session.id}-report`}
-                  href={`/ambassador/report/${session.id}`}
-                  variant="secondary"
-                >
-                  Submit report
-                </ButtonLink>
-              ) : route === "completed" ? (
-                <StatusBadge key={`${session.id}-report-status`} value={session.reportStatus} />
-              ) : (
-                <div key={`${session.id}-details`} className="flex flex-wrap gap-2">
-                  <SessionDetailsButton session={session} />
-                  <AmbassadorWithdrawDialog
-                    session={session}
-                    action={requestSessionWithdrawalAction}
-                    returnTo="/ambassador/upcoming"
-                  />
-                </div>
-              )
-            ])}
-          />
-        ) : null}
-
         {selectedReportSessionId ? (
           <AmbassadorReportForm
-            sessionId={selectedReportSessionId}
-            session={ownedSessions.find((session) => session.id === selectedReportSessionId) ?? null}
+            sessions={reportableSessions}
+            initialSessionId={selectedReportSessionId === "new" ? undefined : selectedReportSessionId}
             presenterName={actor.fullName}
             action={submitAmbassadorReportAction}
           />
         ) : null}
 
         {route === "earnings" ? (
-          <DataTable
-            title="Earnings and invoices"
-            columns={["Session", "Amount", "Status", "Invoice sent", "Invoice"]}
-            rows={ambassadorPayments.map((record) => [
-              paymentSessionLabel(record.bookingSessionId),
-              formatCurrency(record.amountCents),
-              <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
-              record.sentToFinanceAt
-                ? formatShortDate(record.sentToFinanceAt)
-                : record.invoiceSubmittedAt
-                  ? formatShortDate(record.invoiceSubmittedAt)
-                  : "Not submitted",
-              record.status === "pending" ? (
-                <ButtonLink
-                  key={`${record.id}-invoice`}
-                  href={`/ambassador/earnings/invoice/${record.id}`}
-                  variant="secondary"
-                  className="min-h-[40px] rounded-[14px] px-3 py-1.5"
-                >
-                  Submit invoice
-                </ButtonLink>
-              ) : record.invoiceNumber ? (
-                <ButtonLink
-                  key={`${record.id}-invoice`}
-                  href={`/portal/invoice/${record.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  variant="ghost"
-                  className="min-h-[40px] rounded-[14px] px-3 py-1.5"
-                >
-                  {record.invoiceNumber}
-                </ButtonLink>
-              ) : (
-                record.eligibilityReason
-              )
-            ])}
-          />
-        ) : null}
-
-        {route.startsWith("earnings/invoice/") ? (
-          selectedInvoicePayment && selectedInvoicePayment.status === "pending" ? (
-            <Card className="rounded-[34px]">
-              <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                Submit invoice for this session
-              </h2>
-              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                We generate the invoice PDF for you from these details. The staff team receives it,
-                sends it to finance, and you&apos;ll be notified once it has been submitted for
-                payment.
-              </p>
-              <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-5 py-4">
-                <p className="text-sm font-semibold text-[color:var(--navy)]">
-                  {paymentSessionLabel(selectedInvoicePayment.bookingSessionId)}
-                </p>
-                <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                  Amount payable: {formatCurrency(selectedInvoicePayment.amountCents)} ·{" "}
-                  {selectedInvoicePayment.eligibilityReason}
-                </p>
-              </div>
-              <form action={submitPaymentInvoiceAction} className="mt-6 grid gap-4">
-                <input type="hidden" name="paymentId" value={selectedInvoicePayment.id} />
-                <input type="hidden" name="returnTo" value="/ambassador/earnings" />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
-                    Bank account number *
-                    <Input
-                      name="bankAccountNumber"
-                      required
-                      defaultValue={portal.ambassador.bankAccountNumber ?? ""}
-                      placeholder="12-3456-7890123-00"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
-                    GST number (optional)
-                    <Input
-                      name="gstNumber"
-                      defaultValue={portal.ambassador.gstNumber ?? ""}
-                      placeholder="123-456-789"
-                    />
-                  </label>
+          <div className="grid gap-5">
+            <Card className="rounded-[26px] border-[#cce8d3] bg-[linear-gradient(110deg,#f2fbf5,#ffffff)]">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#117a2e]">Payment starts with a report</p>
+                  <h2 className="mt-1 text-xl font-semibold text-[color:var(--navy)]">
+                    {completedSessions.filter((session) => session.reportStatus === "not_submitted").length > 0
+                      ? `${completedSessions.filter((session) => session.reportStatus === "not_submitted").length} completed session report${completedSessions.filter((session) => session.reportStatus === "not_submitted").length === 1 ? " is" : "s are"} waiting`
+                      : "All completed sessions have reports"}
+                  </h2>
                 </div>
-                <Textarea
-                  name="invoiceNotes"
-                  placeholder="Notes for the team or finance (optional)"
-                />
-                <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                  <input type="checkbox" name="saveToProfile" defaultChecked />
-                  Save these payment details to my profile for next time.
-                </label>
-                <Button type="submit">Submit invoice</Button>
-              </form>
+                <ButtonLink href="/ambassador/reports">
+                  Submit report <ArrowLeft className="h-4 w-4 rotate-180" />
+                </ButtonLink>
+              </div>
             </Card>
-          ) : (
-            <Card className="rounded-[34px]">
-              <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                This payment can&apos;t be invoiced
-              </h2>
-              <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                {selectedInvoicePayment
-                  ? "An invoice has already been submitted for this session payment, or it isn't ready for invoicing yet."
-                  : "We couldn't find that payment on your account."}
-              </p>
-              <ButtonLink href="/ambassador/earnings" variant="secondary" className="mt-5">
-                Back to earnings
-              </ButtonLink>
+            <div className="grid gap-4 md:grid-cols-3">
+              <EarningsMetric
+                icon={<Coins className="h-5 w-5" />}
+                tone="green"
+                label="Total earned"
+                value={formatCurrency(portal.ambassador.estimatedEarningsCents)}
+                detail="Delivery fees and sourcing bonuses"
+              />
+              <EarningsMetric
+                icon={<CheckCircle2 className="h-5 w-5" />}
+                tone="blue"
+                label="Paid to date"
+                value={formatCurrency(portal.ambassador.paidPaymentsCents)}
+                detail={`${ambassadorPayments.filter((payment) => payment.status === "paid").length} completed payment${ambassadorPayments.filter((payment) => payment.status === "paid").length === 1 ? "" : "s"}`}
+              />
+              <EarningsMetric
+                icon={<BookOpenCheck className="h-5 w-5" />}
+                tone="amber"
+                label="Sourcing bonuses"
+                value={formatCurrency(
+                  ambassadorPayments.reduce(
+                    (total, payment) => total + payment.sourcingBonusCents,
+                    0
+                  )
+                )}
+                detail="Additional $50 school-sourcing payments"
+              />
+            </div>
+            <Card className="rounded-[26px]">
+              <EarningsYearChart payments={ambassadorPayments} />
             </Card>
-          )
+            <DataTable
+              title="Earnings and payment status"
+              columns={[
+                "Session",
+                "Delivery fee",
+                "Sourcing bonus",
+                "Total",
+                "Status",
+                "Approved",
+                "Invoice reference"
+              ]}
+              rows={ambassadorPayments.map((record) => [
+                paymentSessionLabel(record.bookingSessionId),
+                formatCurrency(record.baseAmountCents),
+                record.sourcingBonusCents > 0
+                  ? formatCurrency(record.sourcingBonusCents)
+                  : "—",
+                formatCurrency(record.amountCents),
+                <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
+                record.invoiceGeneratedAt ? formatShortDate(record.invoiceGeneratedAt) : "Awaiting approval",
+                <EarningsInvoiceAction key={`${record.id}-invoice-action`} record={record} />
+              ])}
+            />
+          </div>
         ) : null}
 
         {route === "training" || route.startsWith("training/") ? (
           <TrainingWorkspace
             modules={portal.trainingModules}
+            presentations={portal.presentations}
             resources={trainingResources}
-            markCompleteAction={markTrainingCompleteAction}
-            returnTo="/ambassador/training"
           />
         ) : null}
 
         {route === "materials" ? (
-          <ResourceLibraryWorkspace
-            resources={presentationMaterials}
-            heading="Presentation materials"
-            note="Grab the latest deck before your session — new versions land here first, so always download fresh."
-          />
-        ) : null}
-
-        {route === "resources" ? (
-          <ResourceLibraryWorkspace
-            resources={portal.resources.filter((resource) => resource.category === "resource")}
-          />
+          materialsConsentAcceptedAt ? (
+            <PresentationMaterialsWorkspace
+              resources={presentationMaterials}
+              consentAcceptedAt={materialsConsentAcceptedAt}
+            />
+          ) : (
+            <MaterialsConsentForm
+              ambassadorName={portal.ambassador.name || actor.fullName}
+              action={acceptAmbassadorMaterialsConsentAction}
+            />
+          )
         ) : null}
 
         {route === "profile" ? (
@@ -786,21 +447,126 @@ export default async function AmbassadorPortalPage({
         ) : null}
 
         {route === "reports" ? (
-          <DataTable
-            title="Submitted reports"
-            columns={["School", "Presentation", "Submitted", "Attendees", "Status", "Details"]}
-            rows={portal.reports.map((report) => [
-              report.schoolName,
-              report.presentationTitle,
-              formatShortDate(report.submittedAt),
-              String(report.attendeeCount),
-              <StatusBadge key={`${report.id}-status`} value={report.status} />,
-              <ReportDetailsButton key={`${report.id}-details`} report={report} />
-            ])}
-          />
+          <AmbassadorReportsWorkspace completedSessions={completedSessions} reports={portal.reports} />
         ) : null}
       </DashboardShell>
     </main>
+  );
+}
+
+function MaterialsConsentForm({
+  ambassadorName,
+  action
+}: {
+  ambassadorName: string;
+  action: (formData: FormData) => void | Promise<void>;
+}) {
+  return (
+    <Card className="mx-auto max-w-4xl overflow-hidden rounded-[30px] p-0 md:p-0">
+      <div className="border-b border-[#d8c8f4] bg-[linear-gradient(120deg,#f8f5ff_0%,#ffffff_62%,#f3faf5_100%)] px-6 py-6 md:px-8">
+        <div className="flex items-start gap-4">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-white text-[#6941c6] shadow-sm">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#6941c6]">Materials agreement</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">Protect NZ Esports materials</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--text-soft)]">
+              Please sign once before opening the materials library. Every item is clearly marked Public or Internal.
+            </p>
+          </div>
+        </div>
+      </div>
+      <form action={action} className="grid gap-5 p-6 md:p-8">
+        <div className="grid gap-3 rounded-[20px] border border-[color:var(--border-soft)] bg-[#f8fafc] p-5 text-sm leading-6 text-[color:var(--navy)]">
+          <p className="font-semibold">By accepting, I understand that:</p>
+          <ul className="grid list-disc gap-2 pl-5 text-[color:var(--text-dark)]">
+            <li>Materials in this portal are sensitive and remain the property of NZ Esports.</li>
+            <li>I may share an item only when it carries the Public badge.</li>
+            <li>I will not copy, publish, forward, or redistribute anything marked Internal.</li>
+          </ul>
+        </div>
+        <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+          Full name
+          <input
+            name="signedName"
+            required
+            minLength={2}
+            defaultValue={ambassadorName}
+            className="w-full rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm outline-none focus:border-[#9d86d9] focus:ring-4 focus:ring-[#ede9fe]"
+          />
+        </label>
+        <label className="flex items-start gap-3 rounded-[17px] border border-[#d8c8f4] bg-[#f8f5ff] px-4 py-4 text-sm leading-6 text-[color:var(--navy)]">
+          <input type="checkbox" name="accepted" required className="mt-1" />
+          <span>I have read and agree to the NZ Esports materials conditions above.</span>
+        </label>
+        <Button type="submit" className="w-fit rounded-[14px]">
+          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          Sign and open materials
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function BookingDetail({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-[18px] border border-[color:var(--border-soft)] bg-[#f8fafd] p-4">
+      <div className="flex items-center gap-2 text-[#1e4fae]">{icon}<span className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">{label}</span></div>
+      <p className="mt-2 text-sm font-semibold text-[color:var(--navy)]">{value}</p>
+    </div>
+  );
+}
+
+function EarningsInvoiceAction({ record }: { record: PaymentRecord }) {
+  if (record.invoiceNumber) {
+    return (
+      <div className="flex min-w-[190px] items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+        <span>{record.invoiceNumber}</span>
+        <CopyTextButton value={record.invoiceNumber} label={`Copy ${record.invoiceNumber}`} />
+      </div>
+    );
+  }
+
+  return <span className="block min-w-[190px] text-xs text-[color:var(--text-soft)]">Generated automatically after approval</span>;
+}
+
+function EarningsMetric({
+  icon,
+  tone,
+  label,
+  value,
+  detail
+}: {
+  icon: ReactNode;
+  tone: "green" | "blue" | "amber";
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  const toneClasses = {
+    green: "bg-[#e6f6eb] text-[#117a2e]",
+    blue: "bg-[#e8f1fd] text-[#1e4fae]",
+    amber: "bg-[#fff5df] text-[#9a5a00]"
+  };
+
+  return (
+    <Card className="rounded-[24px] p-5 md:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+            {label}
+          </p>
+          <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+            {value}
+          </p>
+        </div>
+        <span className={`flex h-11 w-11 items-center justify-center rounded-[14px] ${toneClasses[tone]}`}>
+          {icon}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-[color:var(--text-soft)]">{detail}</p>
+    </Card>
   );
 }
 
@@ -808,22 +574,17 @@ function InvoiceStatusBadge({
   record
 }: {
   record: {
+    status: PaymentRecord["status"];
     paidAt?: string;
-    sentToFinanceAt?: string;
-    invoiceNumber?: string;
-    invoiceSubmittedAt?: string;
   };
 }) {
-  const label = record.paidAt
-    ? "Paid"
-    : record.sentToFinanceAt
-      ? "Submitted for payment"
-      : record.invoiceNumber || record.invoiceSubmittedAt
-        ? "Invoice submitted"
-        : "Invoice not submitted";
-  const className = record.paidAt || record.sentToFinanceAt || record.invoiceNumber
-    ? "border-[rgba(24,168,59,0.22)] bg-[color:var(--green-soft)] text-[#1d6f35]"
-    : "border-[color:var(--border-soft)] bg-white text-[color:var(--text-soft)]";
+  const label = record.status === "paid" ? "Paid" : record.status === "approved" ? "Approved" : "Received";
+  const className =
+    record.status === "paid"
+      ? "border-[rgba(24,168,59,0.22)] bg-[color:var(--green-soft)] text-[#1d6f35]"
+      : record.status === "approved"
+        ? "border-[#d9cff9] bg-[#f5f1ff] text-[#5d41b8]"
+        : "border-[#c8dcfb] bg-[#f5f9ff] text-[#1e4fae]";
 
   return (
     <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${className}`}>
@@ -839,7 +600,6 @@ function getAmbassadorNotice(
   const applied = readSearchParam(searchParams, "applied");
   const requested = readSearchParam(searchParams, "requested");
   const withdrawn = readSearchParam(searchParams, "withdrawn");
-  const completed = readSearchParam(searchParams, "completed");
   const created = readSearchParam(searchParams, "created");
   const saved = readSearchParam(searchParams, "saved");
   const error = readSearchParam(searchParams, "error");
@@ -847,7 +607,7 @@ function getAmbassadorNotice(
   if (submitted === "report") {
     return {
       tone: "success",
-      message: "Report submitted. Staff can now review the session and payment eligibility."
+      message: "Report received. Staff can now review it; eligible payments will be sent to finance automatically after approval."
     };
   }
 
@@ -858,16 +618,11 @@ function getAmbassadorNotice(
     };
   }
 
-  if (submitted === "invoice") {
+  if (saved === "materials-consent") {
     return {
       tone: "success",
-      message:
-        "Invoice submitted. The team will send it to finance and you'll be notified once it has been submitted for payment."
+      message: "Materials agreement signed. Public and Internal sharing labels are now shown on every item."
     };
-  }
-
-  if (saved === "payment-details") {
-    return { tone: "success", message: "Payment details saved to your profile." };
   }
 
   if (applied === "1") {
@@ -903,6 +658,16 @@ function getAmbassadorNotice(
     return {
       tone: "error",
       message: "Check the booking details and try again. All required fields need a valid value."
+    };
+  }
+
+  if (
+    error === "materials-consent-required" ||
+    error === "materials-consent-save-failed"
+  ) {
+    return {
+      tone: "error",
+      message: "Please enter your name, accept the materials conditions, and try again."
     };
   }
 
@@ -948,6 +713,20 @@ function getAmbassadorNotice(
     return { tone: "error", message: "That session is not assigned to your account." };
   }
 
+  if (error === "report-media-invalid") {
+    return {
+      tone: "error",
+      message: "Choose no more than 15 report files and keep each file at 5 MB or smaller."
+    };
+  }
+
+  if (error === "session-not-finished") {
+    return {
+      tone: "error",
+      message: "Reports can only be submitted for your completed school bookings."
+    };
+  }
+
   if (error === "application-not-found") {
     return {
       tone: "error",
@@ -963,31 +742,12 @@ function getAmbassadorNotice(
     return { tone: "error", message: "Your profile couldn't be saved. Please try again." };
   }
 
-  if (completed === "training") {
-    return { tone: "success", message: "Training progress saved." };
-  }
-
-  if (error === "invalid-payment-details" || error === "invalid-invoice") {
+  if (error === "invalid-payment-details") {
     return {
       tone: "error",
       message:
         "Check your payment details — the bank account number should look like 12-3456-7890123-00."
     };
-  }
-
-  if (error === "payment-not-invoiceable") {
-    return {
-      tone: "error",
-      message: "That payment already has an invoice or isn't ready for invoicing yet."
-    };
-  }
-
-  if (error === "payment-not-found" || error === "ambassador-not-found") {
-    return { tone: "error", message: "We couldn't find that payment on your account." };
-  }
-
-  if (error === "invoice-save-failed" || error === "payment-details-save-failed") {
-    return { tone: "error", message: "Something went wrong while saving. Please try again." };
   }
 
   return null;

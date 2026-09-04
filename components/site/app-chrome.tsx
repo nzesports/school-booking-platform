@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 
 import type { BookingFormState } from "@/app/actions";
@@ -80,6 +80,31 @@ export function AppChrome({
   authEnabled: boolean;
 }) {
   const pathname = usePathname();
+
+  useEffect(() => {
+    if (pathname.startsWith("/auth/complete") || !window.location.hash) {
+      return;
+    }
+
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+
+    // Supabase may fall back to the configured Site URL when a requested
+    // redirect is not allow-listed. Preserve the fragment and hand it to the
+    // route that establishes the cookie-backed session before navigating on.
+    if (!accessToken || !refreshToken) {
+      return;
+    }
+
+    const type = hashParams.get("type");
+    const next = type === "recovery" || type === "invite" ? "/reset-password" : "/";
+    const completeUrl = new URL("/auth/complete", window.location.origin);
+    completeUrl.searchParams.set("next", next);
+
+    window.location.replace(`${completeUrl.pathname}${completeUrl.search}${window.location.hash}`);
+  }, [pathname]);
+
   const currentSearch = useSyncExternalStore(
     subscribeToUrlChange,
     () => window.location.search,

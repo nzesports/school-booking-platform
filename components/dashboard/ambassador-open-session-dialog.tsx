@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowUpRight,
   CalendarDays,
   CheckCircle2,
   MapPin,
@@ -24,32 +25,47 @@ export function AmbassadorOpenSessionDialog({
   action,
   withdrawAction,
   returnTo,
-  className
+  className,
+  label,
+  unstyled = false
 }: {
   session: BookingSessionView;
   action: (formData: FormData) => void | Promise<void>;
   withdrawAction?: (formData: FormData) => void | Promise<void>;
   returnTo: string;
   className?: string;
+  label?: ReactNode;
+  unstyled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={() => setOpen(true)}
-        className={className}
-      >
-        View details
-      </Button>
+      {unstyled ? (
+        <button type="button" onClick={() => setOpen(true)} className={className}>
+          {label ?? session.schoolName}
+        </button>
+      ) : (
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setOpen(true)}
+          className={
+            className ??
+            "min-h-[42px] rounded-[14px] border-transparent bg-[#e8f1fd] px-4 text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
+          }
+        >
+          {label ?? (session.myApplicationStatus === "applied" ? "Review application" : "View & apply")}
+          <ArrowUpRight className="h-4 w-4" />
+        </Button>
+      )}
 
       {open
         ? createPortal(
             <BookingDialogShell
-              title={session.presentationTitle}
-              description="Review the privacy-safe session details before applying. School contact details stay hidden until you are assigned to the session."
+              kicker={session.presentationTitle}
+              title={session.schoolName}
+              description="School contact details stay private until you are assigned to the session."
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[860px]"

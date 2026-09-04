@@ -36,6 +36,7 @@ describe("submitContactFormAction", () => {
     expect(sendTransactionalEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         templateKey: "website_contact",
+        recipientEmail: "schools@esf.nz",
         subject: "[Website contact] Presentation question",
         includeUnsubscribe: false,
         replyTo: { email: "aroha@example.nz", name: "Aroha Rangi" }

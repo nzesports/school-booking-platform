@@ -1,15 +1,18 @@
 "use client";
 
 import {
+  ChevronLeft,
+  ChevronRight,
   Gamepad2,
   Globe2,
   Mail,
   MessagesSquare,
+  Search,
   Star
 } from "lucide-react";
 import { useState, useTransition, type ReactNode } from "react";
 
-import { DataTable } from "@/components/dashboard/data-table";
+import { DataTable, dataTableHeadingClassName } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
@@ -18,6 +21,7 @@ import type { ReportSummary, SchoolFeedbackSummary } from "@/lib/domain/types";
 import { cn, formatDateTime, formatShortDate } from "@/lib/utils";
 
 type FeedbackTab = "school" | "ambassador";
+const FEEDBACK_PAGE_SIZE = 10;
 
 // One home for everything schools and ambassadors send back after sessions:
 // school feedback (with website publishing) and ambassador session reports.
@@ -43,12 +47,68 @@ export function FeedbackHub({
   presentationFilterId?: string;
 }) {
   const [tab, setTab] = useState<FeedbackTab>(initialTab);
+  const [schoolQuery, setSchoolQuery] = useState("");
+  const [reportQuery, setReportQuery] = useState("");
+  const [schoolPage, setSchoolPage] = useState(1);
+  const [reportPage, setReportPage] = useState(1);
   const visibleReviews = presentationFilterId
     ? schoolReviews.filter((review) => review.presentationTypeId === presentationFilterId)
     : schoolReviews;
   const visibleReports = presentationFilterId
     ? reports.filter((report) => report.presentationTypeId === presentationFilterId)
     : reports;
+  const normalizedSchoolQuery = schoolQuery.trim().toLowerCase();
+  const matchingReviews = normalizedSchoolQuery
+    ? visibleReviews.filter((review) =>
+        [
+          review.schoolName,
+          review.presentationTitle,
+          review.attribution,
+          review.quote
+        ].some((value) => value?.toLowerCase().includes(normalizedSchoolQuery))
+      )
+    : visibleReviews;
+  const normalizedReportQuery = reportQuery.trim().toLowerCase();
+  const matchingReports = normalizedReportQuery
+    ? visibleReports.filter((report) =>
+        [
+          report.schoolName,
+          report.presentationTitle,
+          report.submittedAt,
+          formatDateTime(report.submittedAt),
+          report.attendeeCount,
+          report.status,
+          report.ambassadorName,
+          report.presenterName,
+          report.schoolRollSize,
+          report.primaryContactName,
+          report.primaryContactEmail,
+          report.deliveredAt,
+          report.ageGroups,
+          report.yearLevels,
+          report.attendeeQuotes,
+          report.attendanceRating,
+          report.teacherResponseRating,
+          report.studentEngagementRating,
+          report.presentationEnergyRating,
+          report.notableQuestions,
+          report.presentationFeedback,
+          report.additionalNotes
+        ].some((value) => String(value ?? "").toLowerCase().includes(normalizedReportQuery))
+      )
+    : visibleReports;
+  const schoolPageCount = Math.max(1, Math.ceil(matchingReviews.length / FEEDBACK_PAGE_SIZE));
+  const safeSchoolPage = Math.min(schoolPage, schoolPageCount);
+  const pagedReviews = matchingReviews.slice(
+    (safeSchoolPage - 1) * FEEDBACK_PAGE_SIZE,
+    safeSchoolPage * FEEDBACK_PAGE_SIZE
+  );
+  const reportPageCount = Math.max(1, Math.ceil(matchingReports.length / FEEDBACK_PAGE_SIZE));
+  const safeReportPage = Math.min(reportPage, reportPageCount);
+  const pagedReports = matchingReports.slice(
+    (safeReportPage - 1) * FEEDBACK_PAGE_SIZE,
+    safeReportPage * FEEDBACK_PAGE_SIZE
+  );
 
   return (
     <div className="grid gap-5">
@@ -91,7 +151,24 @@ export function FeedbackHub({
           <DataTable
             title="School feedback submissions"
             columns={["School", "Presentation", "Submitted", "Rating", "Show on website", "Submission"]}
-            rows={visibleReviews.map((review) => [
+            headerContent={
+              <label className="flex min-h-[46px] w-full items-center gap-2.5 rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+                <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+                <span className="sr-only">Search school feedback</span>
+                <input
+                  type="search"
+                  value={schoolQuery}
+                  onChange={(event) => {
+                    setSchoolQuery(event.target.value);
+                    setSchoolPage(1);
+                  }}
+                  placeholder="Search by school, presentation, or feedback..."
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+                />
+              </label>
+            }
+            emptyMessage={schoolQuery ? "No school feedback matches your search." : undefined}
+            rows={pagedReviews.map((review) => [
               review.schoolName,
               review.presentationTitle,
               formatShortDate(review.createdAt),
@@ -115,16 +192,28 @@ export function FeedbackHub({
               <SchoolFeedbackDetailsButton
                 key={`${review.id}-view`}
                 review={review}
-                footer={
+                reviews={matchingReviews}
+                footer={(activeReview) => (
                   <ShowOnWebsiteToggle
-                    key={`${review.id}-dialog-${review.isApproved}-${review.isPublic}`}
-                    review={review}
+                    key={`${activeReview.id}-dialog-${activeReview.isApproved}-${activeReview.isPublic}`}
+                    review={activeReview}
                     action={feedbackDecisionAction}
                     returnTo={returnTo}
                   />
-                }
+                )}
               />
             ])}
+            footerContent={
+              matchingReviews.length > FEEDBACK_PAGE_SIZE ? (
+                <FeedbackPagination
+                  currentPage={safeSchoolPage}
+                  pageCount={schoolPageCount}
+                  totalItems={matchingReviews.length}
+                  itemLabel="school feedback submissions"
+                  onPageChange={setSchoolPage}
+                />
+              ) : null
+            }
           />
         </div>
       ) : (
@@ -132,12 +221,29 @@ export function FeedbackHub({
           <ReportsOverview reports={visibleReports} />
           <DataTable
             title="Ambassador session reports"
+            headerContent={
+              <label className="flex min-h-[46px] w-full items-center gap-2.5 rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+                <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+                <span className="sr-only">Search ambassador session reports</span>
+                <input
+                  type="search"
+                  value={reportQuery}
+                  onChange={(event) => {
+                    setReportQuery(event.target.value);
+                    setReportPage(1);
+                  }}
+                  placeholder="Search any ambassador report detail..."
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+                />
+              </label>
+            }
+            emptyMessage={reportQuery ? "No ambassador reports match your search." : undefined}
             columns={
               showAmbassadorColumn
                 ? ["School", "Presentation", "Submitted", "Attendees", "Ambassador", "Status", "Report"]
                 : ["School", "Presentation", "Submitted", "Attendees", "Status", "Report"]
             }
-            rows={visibleReports.map((report) => {
+            rows={pagedReports.map((report) => {
               const cells: ReactNode[] = [
                 report.schoolName,
                 report.presentationTitle,
@@ -146,7 +252,7 @@ export function FeedbackHub({
               ];
 
               if (showAmbassadorColumn) {
-                cells.push(report.ambassadorName ?? "Unassigned");
+                cells.push(report.ambassadorName ?? report.presenterName ?? "Unassigned");
               }
 
               cells.push(
@@ -154,6 +260,7 @@ export function FeedbackHub({
                 <ReportDetailsButton
                   key={`${report.id}-view`}
                   report={report}
+                  reports={matchingReports}
                   reviewAction={reviewAction}
                   reviewReturnTo={reportsReturnTo}
                 />
@@ -161,10 +268,102 @@ export function FeedbackHub({
 
               return cells;
             })}
+            footerContent={
+              matchingReports.length > FEEDBACK_PAGE_SIZE ? (
+                <FeedbackPagination
+                  currentPage={safeReportPage}
+                  pageCount={reportPageCount}
+                  totalItems={matchingReports.length}
+                  itemLabel="ambassador session reports"
+                  onPageChange={setReportPage}
+                />
+              ) : null
+            }
           />
         </div>
       )}
     </div>
+  );
+}
+
+function FeedbackPagination({
+  currentPage,
+  pageCount,
+  totalItems,
+  itemLabel,
+  onPageChange
+}: {
+  currentPage: number;
+  pageCount: number;
+  totalItems: number;
+  itemLabel: string;
+  onPageChange: (page: number) => void;
+}) {
+  const firstItem = (currentPage - 1) * FEEDBACK_PAGE_SIZE + 1;
+  const lastItem = Math.min(currentPage * FEEDBACK_PAGE_SIZE, totalItems);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-[color:var(--text-soft)]">
+        Showing {firstItem} to {lastItem} of {totalItems} {itemLabel}
+      </p>
+      <div className="flex items-center gap-1.5" aria-label={`${itemLabel} pagination`}>
+        <PaginationArrow
+          disabled={currentPage === 1}
+          label="Previous page"
+          onClick={() => onPageChange(currentPage - 1)}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </PaginationArrow>
+        {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+          <button
+            key={pageNumber}
+            type="button"
+            onClick={() => onPageChange(pageNumber)}
+            aria-current={pageNumber === currentPage ? "page" : undefined}
+            className={cn(
+              "flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+              pageNumber === currentPage
+                ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
+                : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:border-[rgba(4,15,75,0.2)]"
+            )}
+          >
+            {pageNumber}
+          </button>
+        ))}
+        <PaginationArrow
+          disabled={currentPage === pageCount}
+          label="Next page"
+          onClick={() => onPageChange(currentPage + 1)}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </PaginationArrow>
+      </div>
+    </div>
+  );
+}
+
+function PaginationArrow({
+  children,
+  disabled,
+  label,
+  onClick
+}: {
+  children: ReactNode;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={label}
+      onClick={onClick}
+      className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] transition hover:border-[rgba(4,15,75,0.2)] disabled:cursor-not-allowed disabled:opacity-35"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -254,12 +453,9 @@ function SchoolFeedbackOverview({ reviews }: { reviews: SchoolFeedbackSummary[] 
 
   return (
     <section className="surface-panel rounded-[28px] p-5 md:p-6">
-      <h2 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+      <h2 className={dataTableHeadingClassName}>
         Across all school feedback
       </h2>
-      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-        A rolled-up view of how schools rate their visits, straight from post-session feedback.
-      </p>
 
       <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-5">
         <OverviewTile

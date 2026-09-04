@@ -58,7 +58,10 @@ export default async function RootLayout({
       lang="en"
       className={`${quicksand.variable} ${rozhaOne.variable} ${lilitaOne.variable}`}
     >
-      <body className="min-h-screen bg-[var(--page-background)] text-[color:var(--text-dark)] antialiased">
+      <body
+        suppressHydrationWarning
+        className="min-h-screen bg-[var(--page-background)] text-[color:var(--text-dark)] antialiased"
+      >
         <AppChrome
           presentations={presentations}
           regions={regions}

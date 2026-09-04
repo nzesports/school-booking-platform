@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { config } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getAdminPortalData as getLiveAdminPortalData,
@@ -13,10 +14,28 @@ import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
 import { nzDateTimeToIso, slugify } from "@/lib/utils";
 
+// Thrown when Supabase is configured but the service-role key is missing, so
+// the public form fails loudly instead of showing a fabricated confirmation.
+// Mirrors the ConfigGate distinction used by the portals: a fully unconfigured
+// environment (no Supabase env at all) is a deliberate local demo, while a
+// partially configured one is a production misconfiguration.
+export class BookingConfigurationError extends Error {
+  constructor() {
+    super("Supabase is configured but the service-role key is missing; booking submissions cannot be stored.");
+    this.name = "BookingConfigurationError";
+  }
+}
+
 export async function submitBookingRequest(input: BookingRequestInput) {
   const admin = createAdminClient();
 
   if (!admin) {
+    if (config.isSupabaseConfigured) {
+      throw new BookingConfigurationError();
+    }
+
+    // Full demo mode only: nothing is stored, matching the demo data used
+    // across the rest of the public site when Supabase is absent.
     return {
       id: `booking-${randomUUID().slice(0, 8)}`,
       referenceCode: String(Math.floor(100000 + Math.random() * 900000)),

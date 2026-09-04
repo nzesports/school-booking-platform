@@ -48,9 +48,6 @@ export function PortalProfileWorkspace({
           <h2 className="mt-1 text-3xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
             {name}
           </h2>
-          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-            Keep your profile image and contact details consistent across the portal.
-          </p>
         </div>
       </div>
 

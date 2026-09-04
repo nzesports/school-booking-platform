@@ -17,8 +17,8 @@ import schoolPresentationVisual from "@/public/media/school-5.webp";
 import { BookPresentationButton } from "@/components/site/book-presentation-button";
 import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
+import { SchoolFeedbackCarousel } from "@/components/site/school-feedback-carousel";
 import { ButtonLink } from "@/components/ui/button";
-import { StarRating } from "@/components/ui/star-rating";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import {
   listHomepageSections,
@@ -110,25 +110,25 @@ export default async function HomePage() {
                 </p>
               )}
 
-              <div className="mt-7">
+              <div className="mt-7 flex flex-wrap gap-3">
+                {highlights.map(({ label, icon: Icon }) => (
+                  <div
+                    key={label}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/65 bg-white/85 px-3.5 py-2.5 text-[13px] font-medium text-[color:var(--navy)] shadow-[0_10px_22px_rgba(11,24,77,0.06)]"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-[color:var(--green)]" />
+                    {label}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5">
                 <BookPresentationButton
                   className="min-h-[50px] rounded-[17px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_30px_rgba(24,168,59,0.26)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
                 >
                   Book Now
                   <ArrowRight className="h-4 w-4" />
                 </BookPresentationButton>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                {highlights.map(({ label, icon: Icon }) => (
-                  <div
-                    key={label}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/65 bg-white/85 px-4 py-3 text-sm font-medium text-[color:var(--navy)] shadow-[0_10px_22px_rgba(11,24,77,0.06)]"
-                  >
-                    <Icon className="h-4 w-4 text-[color:var(--green)]" />
-                    {label}
-                  </div>
-                ))}
               </div>
             </div>
 
@@ -158,7 +158,7 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <div className="homepage-gap mt-10 grid xl:grid-cols-4">
+          <div className="homepage-gap mt-10 grid lg:grid-cols-3">
             {presentations.map((presentation) => (
               <PresentationCard key={presentation.id} presentation={presentation} />
             ))}
@@ -208,64 +208,25 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="pb-[clamp(2rem,4vw,3rem)] pt-[clamp(1.25rem,2vw,2rem)]">
-        <div className="site-shell">
-          <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-              School feedback
-            </p>
-            <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-              What schools say after a visit
-            </h2>
-            <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
-              A quick look at the feedback schools share after our presentations.
-            </p>
+      {testimonials.length > 0 ? (
+        <section className="pb-[clamp(2rem,4vw,3rem)] pt-[clamp(1.25rem,2vw,2rem)]">
+          <div className="site-shell">
+            <div className="max-w-3xl">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                School feedback
+              </p>
+              <h2 className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                What schools say after a visit
+              </h2>
+              <p className="mt-4 text-base leading-8 text-[color:var(--text-soft)]">
+                A quick look at the feedback schools share after our presentations.
+              </p>
+            </div>
+
+            <SchoolFeedbackCarousel testimonials={testimonials} />
           </div>
-
-          <div className="homepage-gap mt-8 grid xl:grid-cols-4">
-            {testimonials.map((testimonial) => (
-              <article
-                key={testimonial.id}
-                className="flex h-full flex-col rounded-[30px] border border-[color:var(--border-soft)] bg-white/88 p-7 shadow-[0_18px_42px_rgba(11,24,77,0.08)]"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-[color:var(--navy)]">
-                      {testimonial.school}
-                    </p>
-                    <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                      {testimonial.attribution}
-                    </p>
-                  </div>
-
-                  <StarRating
-                    rating={testimonial.rating ?? 5}
-                    fillClassName="text-[#ffb938]"
-                    className="mt-0.5"
-                  />
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-2 text-xs font-semibold text-[color:var(--navy)]">
-                  {testimonial.presentationTitle ? (
-                    <span className="rounded-full bg-[color:var(--blue-soft)] px-3 py-1.5">
-                      {testimonial.presentationTitle}
-                    </span>
-                  ) : null}
-                  {testimonial.feedbackDate ? (
-                    <span className="rounded-full bg-[color:var(--green-soft)] px-3 py-1.5 text-[color:var(--green)]">
-                      {testimonial.feedbackDate}
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="mt-5 text-base leading-8 text-[color:var(--text-dark)]">
-                  “{testimonial.quote}”
-                </p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <section
         className="public-band public-band-divider"

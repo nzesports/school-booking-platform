@@ -16,40 +16,71 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleX,
+  Clock3,
   Eye,
-  Globe2,
   LayoutList,
   Leaf,
   Mail,
   MapPin,
   Search,
-  School2,
   UserRound,
   X
 } from "lucide-react";
-import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
+import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
-const PAGE_SIZE = 4;
+const PAGE_SIZE = 10;
+
+function paginationItems(currentPage: number, pageCount: number) {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_, index) => index + 1);
+  }
+
+  const visiblePages = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]);
+
+  if (currentPage <= 4) {
+    [2, 3, 4, 5].forEach((page) => visiblePages.add(page));
+  }
+
+  if (currentPage >= pageCount - 3) {
+    [pageCount - 4, pageCount - 3, pageCount - 2, pageCount - 1].forEach((page) =>
+      visiblePages.add(page)
+    );
+  }
+
+  const pages = [...visiblePages]
+    .filter((page) => page >= 1 && page <= pageCount)
+    .sort((left, right) => left - right);
+  const items: Array<number | string> = [];
+
+  pages.forEach((page, index) => {
+    const previousPage = pages[index - 1];
+
+    if (previousPage && page - previousPage > 1) {
+      items.push(`ellipsis-${previousPage}`);
+    }
+
+    items.push(page);
+  });
+
+  return items;
+}
 
 const BOOKING_STATUS_OPTIONS = [
-  ["requested", "Requested"],
+  ["requested", "Pending"],
   ["tentative", "Tentative"],
   ["applied", "Applied"],
   ["ambassador_assigned", "Ambassador assigned"],
   ["confirmed", "Confirmed"],
   ["reschedule_requested", "Reschedule requested"],
-  ["completed_pending_report", "Delivered, report needed"],
-  ["report_submitted", "Report submitted"],
-  ["payment_pending", "Payment pending"],
-  ["paid", "Paid"],
-  ["closed", "Closed"],
+  ["closed", "Completed"],
   ["cancelled", "Cancelled"],
   ["declined", "Declined"]
 ] as const;
@@ -64,20 +95,54 @@ const COMPLETION_STATUSES = new Set([
   "closed"
 ]);
 
+function schoolBookingStatus(status: string) {
+  return COMPLETION_STATUSES.has(status) ? "closed" : status;
+}
+
 const statusPillStyles: Record<string, string> = {
-  tentative: "bg-[#fff5df] text-[#9a5a00]",
+  tentative: "bg-[#f1f3f6] text-[#667085]",
   applied: "bg-[#e8f1fd] text-[#1e4fae]",
-  ambassador_assigned: "bg-[#e8f1fd] text-[#1e4fae]",
-  withdrawal_requested: "bg-[#fff5df] text-[#9a5a00]",
+  ambassador_assigned: "bg-[#f1edfd] text-[#6941c6]",
+  withdrawal_requested: "bg-[#fff8d9] text-[#8a6500]",
   confirmed: "bg-[#eaf8ee] text-[#117a2e]",
-  completed_pending_report: "bg-[#e8f1fd] text-[#1e4fae]",
-  report_submitted: "bg-[#eaf8ee] text-[#117a2e]",
-  paid: "bg-[#eaf8ee] text-[#117a2e]",
-  closed: "bg-[#f1f5f9] text-[#64748b]",
+  completed_pending_report: "bg-[#eef0ff] text-[#4c5bd4]",
+  report_submitted: "bg-[#e6f7fb] text-[#087f8c]",
+  payment_pending: "bg-[#fff7e6] text-[#9b6100]",
+  paid: "bg-[#e4f7ed] text-[#087443]",
+  closed: "bg-[#e6f7f4] text-[#087f6a]",
   cancelled: "bg-[#fdecec] text-[#b3372e]",
-  declined: "bg-[#fdecec] text-[#b3372e]",
-  reschedule_requested: "bg-[#fff5df] text-[#9a5a00]",
+  declined: "bg-[#f5eaf0] text-[#8b2c58]",
+  reschedule_requested: "bg-[#fff0e4] text-[#b54708]",
   requested: "bg-[#fff5df] text-[#9a5a00]"
+};
+
+const bookingStatusControlStyles: Record<string, string> = {
+  requested: "border-[#f2ddb0] bg-[#fff5df] text-[#9a5a00]",
+  tentative: "border-[#d7dce4] bg-[#f1f3f6] text-[#667085]",
+  applied: "border-[#c4dbfb] bg-[#e8f1fd] text-[#1e4fae]",
+  ambassador_assigned: "border-[#d9cef7] bg-[#f1edfd] text-[#6941c6]",
+  confirmed: "border-[#bfe6ca] bg-[#eaf8ee] text-[#117a2e]",
+  reschedule_requested: "border-[#f2cfb3] bg-[#fff0e4] text-[#b54708]",
+  withdrawal_requested: "border-[#eadb91] bg-[#fff8d9] text-[#8a6500]",
+  cancelled: "border-[#f0c3c0] bg-[#fdecec] text-[#a8322b]",
+  declined: "border-[#e6c5d5] bg-[#f5eaf0] text-[#8b2c58]",
+  completed_pending_report: "border-[#ced3fa] bg-[#eef0ff] text-[#4c5bd4]",
+  report_submitted: "border-[#bee6ed] bg-[#e6f7fb] text-[#087f8c]",
+  payment_pending: "border-[#efd9aa] bg-[#fff7e6] text-[#9b6100]",
+  paid: "border-[#b9e5ce] bg-[#e4f7ed] text-[#087443]",
+  closed: "border-[#b9e4dd] bg-[#e6f7f4] text-[#087f6a]"
+};
+
+const bookingStatusIconStyles: Record<string, string> = {
+  requested: "text-[#9a5a00]",
+  tentative: "text-[#667085]",
+  applied: "text-[#1e4fae]",
+  ambassador_assigned: "text-[#6941c6]",
+  confirmed: "text-[#117a2e]",
+  reschedule_requested: "text-[#b54708]",
+  closed: "text-[#087f6a]",
+  cancelled: "text-[#b3372e]",
+  declined: "text-[#8b2c58]"
 };
 
 type CalendarTone = "green" | "blue" | "amber" | "red" | "grey";
@@ -96,7 +161,7 @@ function subscribeToHashChange(onChange: () => void) {
 }
 
 function calendarTone(status: string): CalendarTone {
-  if (["confirmed", "report_submitted", "paid"].includes(status)) {
+  if (["ambassador_assigned", "confirmed", "report_submitted", "paid", "closed"].includes(status)) {
     return "green";
   }
 
@@ -104,13 +169,19 @@ function calendarTone(status: string): CalendarTone {
     return "red";
   }
 
-  if (
-    ["tentative", "reschedule_requested", "withdrawal_requested", "requested"].includes(status)
-  ) {
+  if (["reschedule_requested", "withdrawal_requested"].includes(status)) {
     return "amber";
   }
 
-  if (status === "closed") {
+  if (
+    [
+      "requested",
+      "tentative",
+      "applied",
+      "completed_pending_report",
+      "payment_pending"
+    ].includes(status)
+  ) {
     return "grey";
   }
 
@@ -121,51 +192,100 @@ export function StatusPill({ value }: { value: string }) {
   return (
     <span
       className={cn(
-        "inline-flex whitespace-nowrap items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold",
         statusPillStyles[value] ?? "bg-[#f1f5f9] text-[#64748b]"
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {titleCase(value)}
+      {value === "requested" ? "Pending" : value === "closed" ? "Completed" : titleCase(value)}
     </span>
   );
 }
 
 function AutoSaveBookingStatus({
   currentStatus,
-  options
+  options,
+  compact = false
 }: {
   currentStatus: string;
   options: ReadonlyArray<readonly [string, string]>;
+  compact?: boolean;
 }) {
   const { pending } = useFormStatus();
+  const displayStatus = schoolBookingStatus(currentStatus);
+  const isCancelled = ["cancelled", "declined"].includes(displayStatus);
+  const isCompleted = [
+    "ambassador_assigned",
+    "confirmed",
+    "closed"
+  ].includes(displayStatus);
 
   return (
-    <label className="grid justify-items-start gap-1 lg:justify-items-end">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-        Booking status
-      </span>
-      <select
-        name="status"
-        defaultValue={currentStatus}
-        disabled={pending}
-        aria-busy={pending}
-        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+    <label className="grid w-full min-w-0 justify-items-start gap-1">
+      <span
         className={cn(
-          "min-h-[34px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none",
-          pending && "cursor-wait opacity-60"
+          "text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]",
+          compact && "sr-only"
         )}
       >
-        {options.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
+        Booking status
+      </span>
+      <span className="relative block w-full min-w-0">
+        <span
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-2.5 z-10 flex items-center",
+            bookingStatusIconStyles[displayStatus] ?? "text-[#667085]"
+          )}
+        >
+          {isCancelled ? (
+            <CircleX className="h-3.5 w-3.5" />
+          ) : isCompleted ? (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          ) : (
+            <Clock3 className="h-3.5 w-3.5" />
+          )}
+        </span>
+        <select
+          name="status"
+          defaultValue={displayStatus}
+          disabled={pending}
+          aria-busy={pending}
+          style={compact ? { fontSize: "13px", lineHeight: "1.15" } : undefined}
+          onChange={(event) => event.currentTarget.form?.requestSubmit()}
+          className={cn(
+            "w-full min-w-0 appearance-none rounded-[9px] border pl-8 pr-7 font-semibold outline-none transition-colors",
+            compact ? "min-h-[34px]" : "min-h-[40px] text-sm",
+            bookingStatusControlStyles[displayStatus] ??
+              "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]",
+            pending && "cursor-wait opacity-60"
+          )}
+        >
+          {options.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+      </span>
       <span className="sr-only" aria-live="polite">
         {pending ? "Saving booking status" : ""}
       </span>
     </label>
+  );
+}
+
+function BulkStatusSubmitButton({ count }: { count: number }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] bg-[#246bff] px-4 text-xs font-semibold text-white transition hover:bg-[#1d5ce0] disabled:cursor-wait disabled:opacity-60"
+    >
+      {pending ? "Updating…" : `Update ${count} booking${count === 1 ? "" : "s"}`}
+    </button>
   );
 }
 
@@ -175,10 +295,11 @@ export function BookingsExplorer({
   basePath,
   activeView,
   range,
-  lifecycleTabs,
+  customRange,
   ambassadors,
   presentationTitles,
   updateStatusAction,
+  bulkUpdateStatusAction,
   assignAmbassadorAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
@@ -190,10 +311,11 @@ export function BookingsExplorer({
   basePath: string;
   activeView: string;
   range: string;
-  lifecycleTabs: Array<{ value: string; label: string }>;
+  customRange?: { from: string; to: string } | null;
   ambassadors: Array<{ id: string; name: string }>;
   presentationTitles: string[];
   updateStatusAction: (formData: FormData) => void | Promise<void>;
+  bulkUpdateStatusAction: (formData: FormData) => void | Promise<void>;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
@@ -218,6 +340,7 @@ export function BookingsExplorer({
   const [expanded, setExpanded] = useState<Record<string, boolean>>(
     initialBookingId ? { [initialBookingId]: true } : {}
   );
+  const [selectedBookingIds, setSelectedBookingIds] = useState<Set<string>>(() => new Set());
   // After a status update or assignment, the server action redirects back to
   // #booking-{id}, so the page scrolls to and re-expands the card in question
   // instead of jumping to the top.
@@ -227,7 +350,17 @@ export function BookingsExplorer({
     () => ""
   );
 
-  const returnTo = `${basePath}/bookings?status=${activeView}&range=${range}`;
+  const bookingQuery = (status: string) => {
+    const searchParams = new URLSearchParams({ status, range });
+
+    if (customRange) {
+      searchParams.set("from", customRange.from);
+      searchParams.set("to", customRange.to);
+    }
+
+    return `${basePath}/bookings?${searchParams.toString()}`;
+  };
+  const returnTo = bookingQuery(activeView);
   const nowMs = new Date().getTime();
   const regionOptions = useMemo(
     () => Array.from(new Set(allBookings.map((booking) => booking.regionSlug))).sort(),
@@ -251,7 +384,7 @@ export function BookingsExplorer({
       (regionFilter === "all" || booking.regionSlug === regionFilter) &&
       (presentationFilter === "all" ||
         booking.sessions.some((session) => session.presentationTitle === presentationFilter)) &&
-      (statusFilter === "all" || booking.status === statusFilter)
+      (statusFilter === "all" || schoolBookingStatus(booking.status) === statusFilter)
     );
   };
 
@@ -275,128 +408,175 @@ export function BookingsExplorer({
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageBookings = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visiblePaginationItems = paginationItems(safePage, pageCount);
+  const allPageBookingsSelected =
+    pageBookings.length > 0 && pageBookings.every((booking) => selectedBookingIds.has(booking.id));
+  const selectedBookings = allBookings.filter((booking) => selectedBookingIds.has(booking.id));
+  const selectedHaveFutureSessions = selectedBookings.some((booking) =>
+    booking.sessions.some(
+      (session) =>
+        new Date(session.endsAt).getTime() > nowMs &&
+        session.status !== "cancelled" &&
+        session.status !== "declined"
+    )
+  );
+  const bulkStatusOptions = BOOKING_STATUS_OPTIONS.filter(
+    ([value]) => !selectedHaveFutureSessions || !COMPLETION_STATUSES.has(value)
+  );
   const hasActiveFilters =
     query !== "" || regionFilter !== "all" || presentationFilter !== "all" || statusFilter !== "all";
 
-  const isExpanded = (bookingId: string, index: number) =>
-    expanded[bookingId] ??
-    (activeHash === `#booking-${bookingId}` || (!activeHash && safePage === 1 && index === 0));
+  const isExpanded = (bookingId: string) =>
+    expanded[bookingId] ?? activeHash === `#booking-${bookingId}`;
 
   return (
-    <div id="bookings-panel" className="grid scroll-mt-24 gap-5">
+    <div
+      id="bookings-panel"
+      className="surface-panel grid scroll-mt-24 gap-0 overflow-hidden rounded-[24px]"
+    >
       {/* ------------------------------------------------ filter toolbar */}
-      <div className="surface-panel flex flex-wrap items-end gap-3 rounded-[24px] p-4">
-        <div className="flex overflow-hidden rounded-[14px] border border-[color:var(--border-soft)] bg-white">
+      <div className="grid gap-3 border-b border-[color:rgba(4,15,75,0.08)] p-3.5 md:p-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <div className="flex shrink-0 overflow-hidden rounded-[14px] border border-[color:var(--border-soft)] bg-white">
+            <button
+              type="button"
+              onClick={() => setViewMode("calendar")}
+              className={cn(
+                "inline-flex min-h-[44px] items-center gap-2 px-3.5 text-sm font-semibold transition",
+                viewMode === "calendar"
+                  ? "bg-[color:var(--green-soft)] text-[#117a2e]"
+                  : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+              )}
+            >
+              <CalendarDays className="h-4 w-4" />
+              Calendar
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "inline-flex min-h-[44px] items-center gap-2 border-l border-[color:var(--border-soft)] px-3.5 text-sm font-semibold transition",
+                viewMode === "list"
+                  ? "bg-[color:var(--green-soft)] text-[#117a2e]"
+                  : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+              )}
+            >
+              <LayoutList className="h-4 w-4" />
+              List
+            </button>
+          </div>
+
+        </div>
+
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,190px))_auto] xl:items-end">
+          <label className="flex min-h-[44px] min-w-0 items-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
+            <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search bookings, schools, or contacts..."
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+            />
+          </label>
+
+          <ToolbarSelect
+            label="Region"
+            value={regionFilter}
+            onChange={(value) => {
+              setRegionFilter(value);
+              setPage(1);
+            }}
+            options={[
+              { value: "all", label: "All regions" },
+              ...regionOptions.map((slug) => ({ value: slug, label: titleCase(slug) }))
+            ]}
+          />
+          <ToolbarSelect
+            label="Presentation type"
+            value={presentationFilter}
+            onChange={(value) => {
+              setPresentationFilter(value);
+              setPage(1);
+            }}
+            options={[
+              { value: "all", label: "All types" },
+              ...presentationTitles.map((title) => ({ value: title, label: title }))
+            ]}
+          />
+          <ToolbarSelect
+            label="Status"
+            value={statusFilter}
+            onChange={(value) => {
+              setStatusFilter(value);
+              setPage(1);
+            }}
+            options={[
+              { value: "all", label: "All statuses" },
+              ...BOOKING_STATUS_OPTIONS.map(([value, label]) => ({ value, label }))
+            ]}
+          />
           <button
             type="button"
-            onClick={() => setViewMode("calendar")}
-            className={cn(
-              "inline-flex min-h-[48px] items-center gap-2 px-4 text-sm font-semibold transition",
-              viewMode === "calendar"
-                ? "bg-[color:var(--green-soft)] text-[#117a2e]"
-                : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
-            )}
+            disabled={!hasActiveFilters}
+            onClick={() => {
+              setQuery("");
+              setRegionFilter("all");
+              setPresentationFilter("all");
+              setStatusFilter("all");
+              setPage(1);
+            }}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition disabled:opacity-40"
           >
-            <CalendarDays className="h-4 w-4" />
-            Calendar
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            className={cn(
-              "inline-flex min-h-[48px] items-center gap-2 border-l border-[color:var(--border-soft)] px-4 text-sm font-semibold transition",
-              viewMode === "list"
-                ? "bg-[color:var(--green-soft)] text-[#117a2e]"
-                : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
-            )}
-          >
-            <LayoutList className="h-4 w-4" />
-            List
+            Clear
           </button>
         </div>
 
-        {viewMode === "list" ? (
-          <div className="flex flex-wrap gap-1.5 rounded-[16px] border border-[color:var(--border-soft)] bg-white p-1.5">
-            {lifecycleTabs.map((tab) => (
-              <Link
-                key={tab.value}
-                href={`${basePath}/bookings?status=${tab.value}&range=${range}`}
-                className={cn(
-                  "inline-flex min-h-[40px] items-center justify-center whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition",
-                  tab.value === activeView
-                    ? "border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
-                    : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
-                )}
+        {viewMode === "list" && selectedBookingIds.size > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#c8dafb] bg-[#f4f8ff] px-3.5 py-3">
+            <p className="text-sm font-semibold text-[color:var(--navy)]">
+              {selectedBookingIds.size} booking{selectedBookingIds.size === 1 ? "" : "s"} selected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <form action={bulkUpdateStatusAction} className="flex flex-wrap items-center gap-2">
+                {[...selectedBookingIds].map((bookingRequestId) => (
+                  <input
+                    key={bookingRequestId}
+                    type="hidden"
+                    name="bookingRequestId"
+                    value={bookingRequestId}
+                  />
+                ))}
+                <input type="hidden" name="returnTo" value={`${returnTo}#bookings-panel`} />
+                <label className="sr-only" htmlFor="bulk-booking-status">
+                  New status for selected bookings
+                </label>
+                <select
+                  id="bulk-booking-status"
+                  name="status"
+                  defaultValue="requested"
+                  className="min-h-[38px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none"
+                >
+                  {bulkStatusOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <BulkStatusSubmitButton count={selectedBookingIds.size} />
+              </form>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingIds(new Set())}
+                className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)]"
               >
-                {tab.label}
-              </Link>
-            ))}
+                Clear selection
+              </button>
+            </div>
           </div>
         ) : null}
-
-        <label className="flex min-h-[48px] min-w-[200px] flex-1 items-center gap-2.5 rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
-          <Search className="h-4 w-4 text-[color:var(--text-soft)]" />
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(1);
-            }}
-            placeholder="Search bookings, schools, or contacts..."
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
-          />
-        </label>
-
-        <ToolbarSelect
-          label="Region"
-          value={regionFilter}
-          onChange={(value) => {
-            setRegionFilter(value);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All regions" },
-            ...regionOptions.map((slug) => ({ value: slug, label: titleCase(slug) }))
-          ]}
-        />
-        <ToolbarSelect
-          label="Presentation type"
-          value={presentationFilter}
-          onChange={(value) => {
-            setPresentationFilter(value);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All types" },
-            ...presentationTitles.map((title) => ({ value: title, label: title }))
-          ]}
-        />
-        <ToolbarSelect
-          label="Status"
-          value={statusFilter}
-          onChange={(value) => {
-            setStatusFilter(value);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All statuses" },
-            ...BOOKING_STATUS_OPTIONS.map(([value, label]) => ({ value, label }))
-          ]}
-        />
-        <button
-          type="button"
-          disabled={!hasActiveFilters}
-          onClick={() => {
-            setQuery("");
-            setRegionFilter("all");
-            setPresentationFilter("all");
-            setStatusFilter("all");
-            setPage(1);
-          }}
-          className="inline-flex min-h-[48px] items-center justify-center rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition disabled:opacity-50"
-        >
-          Clear
-        </button>
       </div>
 
       {viewMode === "calendar" ? (
@@ -411,13 +591,62 @@ export function BookingsExplorer({
         <>
           {/* ------------------------------------------------ booking cards */}
           {pageBookings.length === 0 ? (
-            <div className="surface-panel rounded-[24px] px-6 py-10 text-sm text-[color:var(--text-soft)]">
+            <div className="px-6 py-10 text-sm text-[color:var(--text-soft)]">
               No bookings match this view or those filters yet.
             </div>
           ) : null}
 
-          {pageBookings.map((booking, index) => {
-            const open = isExpanded(booking.id, index);
+          <div className="max-w-full overflow-hidden">
+          <div className="hidden grid-cols-[32px_125px_170px_minmax(180px,1fr)_minmax(200px,1.05fr)_minmax(160px,0.8fr)_minmax(150px,0.8fr)_145px] items-center gap-6 bg-[#f6f9fd] py-3.5 pl-6 pr-9 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] 2xl:grid">
+            <input
+              type="checkbox"
+              checked={allPageBookingsSelected}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setSelectedBookingIds((current) => {
+                  const next = new Set(current);
+
+                  pageBookings.forEach((booking) => {
+                    if (checked) {
+                      next.add(booking.id);
+                    } else {
+                      next.delete(booking.id);
+                    }
+                  });
+
+                  return next;
+                });
+              }}
+              aria-label="Select all bookings on this page"
+              className="h-4 w-4 rounded border-[color:var(--border-soft)] accent-[#18a83b]"
+            />
+            <span>Date</span>
+            <span>Status</span>
+            <span className="pl-2.5">School</span>
+            <span>Contact</span>
+            <span>Presentation</span>
+            <span>Location</span>
+            <span>Actions</span>
+          </div>
+          {pageBookings.map((booking) => {
+            const open = isExpanded(booking.id);
+            const primarySession = booking.sessions[0];
+            const uniquePresentations = Array.from(
+              new Set(booking.sessions.map((session) => session.presentationTitle))
+            );
+            const sessionLocation = primarySession?.locationAddress?.trim();
+            const locationSlug =
+              booking.regionSlug !== "unassigned"
+                ? booking.regionSlug
+                : primarySession?.regionSlug;
+            const locationLabel =
+              locationSlug === "other" || locationSlug === "other-request-region"
+                ? sessionLocation && !/^new zealand$/i.test(sessionLocation)
+                  ? sessionLocation
+                  : "Other location"
+                : locationSlug && locationSlug !== "unassigned"
+                  ? primarySession?.regionName ?? titleCase(locationSlug)
+                  : sessionLocation || "Location not recorded";
             // The booking param makes the server render the list view with
             // this card expanded, so the #booking anchor exists on load.
             const cardReturnTo = `${returnTo}&booking=${booking.id}#booking-${booking.id}`;
@@ -432,95 +661,178 @@ export function BookingsExplorer({
               ([value]) =>
                 !hasFutureSession ||
                 !COMPLETION_STATUSES.has(value) ||
-                value === booking.status
+                value === schoolBookingStatus(booking.status)
             );
             return (
               <section
                 key={booking.id}
                 id={`booking-${booking.id}`}
-                className="grid scroll-mt-24 gap-0"
+                className="grid scroll-mt-24 gap-0 border-t border-[color:rgba(4,15,75,0.08)]"
               >
                 <div
                   className={cn(
-                    "surface-panel rounded-[18px] px-4 py-3.5 md:px-5",
-                    open && "rounded-b-none"
+                    "relative grid min-w-0 gap-x-6 gap-y-5 bg-white py-5 pl-12 pr-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[32px_125px_170px_minmax(180px,1fr)_minmax(200px,1.05fr)_minmax(160px,0.8fr)_minmax(150px,0.8fr)_145px] 2xl:items-center 2xl:gap-6 2xl:py-5 2xl:pl-6 2xl:pr-9",
+                    open && "bg-[#fbfdff]"
                   )}
                 >
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                    <div className="min-w-0">
-                      <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[color:var(--green-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#117a2e]">
-                        <Globe2 className="h-3 w-3" />
-                        {titleCase(booking.source)} request
-                      </span>
-                      <div className="mt-2.5 flex min-w-0 items-center gap-3">
-                        <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e8f1fd] text-[#2563eb] sm:flex">
-                          <School2 className="h-5 w-5" />
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-xl font-semibold tracking-[-0.04em] text-[color:var(--navy)] md:text-2xl">
-                            {booking.schoolName}
-                          </h3>
-                          {booking.referenceCode ? (
-                            <p className="mt-1 text-xs font-semibold text-[color:var(--text-soft)]">
-                              Reference {booking.referenceCode}
-                            </p>
-                          ) : null}
-                          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--text-soft)]">
-                            <span className="inline-flex min-w-0 items-center gap-1">
-                              <UserRound className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">{booking.primaryContactName}</span>
-                            </span>
-                            <span className="hidden h-4 w-px bg-[color:var(--border-soft)] sm:inline-block" />
-                            <span className="inline-flex min-w-0 items-center gap-1">
-                              <Mail className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">{booking.primaryContactEmail}</span>
-                            </span>
-                            <span className="hidden h-4 w-px bg-[color:var(--border-soft)] sm:inline-block" />
-                            <span className="inline-flex items-center gap-1">
-                              <MapPin className="h-3.5 w-3.5 shrink-0" />
-                              {titleCase(booking.regionSlug)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="absolute left-4 top-5 2xl:static">
+                    <input
+                      type="checkbox"
+                      checked={selectedBookingIds.has(booking.id)}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setSelectedBookingIds((current) => {
+                          const next = new Set(current);
 
-                    <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap lg:justify-end">
-                      <div className="grid justify-items-start gap-1.5 lg:justify-items-end">
-                        <form action={updateStatusAction}>
-                          <input type="hidden" name="bookingRequestId" value={booking.id} />
-                          <input type="hidden" name="returnTo" value={cardReturnTo} />
-                          <AutoSaveBookingStatus
-                            currentStatus={booking.status}
-                            options={statusOptions}
-                          />
-                        </form>
-                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-[color:var(--text-soft)]">
-                          <CalendarDays className="h-3.5 w-3.5" />
-                          Requested {formatShortDate(booking.createdAt)}
+                          if (checked) {
+                            next.add(booking.id);
+                          } else {
+                            next.delete(booking.id);
+                          }
+
+                          return next;
+                        });
+                      }}
+                      aria-label={`Select ${booking.schoolName}`}
+                      className="h-4 w-4 rounded border-[color:var(--border-soft)] accent-[#18a83b]"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Date
+                    </p>
+                    {primarySession ? (
+                      <p className="text-[13px] font-semibold text-[color:var(--navy)]">
+                        {formatShortDate(primarySession.startsAt)}
+                        <span className="mt-1 block whitespace-nowrap text-[11px] font-medium text-[color:var(--text-soft)]">
+                          {formatTime(primarySession.startsAt)} – {formatTime(primarySession.endsAt)}
                         </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
-                        aria-label={open ? "Collapse booking" : "Expand booking"}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]"
-                      >
-                        {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
+                      </p>
+                    ) : (
+                      <p className="text-sm text-[color:var(--text-soft)]">No session date</p>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Status
+                    </p>
+                    <form action={updateStatusAction} className="min-w-0">
+                      <input type="hidden" name="bookingRequestId" value={booking.id} />
+                      <input type="hidden" name="returnTo" value={cardReturnTo} />
+                      <AutoSaveBookingStatus
+                        currentStatus={booking.status}
+                        options={statusOptions}
+                        compact
+                      />
+                    </form>
+                  </div>
+
+                  <div className="min-w-0 2xl:pl-2.5">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      School
+                    </p>
+                    <h3 className="text-[13px] font-semibold leading-5 text-[color:var(--navy)]">
+                      {booking.schoolName}
+                    </h3>
+                    {booking.referenceCode ? (
+                      <p className="mt-1 text-[11px] text-[color:var(--text-soft)]">
+                        Ref {booking.referenceCode}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Contact
+                    </p>
+                    <p className="truncate text-[13px] font-medium text-[color:var(--navy)]">
+                      {booking.primaryContactName}
+                    </p>
+                    <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-[color:var(--text-soft)]">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{booking.primaryContactEmail}</span>
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Presentation
+                    </p>
+                    {uniquePresentations.length > 0 ? (
+                      <span className="inline-flex w-fit max-w-full items-center gap-1 rounded-full bg-[color:var(--green-soft)] px-2.5 py-1 text-[11px] font-semibold text-[#117a2e]">
+                        <Leaf className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{uniquePresentations[0]}</span>
+                        {uniquePresentations.length > 1 ? ` +${uniquePresentations.length - 1}` : ""}
+                      </span>
+                    ) : (
+                      <p className="text-sm text-[color:var(--text-soft)]">Not selected</p>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Location
+                    </p>
+                    <p className="flex items-start gap-1.5 text-[12px] leading-5 text-[color:var(--navy)]">
+                      <MapPin className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
+                      <span>{locationLabel}</span>
+                    </p>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                      Actions
+                    </p>
+                    <button
+                      type="button"
+                      style={{ fontSize: "13px", lineHeight: "1.15" }}
+                      onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
+                      aria-expanded={open}
+                      aria-controls={`booking-sessions-${booking.id}`}
+                      className="inline-flex min-h-[34px] w-full min-w-0 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[9px] border border-[#8db1ff] bg-white px-2 font-semibold text-[#2563eb] transition hover:bg-[#f7faff] sm:w-auto 2xl:w-full"
+                    >
+                      {open ? "Hide sessions" : "View sessions"}
+                      {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
 
                 {open ? (
                   <>
-                    <div className="surface-panel rounded-t-none rounded-b-[18px] border-t-0 p-4">
+                    <div
+                      id={`booking-sessions-${booking.id}`}
+                      className="mx-3 mb-3 mt-2 rounded-[16px] border border-[color:var(--border-soft)] bg-[#f8fbff] p-3.5 shadow-[0_10px_24px_rgba(11,24,77,0.04)]"
+                    >
                       <p className="flex items-center gap-2 text-sm font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                         <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
                         Requested sessions
                       </p>
-                    <div className="mt-3 overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white">
-                      <table className="min-w-[980px] border-separate border-spacing-0">
+                      <div className="mt-3 grid gap-2 2xl:hidden">
+                        {booking.sessions.map((session) => (
+                          <CompactSessionCard
+                            key={session.id}
+                            session={session}
+                            ambassadors={ambassadors}
+                            assignAmbassadorAction={assignAmbassadorAction}
+                            updateStatusAction={updateStatusAction}
+                            resolveWithdrawalAction={resolveWithdrawalAction}
+                            resolveRescheduleAction={resolveRescheduleAction}
+                            returnTo={cardReturnTo}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-3 hidden overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white 2xl:block">
+                        <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0">
+                        <colgroup>
+                          <col className="w-[9%]" />
+                          <col className="w-[13%]" />
+                          <col className="w-[19%]" />
+                          <col className="w-[26%]" />
+                          <col className="w-[8%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[13%]" />
+                        </colgroup>
                         <thead>
                           <tr>
                             {[
@@ -534,7 +846,7 @@ export function BookingsExplorer({
                             ].map((heading) => (
                               <th
                                 key={heading}
-                                className="border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
+                                className="border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]"
                               >
                                 {heading}
                               </th>
@@ -546,33 +858,33 @@ export function BookingsExplorer({
                             <Fragment key={session.id}>
                             <tr className="align-middle">
                               <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
-                                <span className="flex items-center gap-2.5 text-xs font-semibold text-[color:var(--navy)]">
+                                <span className="flex items-center gap-2.5 text-sm font-semibold text-[color:var(--navy)]">
                                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#e8f1fd] text-[#2563eb]">
                                     <CalendarDays className="h-4 w-4" />
                                   </span>
                                   <span>
                                     {formatShortDate(session.startsAt)}
-                                    <span className="block text-xs font-medium text-[color:var(--text-soft)]">
+                                    <span className="block text-sm font-medium text-[color:var(--text-soft)]">
                                       {formatTime(session.startsAt)}
                                     </span>
                                   </span>
                                 </span>
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
-                                <span className="flex items-center gap-2.5 text-xs font-semibold text-[color:var(--green)]">
-                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--green-soft)] text-[#117a2e]">
+                                <span className="flex items-center gap-2.5 text-sm font-semibold" style={{ color: session.presentationAccentColor ?? "#117a2e" }}>
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: colourWithAlpha(session.presentationAccentColor ?? "#18A83B", 0.1), color: session.presentationAccentColor ?? "#117a2e" }}>
                                     <Leaf className="h-4 w-4" />
                                   </span>
                                   {session.presentationTitle}
                                 </span>
                               </td>
-                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-xs leading-5 text-[color:var(--text-soft)]">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-sm leading-5 text-[color:var(--text-soft)]">
                                 {session.yearLevels}
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <form
                                   action={assignAmbassadorAction}
-                                  className="flex min-w-[260px] items-start gap-2"
+                                  className="flex min-w-0 items-start gap-2"
                                 >
                                   <input type="hidden" name="bookingSessionId" value={session.id} />
                                   <input type="hidden" name="returnTo" value={cardReturnTo} />
@@ -584,13 +896,13 @@ export function BookingsExplorer({
                                   />
                                   <button
                                     type="submit"
-                                    className="inline-flex min-h-[34px] items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] shadow-[0_6px_14px_rgba(37,99,235,0.08)] transition hover:bg-[#f4f8ff]"
+                                    className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] shadow-[0_6px_14px_rgba(37,99,235,0.08)] transition hover:bg-[#f4f8ff]"
                                   >
                                     Assign
                                   </button>
                                 </form>
                               </td>
-                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-xs font-semibold text-[color:var(--navy)]">
+                              <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-sm font-semibold text-[color:var(--navy)]">
                                 <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-[9px] bg-[#e8f1fd] px-2.5 text-[#2563eb]">
                                   {session.actualStudentCount ?? session.expectedStudentCount}
                                 </span>
@@ -601,7 +913,7 @@ export function BookingsExplorer({
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <SessionDetailsButton
                                   session={session}
-                                  className="min-h-[34px] rounded-[9px] border-[#dbe6f5] px-3.5 py-1 text-xs text-[#2563eb]"
+                                  className="min-h-[36px] rounded-[9px] border-[#dbe6f5] px-3 py-1 text-xs font-semibold text-[#2563eb]"
                                   label={
                                     <>
                                       <Eye className="h-3.5 w-3.5" />
@@ -629,24 +941,29 @@ export function BookingsExplorer({
                             </Fragment>
                           ))}
                         </tbody>
-                      </table>
-                    </div>
+                        </table>
+                      </div>
                     </div>
                   </>
                 ) : null}
               </section>
             );
           })}
+          </div>
 
           {/* ------------------------------------------------ pagination */}
           {filtered.length > 0 ? (
-            <div className="surface-panel flex flex-wrap items-center justify-between gap-3 rounded-[20px] px-5 py-3.5">
-              <p className="text-sm text-[color:var(--text-soft)]">
-                Showing {(safePage - 1) * PAGE_SIZE + 1} to{" "}
-                {Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} booking request
-                {filtered.length === 1 ? "" : "s"}
-              </p>
-              <div className="flex items-center gap-1.5">
+            <div className="grid gap-3 border-t border-[color:rgba(4,15,75,0.08)] px-4 py-3.5 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[color:var(--navy)]">
+                  Page {safePage} of {pageCount}
+                </p>
+                <p className="mt-0.5 text-xs text-[color:var(--text-soft)]">
+                  Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of{" "}
+                  {filtered.length} booking request{filtered.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <nav aria-label="Booking pages" className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                 <PageArrow
                   disabled={safePage <= 1}
                   onClick={() => setPage(safePage - 1)}
@@ -654,21 +971,33 @@ export function BookingsExplorer({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </PageArrow>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    onClick={() => setPage(pageNumber)}
-                    className={cn(
-                      "flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
-                      pageNumber === safePage
-                        ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
-                        : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]"
-                    )}
-                  >
-                    {pageNumber}
-                  </button>
-                ))}
+                {visiblePaginationItems.map((item) =>
+                  typeof item === "number" ? (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-current={item === safePage ? "page" : undefined}
+                      aria-label={`Go to page ${item}`}
+                      onClick={() => setPage(item)}
+                      className={cn(
+                        "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+                        item === safePage
+                          ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
+                          : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:border-[rgba(37,99,235,0.25)] hover:bg-[#f7faff]"
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span
+                      key={item}
+                      aria-hidden="true"
+                      className="flex h-9 w-7 shrink-0 items-center justify-center text-sm font-semibold text-[color:var(--text-soft)]"
+                    >
+                      …
+                    </span>
+                  )
+                )}
                 <PageArrow
                   disabled={safePage >= pageCount}
                   onClick={() => setPage(safePage + 1)}
@@ -676,12 +1005,120 @@ export function BookingsExplorer({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </PageArrow>
-              </div>
+              </nav>
             </div>
           ) : null}
         </>
       )}
     </div>
+  );
+}
+
+function CompactSessionCard({
+  session,
+  ambassadors,
+  assignAmbassadorAction,
+  updateStatusAction,
+  resolveWithdrawalAction,
+  resolveRescheduleAction,
+  returnTo
+}: {
+  session: BookingSessionView;
+  ambassadors: Array<{ id: string; name: string }>;
+  assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
+  updateStatusAction: (formData: FormData) => void | Promise<void>;
+  resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
+  resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
+  returnTo: string;
+}) {
+  return (
+    <article className="rounded-[14px] border border-[color:var(--border-soft)] bg-white p-3.5">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#e8f1fd] text-[#2563eb]">
+            <CalendarDays className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[color:var(--navy)]">
+              {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}
+            </p>
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold" style={{ color: session.presentationAccentColor ?? "#117a2e" }}>
+              <Leaf className="h-4 w-4 shrink-0" />
+              <span className="truncate">{session.presentationTitle}</span>
+            </p>
+          </div>
+        </div>
+        <StatusPill value={session.status} />
+      </div>
+
+      <dl className="mt-3 grid gap-2 rounded-[11px] bg-[#f7f9fc] p-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+            Year groups
+          </dt>
+          <dd className="mt-1 text-sm text-[color:var(--navy)]">{session.yearLevels}</dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+            Students
+          </dt>
+          <dd className="mt-1 text-sm font-semibold text-[color:var(--navy)]">
+            {session.actualStudentCount ?? session.expectedStudentCount}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+        <div className="min-w-0">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+            Ambassador
+          </p>
+          <form
+            action={assignAmbassadorAction}
+            className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
+          >
+            <input type="hidden" name="bookingSessionId" value={session.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <AmbassadorSearchSelect
+              ambassadors={ambassadors}
+              applicants={session.applicants ?? []}
+              assignedId={session.assignedAmbassadorId}
+              assignedName={session.assignedAmbassadorName}
+            />
+            <button
+              type="submit"
+              className="inline-flex min-h-[36px] items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] transition hover:bg-[#f4f8ff]"
+            >
+              Assign
+            </button>
+          </form>
+        </div>
+        <SessionDetailsButton
+          session={session}
+          className="min-h-[36px] w-full rounded-[9px] border-[#dbe6f5] px-3 py-1 text-xs font-semibold text-[#2563eb] xl:w-auto"
+          label={
+            <>
+              <Eye className="h-3.5 w-3.5" />
+              Details
+            </>
+          }
+          updateStatusAction={updateStatusAction}
+          resolveWithdrawalAction={resolveWithdrawalAction}
+          resolveRescheduleAction={resolveRescheduleAction}
+          returnTo={returnTo}
+        />
+      </div>
+
+      {session.status === "withdrawal_requested" ? (
+        <div className="mt-3">
+          <WithdrawalReviewPanel
+            session={session}
+            action={resolveWithdrawalAction}
+            returnTo={returnTo}
+          />
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -778,7 +1215,7 @@ function BookingsCalendar({
   ];
 
   return (
-    <div className="surface-panel rounded-[26px] p-5 md:p-6">
+    <div className="p-5 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -1023,8 +1460,8 @@ function AmbassadorSearchSelect({
   return (
     <div ref={anchorRef} className="relative min-w-0 flex-1">
       <input type="hidden" name="ambassadorProfileId" value={selectedId} />
-      <div className="flex items-center gap-1.5 rounded-[9px] border border-[color:var(--border-soft)] bg-white px-2.5">
-        <Search className="h-3.5 w-3.5 shrink-0 text-[color:var(--text-soft)]" />
+      <div className="flex items-center gap-2 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3">
+        <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
         <input
           value={text}
           onFocus={openPopover}
@@ -1038,7 +1475,7 @@ function AmbassadorSearchSelect({
             }
           }}
           placeholder={assignedName ?? "Search ambassadors..."}
-          className="min-h-[32px] min-w-0 flex-1 bg-transparent text-xs text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+          className="min-h-[34px] min-w-0 flex-1 bg-transparent text-xs text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
         />
         {text ? (
           <button
@@ -1159,14 +1596,14 @@ function ToolbarSelect({
   options: Array<{ value: string; label: string }>;
 }) {
   return (
-    <label className="grid gap-1">
+    <label className="grid min-w-0 gap-1">
       <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
         {label}
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-[48px] max-w-[190px] rounded-[16px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
+        className="min-h-[44px] w-full min-w-0 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

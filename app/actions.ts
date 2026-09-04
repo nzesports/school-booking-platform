@@ -13,7 +13,7 @@ import {
   isWithinBookingWindow
 } from "@/lib/services/availability";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
-import { submitBookingRequest } from "@/lib/services/bookings";
+import { BookingConfigurationError, submitBookingRequest } from "@/lib/services/bookings";
 
 const bookingSchema = z.object({
   schoolName: z.string().min(2),
@@ -155,7 +155,14 @@ export async function submitBookingRequestAction(
       ...parsed.data,
       submittedByUserId: user?.role === "school" ? user.id : undefined
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof BookingConfigurationError) {
+      return {
+        error:
+          "Your booking could not be submitted because of a configuration issue on our side. Please contact the NZ Esports team directly so we don't miss your request."
+      };
+    }
+
     return { error: "We couldn't send your booking request. Please try again." };
   }
 

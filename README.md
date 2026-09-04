@@ -28,15 +28,14 @@ Prerequisites:
 - Node.js 20.9 or newer
 - Docker Desktop using Linux containers
 
-Install the dependencies, start the Docker-backed Supabase stack, and run Next.js:
+Install the dependencies, then start the complete seeded local platform with one command:
 
 ```bash
 npm install
-npm run local:start
-npm run dev
+npm run dev:local
 ```
 
-`local:start` applies every migration, loads `supabase/seed.sql`, creates rich demo data and test accounts, and writes the local URL and keys to the ignored `.env.local` file. It does not connect to or change the hosted Supabase project.
+`dev:local` starts the Docker-backed Supabase stack, applies any pending local migrations, loads the seed data, creates rich demo data and test accounts, writes the local URL and keys to the ignored `.env.local` file, and starts Next.js on port `3000`. Once ready, it prints clickable links for every portal. It does not connect to or change the hosted Supabase project.
 
 Open the local services at:
 
@@ -52,6 +51,7 @@ Useful commands:
 
 ```bash
 npm run local:status  # show local service URLs and status
+npm run local:start   # start and seed Supabase without starting Next.js
 npm run local:reset   # rebuild the local DB from migrations and reseed demo data
 npm run local:seed    # re-run the idempotent account/demo seed
 npm run local:stop    # stop this project's Supabase containers

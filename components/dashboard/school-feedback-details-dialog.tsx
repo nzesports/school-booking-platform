@@ -9,9 +9,10 @@ import {
   Star,
   UserRound
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { FeedbackDialogNavigation } from "@/components/dashboard/feedback-dialog-navigation";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import type { SchoolFeedbackSummary } from "@/lib/domain/types";
@@ -31,28 +32,59 @@ const ANSWER_ROWS = [
   { key: "mailingListOptIn", label: "Joined the mailing list" }
 ] as const;
 
+function cleanReviewText(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 export function SchoolFeedbackDetailsButton({
-  review,
+  review: initialReview,
+  reviews,
   className,
+  label = "View",
   footer
 }: {
   review: SchoolFeedbackSummary;
+  reviews?: SchoolFeedbackSummary[];
   className?: string;
-  footer?: ReactNode;
+  label?: string;
+  footer?: ReactNode | ((review: SchoolFeedbackSummary) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
+  const [activeReviewId, setActiveReviewId] = useState(initialReview.id);
+  const navigationAnchorRef = useRef<HTMLDivElement>(null);
+  const reviewCollection = reviews?.length ? reviews : [initialReview];
+  const matchedReviewIndex = reviewCollection.findIndex((item) => item.id === activeReviewId);
+  const reviewIndex = matchedReviewIndex >= 0 ? matchedReviewIndex : 0;
+  const review = reviewCollection[reviewIndex] ?? initialReview;
   const details = review.details;
+  const renderedFooter = typeof footer === "function" ? footer(review) : footer;
+
+  const showReview = (index: number) => {
+    const nextReview = reviewCollection[index];
+
+    if (!nextReview) {
+      return;
+    }
+
+    setActiveReviewId(nextReview.id);
+    navigationAnchorRef.current
+      ?.closest('[role="dialog"]')
+      ?.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
     <>
       <Button
         type="button"
         variant="secondary"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setActiveReviewId(initialReview.id);
+          setOpen(true);
+        }}
         className={className ?? "min-h-[36px] rounded-[14px] px-3 py-1.5 text-xs"}
       >
         <Eye className="h-3.5 w-3.5" />
-        View
+        {label}
       </Button>
 
       {/* Portalled to <body> so glassy card ancestors (backdrop-filter) can't
@@ -68,6 +100,18 @@ export function SchoolFeedbackDetailsButton({
               overlayClassName="z-[80]"
               compact
             >
+              <div ref={navigationAnchorRef} className="h-0" />
+              <FeedbackDialogNavigation
+                current={reviewIndex + 1}
+                total={reviewCollection.length}
+                onPrevious={reviewIndex > 0 ? () => showReview(reviewIndex - 1) : undefined}
+                onNext={
+                  reviewIndex < reviewCollection.length - 1
+                    ? () => showReview(reviewIndex + 1)
+                    : undefined
+                }
+                className="mt-5"
+              />
               <div className="mt-5 grid gap-4">
                 <div className="grid gap-3 sm:grid-cols-3">
                   <InfoTile
@@ -174,8 +218,8 @@ export function SchoolFeedbackDetailsButton({
                     <p className="text-sm font-semibold text-[color:var(--navy)]">
                       Feedback heard from attendees
                     </p>
-                    <p className="mt-2 whitespace-pre-line text-sm leading-7 text-[color:var(--text-soft)]">
-                      {details.attendeeFeedback}
+                    <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
+                      {cleanReviewText(details.attendeeFeedback)}
                     </p>
                   </div>
                 ) : null}
@@ -185,8 +229,8 @@ export function SchoolFeedbackDetailsButton({
                     <MessageSquareQuote className="h-4 w-4" />
                     Written review
                   </p>
-                  <p className="mt-2 whitespace-pre-line text-sm leading-7 text-[color:var(--navy)]">
-                    &ldquo;{review.quote}&rdquo;
+                  <p className="mt-2 text-sm leading-7 text-[color:var(--navy)]">
+                    &ldquo;{cleanReviewText(review.quote)}&rdquo;
                   </p>
                 </div>
 
@@ -197,7 +241,7 @@ export function SchoolFeedbackDetailsButton({
                       ? "This review is live on the website."
                       : "This review is not shown on the website."}
                   </p>
-                  {footer}
+                  {renderedFooter}
                 </div>
               </div>
             </BookingDialogShell>,

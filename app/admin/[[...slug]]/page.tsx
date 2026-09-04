@@ -1,44 +1,56 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import type { ResourceAudience } from "@/lib/domain/types";
 import {
   ArrowLeft,
   Bell,
   CalendarDays,
+  CircleCheck,
   CircleDollarSign,
+  Clock3,
   FileText,
   FolderKanban,
+  GraduationCap,
   Info,
   Layers3,
-  Lock,
   MapPinned,
   Plus,
   School2,
-  ShieldCheck,
   SlidersHorizontal,
   Trash2,
-  Users,
+  Upload,
   UsersRound
 } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
 import {
+  connectAmbassadorPortalAccountAction,
   createEmailTemplateAction,
+  deleteAmbassadorRecordAction,
   deletePortalUserAction,
   deleteRegionAction,
   invitePortalUserAction,
+  logStaffFeedbackAction,
   markNotificationReadAction,
   markReportReviewedAction,
   reviewAmbassadorAction,
   reviewSchoolFeedbackAction,
+  saveManualBookingAction,
   saveEmailTemplateAction,
   sendTestEmailAction,
   saveHomepageSectionAction,
+  saveManualSchoolAction,
   savePresentationAction,
   savePortalProfileAction,
   saveRegionAction,
   saveResourceAction,
   updateUserAccessAction
 } from "@/app/portal/actions";
+import {
+  AmbassadorProfileWorkspace,
+  type AmbassadorProfileSection
+} from "@/components/dashboard/ambassadors-workspace";
 import { CopyTextButton } from "@/components/dashboard/copy-text-button";
 import { EmailTemplatesWorkspace } from "@/components/dashboard/email-templates-workspace";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
@@ -56,9 +68,11 @@ import {
 import { PortalProfileWorkspace } from "@/components/dashboard/portal-profile-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
+import { ManualSchoolDialog } from "@/components/dashboard/manual-school-dialog";
+import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialog";
+import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
@@ -68,9 +82,10 @@ import {
   dashboardRangeLabel,
   dashboardRangeOptions,
   readBookingLifecycleView,
+  readDashboardCustomRange,
   readDashboardRange
 } from "@/lib/services/dashboard-insights";
-import { getPaymentSettings } from "@/lib/services/invoices";
+import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getAdminPortalData } from "@/lib/services/portal";
 import { cn, formatCurrency, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
 
@@ -98,16 +113,24 @@ const navItems = [
   { href: "/admin", label: "Dashboard", icon: SlidersHorizontal },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/schools", label: "Schools", icon: School2 },
-  { href: "/admin/ambassadors", label: "Ambassadors", icon: UsersRound },
-  { href: "/admin/payments", label: "Payments", icon: CircleDollarSign },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/presentations", label: "Presentations", icon: Layers3 },
   { href: "/admin/regions", label: "Regions", icon: MapPinned },
   { href: "/admin/feedback", label: "Feedback", icon: Bell },
-  { href: "/admin/resources", label: "Resources", icon: FolderKanban },
-  { href: "/admin/email-templates", label: "Email templates", icon: FileText },
-  { href: "/admin/profile", label: "Profile", icon: UsersRound },
-  { href: "/admin/audit-logs", label: "Audit logs", icon: ShieldCheck }
+  {
+    href: "/admin/ambassadors",
+    label: "Ambassadors",
+    icon: UsersRound,
+    separatorBefore: true
+  },
+  { href: "/admin/payments", label: "Payments", icon: CircleDollarSign },
+  {
+    href: "/admin/training",
+    label: "Training",
+    icon: GraduationCap,
+    separatorBefore: true
+  },
+  { href: "/admin/materials", label: "Materials", icon: FolderKanban },
+  { href: "/admin/presentations", label: "Presentations", icon: Layers3 },
+  { href: "/admin/email-templates", label: "Email templates", icon: FileText }
 ];
 
 export default async function AdminPortalPage({
@@ -120,10 +143,50 @@ export default async function AdminPortalPage({
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
+
+  if (route === "resources") {
+    redirect("/admin/training");
+  }
   const actor = await requirePortalAccess("super_admin");
   const portal = await getAdminPortalData(actor.id);
-  const dashboardRange = readDashboardRange(resolvedSearchParams.range);
+  const customRange = readDashboardCustomRange(
+    resolvedSearchParams.from,
+    resolvedSearchParams.to
+  );
+  const requestedDashboardRange =
+    route === "bookings"
+      ? "all"
+      : !resolvedSearchParams.range && route === "feedback"
+        ? "all"
+        : !resolvedSearchParams.range && route === ""
+          ? "year"
+          : readDashboardRange(resolvedSearchParams.range);
+  const dashboardRange =
+    requestedDashboardRange === "custom" && !customRange ? "year" : requestedDashboardRange;
+  const rawAnalyticsYear = Array.isArray(resolvedSearchParams.analyticsYear)
+    ? resolvedSearchParams.analyticsYear[0]
+    : resolvedSearchParams.analyticsYear;
+  const analyticsYear = /^\d{4}$/.test(rawAnalyticsYear ?? "")
+    ? Number(rawAnalyticsYear)
+    : undefined;
   const activeBookingView = readBookingLifecycleView(resolvedSearchParams.status);
+  const ambassadorTab =
+    readSearchParam(resolvedSearchParams, "view") === "pending" ? "pending" : "approved";
+  const requestedAmbassadorSection = readSearchParam(resolvedSearchParams, "section");
+  const ambassadorSection: AmbassadorProfileSection = [
+    "overview",
+    "presentations",
+    "reports",
+    "sourced",
+    "feedback",
+    "payments"
+  ].includes(requestedAmbassadorSection ?? "")
+    ? (requestedAmbassadorSection as AmbassadorProfileSection)
+    : "overview";
+  const presentationTab =
+    readSearchParam(resolvedSearchParams, "tab") === "public-content"
+      ? "public-content"
+      : "types";
   const presentationFilterId = readSearchParam(resolvedSearchParams, "presentation") ?? undefined;
   const filteredDashboard = buildFilteredDashboardData(
     portal.bookings,
@@ -131,7 +194,8 @@ export default async function AdminPortalPage({
     portal.ambassadors,
     portal.schoolReviews,
     dashboardRange,
-    portal.activityLogs
+    portal.activityLogs,
+    customRange
   );
   const composeOpen = readSearchParam(resolvedSearchParams, "compose") === "1";
   const deleteUserId = readSearchParam(resolvedSearchParams, "delete");
@@ -176,10 +240,18 @@ export default async function AdminPortalPage({
         requiredEquipment: [] as string[],
         youtubeUrl: undefined as string | undefined,
         imageUrl: undefined,
+        accentColor: "#18A83B",
         active: true,
         public: true
       }
     : selectedPresentation;
+  const requestedResourcePresentationId = readSearchParam(
+    resolvedSearchParams,
+    "presentation"
+  );
+  const requestedResourcePresentation = portal.presentations.find(
+    (presentation) => presentation.id === requestedResourcePresentationId
+  );
   const isCreatingResource = route === "resources/new";
   const selectedResource =
     route.startsWith("resources/") && !isCreatingResource
@@ -190,12 +262,19 @@ export default async function AdminPortalPage({
         id: "",
         title: "",
         description: "",
-        type: "pdf",
-        category: "resource" as const,
-        audience: "school" as const,
-        audiences: ["school" as const],
+        type: requestedResourcePresentation ? "slide_deck" : "pdf",
+        category: requestedResourcePresentation ? ("presentation_material" as const) : ("resource" as const),
+        audience: requestedResourcePresentation ? ("ambassador" as const) : ("school" as const),
+        audiences: (requestedResourcePresentation
+          ? ["ambassador"]
+          : ["school"]) as ResourceAudience[],
+        // School-audience resources are only visible to schools when sharing is
+        // public, so the general library editor defaults to a working combination.
+        sharingScope: requestedResourcePresentation
+          ? ("internal" as const)
+          : ("public" as const),
         tags: [],
-        presentationTypeId: "",
+        presentationTypeId: requestedResourcePresentation?.id ?? "",
         presentationSlug: undefined,
         presentationTitle: undefined,
         storagePath: undefined,
@@ -209,8 +288,12 @@ export default async function AdminPortalPage({
       }
     : selectedResource;
   const contentNotice = getContentNotice(resolvedSearchParams);
+  const reportNotice = getReportApprovalNotice(resolvedSearchParams);
+  const cataloguePresentations = portal.presentations.filter(
+    (presentation) => presentation.slug !== "careers"
+  );
   const presentationPerformance = buildPresentationPerformance(
-    portal.presentations,
+    cataloguePresentations,
     portal.bookings,
     portal.reports,
     portal.schoolReviews
@@ -218,26 +301,70 @@ export default async function AdminPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
+  const pendingAmbassadors = portal.ambassadors.filter(
+    (ambassador) => ambassador.status === "applied"
+  );
+  const approvedAmbassadors = portal.ambassadors.filter(
+    (ambassador) => ambassador.status === "approved" || ambassador.status === "inactive"
+  );
+  const visibleAmbassadors =
+    ambassadorTab === "pending" ? pendingAmbassadors : approvedAmbassadors;
+  const ambassadorListHref = `/admin/ambassadors?view=${ambassadorTab}`;
   const paymentSettings = route === "payments" ? await getPaymentSettings() : null;
-  const feedbackReturnTo = presentationFilterId
-    ? `/admin/feedback?presentation=${presentationFilterId}`
-    : "/admin/feedback";
+  const feedbackSearchParams = new URLSearchParams({ range: dashboardRange });
+  if (customRange) {
+    feedbackSearchParams.set("from", customRange.from);
+    feedbackSearchParams.set("to", customRange.to);
+  }
+  if (presentationFilterId) {
+    feedbackSearchParams.set("presentation", presentationFilterId);
+  }
+  const feedbackReturnTo = `/admin/feedback?${feedbackSearchParams.toString()}`;
+  const reportedSessionIds = new Set(
+    portal.reports.map((report) => report.bookingSessionId).filter(Boolean)
+  );
+  const feedbackSessions = portal.bookings
+    .flatMap((booking) => booking.sessions)
+    .filter(
+      (session) =>
+        (session.status === "completed_pending_report" || session.status === "closed") &&
+        !reportedSessionIds.has(session.id) &&
+        session.reportStatus !== "submitted" &&
+        session.reportStatus !== "reviewed"
+    )
+    .sort(
+      (left, right) =>
+        new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime()
+    )
+    .map((session) => ({
+      id: session.id,
+      schoolName: session.schoolName,
+      presentationTitle: session.presentationTitle,
+      startsAt: session.startsAt,
+      yearLevels: session.yearLevels,
+      attendeeCount: session.actualStudentCount ?? session.expectedStudentCount,
+      contactName: session.contactName,
+      contactEmail: session.contactEmail,
+      assignedAmbassadorName: session.assignedAmbassadorName
+    }));
 
   const headline =
     route === ""
       ? `Good morning, ${actor.fullName.split(" ")[0]}`
       : route === "bookings"
-        ? "School Bookings"
+        ? "Manage Bookings"
         : route === "schools"
           ? "School Information"
           : route === "ambassadors"
-            ? "Review ambassador applications and payment status"
+            ? "Manage ambassadors and applications"
             : route.startsWith("ambassadors/")
-              ? "Review ambassador application"
+              ? selectedAmbassador?.status === "applied" || selectedAmbassador?.status === "declined"
+                ? "Review ambassador application"
+                : "Ambassador profile"
               : route === "reports"
                 ? "School & ambassador feedback"
                 : route === "payments"
-                  ? "Track ambassador invoices and payments"
+                  ? "Track invoices and payments"
           : route === "users"
             ? "Manage live access"
               : route === "presentations"
@@ -248,8 +375,10 @@ export default async function AdminPortalPage({
                     ? "Edit presentation"
                     : route === "regions"
                       ? "Control regional availability"
-                      : route === "resources"
-                        ? "Manage staff, school, and ambassador resources"
+                      : route === "training"
+                        ? "Build ambassador training packs"
+                        : route === "materials"
+                          ? "Manage public materials"
                         : route === "resources/new"
                           ? "Create a new resource"
                           : route.startsWith("resources/")
@@ -276,12 +405,79 @@ export default async function AdminPortalPage({
         navItems={navItems}
         currentPath={`/admin${route ? `/${route}` : ""}`}
         headline={headline}
-        dateLabel={dashboardRangeLabel(dashboardRange)}
-        rangeOptions={dashboardRangeOptions.map((option) => ({
-          ...option,
-          href: `/admin${route ? `/${route}` : ""}?range=${option.value}`
-        }))}
-        activeRange={dashboardRange}
+        dateLabel={
+          route === "" || route === "feedback"
+            ? dashboardRangeLabel(dashboardRange, customRange)
+            : undefined
+        }
+        rangeOptions={
+          route === "" || route === "feedback"
+            ? dashboardRangeOptions.map((option) => ({
+                ...option,
+                href:
+                  route === "feedback"
+                    ? `/admin/feedback?range=${option.value}${presentationFilterId ? `&presentation=${presentationFilterId}` : ""}`
+                    : `/admin?range=${option.value}${analyticsYear ? `&analyticsYear=${analyticsYear}` : ""}`
+              }))
+            : undefined
+        }
+        activeRange={route === "" || route === "feedback" ? dashboardRange : undefined}
+        customRange={route === "" || route === "feedback" ? customRange : undefined}
+        headerAction={
+          route === "bookings" ? (
+            <ManualBookingDialog
+              basePath="/admin"
+              schools={portal.schools}
+              regions={portal.regions}
+              presentations={portal.presentations}
+              ambassadors={portal.ambassadors}
+              activeView={activeBookingView}
+              range="all"
+              action={saveManualBookingAction}
+            />
+          ) : route === "schools" ? (
+            <ManualSchoolDialog
+              regions={portal.regions
+                .filter((region) => region.isActive)
+                .map((region) => ({ id: region.id, name: region.name }))}
+              action={saveManualSchoolAction}
+              returnTo="/admin/schools"
+            />
+          ) : route === "feedback" ? (
+            <LogFeedbackDialog
+              sessions={feedbackSessions}
+              schoolNames={portal.schools.map((school) => school.name).sort()}
+              presentations={portal.presentations
+                .filter((presentation) => presentation.active)
+                .map((presentation) => ({
+                  id: presentation.id,
+                  title: presentation.title,
+                  yearLevels: presentation.yearLevels
+                }))}
+              defaultPresenterName={actor.fullName}
+              action={logStaffFeedbackAction}
+              returnTo={feedbackReturnTo}
+            />
+          ) : route === "materials" ? (
+            <ButtonLink
+              href="/admin/materials?upload=1"
+              variant="secondary"
+              className="border-[#d8c8f4] bg-[#f8f5ff] text-[#6941c6] shadow-none hover:bg-[#f1edfd]"
+            >
+              <Upload className="h-4 w-4" />
+              Upload material
+            </ButtonLink>
+          ) : route === "training" ? (
+            <ButtonLink
+              href="/admin/training?add=1"
+              variant="secondary"
+              className="border-[#bfe6d2] bg-[#eaf8ee] text-[#117a2e] shadow-none hover:bg-[#dff3e4]"
+            >
+              <Plus className="h-4 w-4" />
+              Add training resource
+            </ButtonLink>
+          ) : undefined
+        }
         activityHref="/admin/activity"
         notificationCount={
           portal.notifications.filter((notification) => !notification.readAt).length
@@ -289,6 +485,8 @@ export default async function AdminPortalPage({
         notifications={portal.notifications}
         markNotificationReadAction={markNotificationReadAction}
         logoutAction={logoutAction}
+        auditLogsHref="/admin/audit-logs"
+        usersHref="/admin/users"
         profile={{
           name: actor.fullName,
           subtitle: "Platform Admin",
@@ -301,7 +499,9 @@ export default async function AdminPortalPage({
           <OperationsAnalytics
             basePath="/admin"
             range={dashboardRange}
-            periodLabel={dashboardRangeLabel(dashboardRange)}
+            customRange={customRange}
+            analyticsYear={analyticsYear}
+            periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
             bookings={portal.bookings}
             reports={portal.reports}
             schoolReviews={portal.schoolReviews}
@@ -309,6 +509,7 @@ export default async function AdminPortalPage({
             payments={portal.payments}
             schools={portal.schools}
             presentations={portal.presentations}
+            resources={portal.resources}
             regions={portal.regions}
             resourcesLiveCount={portal.resources.filter((resource) => resource.isActive).length}
             unreadActivityCount={
@@ -330,13 +531,12 @@ export default async function AdminPortalPage({
             ) : null}
             <BookingLifecyclePanel
               basePath="/admin"
-              bookings={filteredDashboard.bookings}
-              schools={portal.schools}
-              regions={portal.regions}
+              bookings={portal.bookings}
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
               activeView={activeBookingView}
-              range={dashboardRange}
+              range="all"
+              customRange={null}
               initialQuery={readSearchParam(resolvedSearchParams, "q")}
               initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
             />
@@ -355,8 +555,61 @@ export default async function AdminPortalPage({
         {route === "ambassadors" ? (
           <DataTable
             title="Ambassador pipeline"
+            headerContent={
+              <nav
+                aria-label="Ambassador status"
+                className="flex gap-7 border-b border-[color:var(--border-soft)]"
+              >
+                {[
+                  { value: "approved", label: "Approved", icon: CircleCheck },
+                  { value: "pending", label: "Pending", icon: Clock3 }
+                ].map(({ value, label, icon: Icon }) => {
+                  const isActive = ambassadorTab === value;
+
+                  return (
+                    <Link
+                      key={value}
+                      href={`/admin/ambassadors?view=${value}`}
+                      prefetch={false}
+                      aria-current={isActive ? "page" : undefined}
+                      aria-label={
+                        value === "pending" && pendingAmbassadors.length > 0
+                          ? `Pending, ${pendingAmbassadors.length} awaiting review`
+                          : label
+                      }
+                      className={cn(
+                        "relative inline-flex items-center gap-2 px-1 pb-3 text-sm font-semibold transition",
+                        isActive
+                          ? "text-[color:var(--navy)]"
+                          : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {label}
+                      {value === "pending" && pendingAmbassadors.length > 0 ? (
+                        <span
+                          aria-hidden="true"
+                          className="absolute -right-1 top-0 h-2 w-2 rounded-full bg-[#f4b63f] ring-2 ring-white"
+                        />
+                      ) : null}
+                      {isActive ? (
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[color:var(--green)]"
+                        />
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </nav>
+            }
             columns={["Name", "Region", "Travel", "Pending payout", "Status", "Action"]}
-            rows={portal.ambassadors.map((ambassador) => [
+            emptyMessage={
+              ambassadorTab === "pending"
+                ? "No ambassador applications are waiting for review."
+                : "No approved ambassadors to show."
+            }
+            rows={visibleAmbassadors.map((ambassador) => [
               ambassador.name,
               ambassador.regionSlug,
               ambassador.openToTravel
@@ -381,11 +634,11 @@ export default async function AdminPortalPage({
               />,
               <ButtonLink
                 key={`${ambassador.id}-action`}
-                href={`/admin/ambassadors/${ambassador.id}`}
+                href={`/admin/ambassadors/${ambassador.id}?view=${ambassadorTab}`}
                 variant="ghost"
                 className="min-h-[38px] rounded-[14px] px-3 py-1.5"
               >
-                Review
+                {ambassadorTab === "pending" ? "Review application" : "View profile"}
               </ButtonLink>
             ])}
           />
@@ -395,7 +648,7 @@ export default async function AdminPortalPage({
           <div className="grid gap-5">
             <div>
               <ButtonLink
-                href="/admin/ambassadors"
+                href={ambassadorListHref}
                 variant="ghost"
                 className="min-h-[42px] rounded-[14px] px-4 py-2"
               >
@@ -403,154 +656,40 @@ export default async function AdminPortalPage({
                 Back to ambassadors
               </ButtonLink>
             </div>
-            <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-            <Card className="rounded-[34px]">
-              <div className="flex items-start gap-4">
-                {selectedAmbassador.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={selectedAmbassador.imageUrl}
-                    alt={`${selectedAmbassador.name} profile photo`}
-                    className="h-24 w-24 rounded-[24px] object-cover"
-                  />
-                ) : null}
-                <SectionHeading kicker="Application profile" title={selectedAmbassador.name} />
-              </div>
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                <InfoBlock label="Status" value={titleCase(selectedAmbassador.status)} />
-                <InfoBlock label="Primary region" value={selectedAmbassador.regionSlug} />
-                <InfoBlock label="Email" value={selectedAmbassador.email} />
-                <InfoBlock
-                  label="Referred by"
-                  value={selectedAmbassador.referredBy ?? "Not provided"}
-                />
-                <InfoBlock
-                  label="Travel regions"
-                  value={
-                    selectedAmbassador.travelRegions.length > 0
-                      ? selectedAmbassador.travelRegions.join(", ")
-                      : selectedAmbassador.openToTravel
-                        ? "Open to travel"
-                        : "Local only"
-                  }
-                />
-                <InfoBlock
-                  label="Payments"
-                  value={`${formatCurrency(selectedAmbassador.paidPaymentsCents)} paid · ${formatCurrency(selectedAmbassador.pendingPaymentsCents)} pending`}
-                />
-              </div>
-              <div className="mt-6 rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-                  Experience
-                </p>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {selectedAmbassador.experience ??
-                    "The application details are captured in the ambassador profile and can be expanded further as interviews are completed."}
-                </p>
-              </div>
-            </Card>
-
-            {selectedAmbassador.status === "approved" || selectedAmbassador.status === "inactive" ? (
-              <Card className="rounded-[34px]">
-                <SectionHeading kicker="Admin decision" title="Manage ambassador access" />
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  {selectedAmbassador.status === "approved"
-                    ? "This ambassador is approved and active. You can temporarily restrict their platform access or remove them from the ambassador programme."
-                    : "This ambassador's access is temporarily restricted. Restore their access when they are ready to present again, or remove them from the programme."}
-                </p>
-                <div className="mt-6 grid gap-4">
-                  {selectedAmbassador.status === "approved" ? (
-                    <form action={reviewAmbassadorAction}>
-                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                      <input type="hidden" name="status" value="inactive" />
-                      <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                      <PendingSubmitButton
-                        type="submit"
-                        pendingLabel="Restricting access..."
-                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f0d8a8] bg-[#fdf3dc] px-5 py-2.5 text-sm font-semibold text-[#9a5a00] shadow-[0_10px_24px_rgba(154,90,0,0.1)]"
-                      >
-                        Temporarily restrict access
-                      </PendingSubmitButton>
-                    </form>
-                  ) : (
-                    <form action={reviewAmbassadorAction}>
-                      <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                      <input type="hidden" name="status" value="approved" />
-                      <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                      <PendingSubmitButton
-                        type="submit"
-                        pendingLabel="Restoring access..."
-                        className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                      >
-                        Restore access
-                      </PendingSubmitButton>
-                    </form>
-                  )}
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="declined" />
-                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Removing ambassador..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                    >
-                      Remove ambassador
-                    </PendingSubmitButton>
-                  </form>
-                </div>
-              </Card>
-            ) : (
-              <Card className="rounded-[34px]">
-                <SectionHeading kicker="Admin decision" title="Approve or decline access" />
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  Approving this application unlocks ambassador portal access. Declining keeps the
-                  account out of the ambassador portal until the application is revisited.
-                </p>
-                <div className="mt-6 grid gap-4">
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="approved" />
-                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Approving ambassador..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
-                    >
-                      Approve ambassador
-                    </PendingSubmitButton>
-                  </form>
-                  <form action={reviewAmbassadorAction}>
-                    <input type="hidden" name="ambassadorProfileId" value={selectedAmbassador.id} />
-                    <input type="hidden" name="status" value="declined" />
-                    <input type="hidden" name="returnTo" value={`/admin/ambassadors/${selectedAmbassador.id}`} />
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Declining application..."
-                      className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff6f6] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
-                    >
-                      Decline application
-                    </PendingSubmitButton>
-                  </form>
-                </div>
-              </Card>
-            )}
-            </div>
+            <AmbassadorProfileWorkspace
+              ambassador={selectedAmbassador}
+              bookings={portal.bookings}
+              reports={portal.reports}
+              schoolReviews={portal.schoolReviews}
+              payments={portal.payments}
+              basePath="/admin/ambassadors"
+              activeSection={ambassadorSection}
+              reviewAction={reviewAmbassadorAction}
+              connectAction={connectAmbassadorPortalAccountAction}
+              deleteAction={deleteAmbassadorRecordAction}
+            />
           </div>
         ) : null}
 
         {route === "reports" || route === "feedback" ? (
-          <FeedbackHub
-            reports={filteredDashboard.reports}
-            schoolReviews={filteredDashboard.schoolReviews}
-            reviewAction={markReportReviewedAction}
-            feedbackDecisionAction={reviewSchoolFeedbackAction}
-            returnTo={feedbackReturnTo}
-            reportsReturnTo="/admin/reports"
-            initialTab={route === "reports" ? "ambassador" : "school"}
-            showAmbassadorColumn
-            presentationFilterId={presentationFilterId}
-          />
+          <div className="grid gap-4">
+            {reportNotice ? (
+              <NoticeBanner tone={reportNotice.tone}>{reportNotice.message}</NoticeBanner>
+            ) : null}
+            <FeedbackHub
+              reports={route === "feedback" ? filteredDashboard.reports : portal.reports}
+              schoolReviews={
+                route === "feedback" ? filteredDashboard.schoolReviews : portal.schoolReviews
+              }
+              reviewAction={markReportReviewedAction}
+              feedbackDecisionAction={reviewSchoolFeedbackAction}
+              returnTo={feedbackReturnTo}
+              reportsReturnTo="/admin/reports"
+              initialTab={route === "reports" ? "ambassador" : "school"}
+              showAmbassadorColumn
+              presentationFilterId={presentationFilterId}
+            />
+          </div>
         ) : null}
 
         {route === "payments" ? (
@@ -568,16 +707,9 @@ export default async function AdminPortalPage({
           <Card className="rounded-[34px]">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Live directory
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+                <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
                   Current staff and admin access
                 </h2>
-                <p className="mt-3 max-w-3xl text-sm leading-7 text-[color:var(--text-soft)]">
-                  Invite-only internal accounts live here. Super admins can update role and status,
-                  and remove users with typed confirmation when needed.
-                </p>
               </div>
               <ButtonLink
                 href={composeOpen ? usersHref() : usersHref("compose=1")}
@@ -962,28 +1094,50 @@ export default async function AdminPortalPage({
               })}
             </div>
 
-            <div className="mt-4 flex items-center gap-2 text-sm text-[color:var(--text-soft)]">
-              <Lock className="h-4 w-4 shrink-0" />
-              Changes apply as soon as you press Save. Deleting a user requires typed confirmation.
-            </div>
           </Card>
         ) : null}
 
         {route === "presentations" ? (
           <Card className="rounded-[34px]">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Presentation catalogue
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                  Presentation types
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-                  Create new presentation entries, update content, and attach media and resources from
-                  one catalogue.
-                </p>
-              </div>
+              <nav
+                aria-label="Presentation workspace"
+                className="flex flex-wrap gap-7 border-b border-[color:var(--border-soft)]"
+              >
+                {[
+                  { value: "types", label: "Presentation types" },
+                  { value: "public-content", label: "Front page & Learn more content" }
+                ].map((tab) => {
+                  const isActive = presentationTab === tab.value;
+
+                  return (
+                    <Link
+                      key={tab.value}
+                      href={
+                        tab.value === "types"
+                          ? "/admin/presentations"
+                          : "/admin/presentations?tab=public-content"
+                      }
+                      prefetch={false}
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn(
+                        "relative inline-flex items-center px-1 pb-3 text-base font-semibold transition",
+                        isActive
+                          ? "text-[color:var(--navy)]"
+                          : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
+                      )}
+                    >
+                      {tab.label}
+                      {isActive ? (
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[color:var(--green)]"
+                        />
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </nav>
               <ButtonLink href="/admin/presentations/new">
                 <Plus className="h-4 w-4" />
                 Add presentation
@@ -996,118 +1150,146 @@ export default async function AdminPortalPage({
               </NoticeBanner>
             ) : null}
 
-            <div className="mt-6 overflow-hidden rounded-[26px] border border-[color:var(--border-soft)] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
-              <div className="px-5 py-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                  Presentation performance
-                </p>
-                <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                  Delivery, attendance, and feedback stats across the full platform.
-                </p>
+            {presentationTab === "types" ? (
+              <div className="mt-6 overflow-hidden rounded-[26px] border border-[color:var(--border-soft)] bg-[linear-gradient(135deg,#f7fbff,#f7fdf8)]">
+                <div className="px-5 py-5">
+                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                    Presentation performance
+                  </p>
+                  <p className="mt-2 text-sm text-[color:var(--text-soft)]">
+                    Delivery, attendance, and feedback stats across the full platform.
+                  </p>
+                </div>
+                <table className="min-w-full border-separate border-spacing-0 bg-white/84">
+                  <thead>
+                    <tr>
+                      {[
+                        "Presentation",
+                        "Delivered",
+                        "Upcoming",
+                        "Attendees",
+                        "Teacher rating",
+                        "School rating",
+                        "Reviews"
+                      ].map((heading) => (
+                        <th
+                          key={heading}
+                          className="border-b border-[color:rgba(4,15,75,0.08)] px-5 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {presentationPerformance.map((item) => (
+                      <tr key={item.presentation.id} className="align-top">
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 font-semibold text-[color:var(--navy)]">
+                          <ButtonLink
+                            href={`/admin/feedback?presentation=${item.presentation.id}`}
+                            variant="ghost"
+                            className="min-h-[34px] rounded-[12px] px-3 py-1.5"
+                          >
+                            {item.presentation.title}
+                          </ButtonLink>
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.deliveredCount}
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.upcomingCount}
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.totalAttendees}
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.avgTeacherRating ? `${item.avgTeacherRating}/5` : "No data"}
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.avgSchoolRating ? `${item.avgSchoolRating}/5` : "No data"}
+                        </td>
+                        <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                          {item.reviewCount} reviews · {item.reportCount} reports
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <table className="min-w-full border-separate border-spacing-0 bg-white/84">
-                <thead>
-                  <tr>
-                    {[
-                      "Presentation",
-                      "Delivered",
-                      "Upcoming",
-                      "Attendees",
-                      "Teacher rating",
-                      "School rating",
-                      "Reviews"
-                    ].map((heading) => (
-                      <th
-                        key={heading}
-                        className="border-b border-[color:rgba(4,15,75,0.08)] px-5 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
-                      >
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {presentationPerformance.map((item) => (
-                    <tr key={item.presentation.id} className="align-top">
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 font-semibold text-[color:var(--navy)]">
-                        <ButtonLink
-                          href={`/admin/feedback?presentation=${item.presentation.id}`}
-                          variant="ghost"
-                          className="min-h-[34px] rounded-[12px] px-3 py-1.5"
-                        >
-                          {item.presentation.title}
-                        </ButtonLink>
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.deliveredCount}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.upcomingCount}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.totalAttendees}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.avgTeacherRating ? `${item.avgTeacherRating}/5` : "No data"}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.avgSchoolRating ? `${item.avgSchoolRating}/5` : "No data"}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {item.reviewCount} reviews · {item.reportCount} reports
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            ) : (
+              <div className="mt-6 grid gap-5">
+                <div className="rounded-[20px] border border-[rgba(24,168,59,0.18)] bg-[linear-gradient(135deg,#f5fcf7,#f6faff)] px-5 py-4">
+                  <p className="font-semibold text-[color:var(--navy)]">
+                    One edit updates both public views
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
+                    Short summaries feed the front-page cards. Descriptions, outcomes, equipment,
+                    formats, audience details, and What to expect feed each Learn more page.
+                  </p>
+                </div>
 
-            <div className="mt-6 overflow-hidden rounded-[26px] border border-[color:var(--border-soft)] bg-white/96">
-              <table className="min-w-full border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    {["Title", "Year levels", "Duration", "Visibility", "Status", "Edit"].map((heading) => (
-                      <th
-                        key={heading}
-                        className="border-b border-[color:rgba(4,15,75,0.08)] px-5 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
-                      >
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {portal.presentations.map((presentation) => (
-                    <tr key={presentation.id} className="align-top">
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 font-semibold text-[color:var(--navy)]">
-                        {presentation.title}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {presentation.yearLevels}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {presentation.durationMinutes} mins
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
-                        {presentation.public ? "Public" : "Private"}
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4">
-                        <StatusBadge value={presentation.active ? "confirmed" : "cancelled"} />
-                      </td>
-                      <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4">
-                        <ButtonLink
-                          href={`/admin/presentations/${presentation.id}`}
-                          variant="ghost"
-                          className="min-h-[38px] rounded-[14px] px-3 py-1.5"
-                        >
-                          Edit
-                        </ButtonLink>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                <div className="overflow-x-auto rounded-[26px] border border-[color:var(--border-soft)] bg-white/96">
+                  <table className="min-w-[960px] border-separate border-spacing-0 xl:min-w-full">
+                    <thead>
+                      <tr>
+                        {["Title", "Year levels", "Duration", "Visibility", "Status", "Actions"].map((heading) => (
+                          <th
+                            key={heading}
+                            className="border-b border-[color:rgba(4,15,75,0.08)] px-5 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]"
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cataloguePresentations.map((presentation) => (
+                        <tr key={presentation.id} className="align-top">
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 font-semibold text-[color:var(--navy)]">
+                            {presentation.title}
+                          </td>
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                            {presentation.yearLevels}
+                          </td>
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                            {presentation.durationMinutes} mins
+                          </td>
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4 text-sm text-[color:var(--text-soft)]">
+                            <span className={presentation.public ? "inline-flex rounded-full bg-[#e8f1fd] px-2.5 py-1 text-xs font-semibold text-[#1e4fae]" : "inline-flex rounded-full bg-[#f1edfd] px-2.5 py-1 text-xs font-semibold text-[#6941c6]"}>
+                              {presentation.public ? "Public" : "Internal"}
+                            </span>
+                          </td>
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4">
+                            <StatusBadge value={presentation.active ? "confirmed" : "cancelled"} />
+                          </td>
+                          <td className="border-b border-[color:rgba(4,15,75,0.06)] px-5 py-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ButtonLink
+                                href={`/admin/presentations/${presentation.id}`}
+                                variant="ghost"
+                                className="min-h-[38px] rounded-[14px] px-3 py-1.5"
+                              >
+                                Edit content
+                              </ButtonLink>
+                              {presentation.public && presentation.active ? (
+                                <ButtonLink
+                                  href={`/presentations/${presentation.slug}`}
+                                  variant="secondary"
+                                  className="min-h-[38px] rounded-[14px] px-3 py-1.5"
+                                  target="_blank"
+                                >
+                                  Preview
+                                </ButtonLink>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </Card>
         ) : null}
 
@@ -1161,7 +1343,6 @@ export default async function AdminPortalPage({
 
             <form
               action={savePresentationAction}
-              encType="multipart/form-data"
               className="grid gap-8 px-6 py-8 md:px-8 xl:grid-cols-[minmax(0,1fr)_320px]"
             >
               {presentationEditor.id ? <input type="hidden" name="id" value={presentationEditor.id} /> : null}
@@ -1182,25 +1363,19 @@ export default async function AdminPortalPage({
                   />
                 </Field>
 
-                <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-                  <Field label="URL slug">
-                    <input
-                      name="slug"
-                      defaultValue={presentationEditor.slug}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
-                      placeholder="Leave blank to auto-generate from the title"
-                    />
-                  </Field>
-                  <Field label="Content block intro">
-                    <input
-                      name="contentSnippet"
-                      defaultValue={presentationEditor.contentSnippet ?? ""}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
-                    />
-                  </Field>
-                </div>
+                <Field label="URL slug">
+                  <input
+                    name="slug"
+                    defaultValue={presentationEditor.slug}
+                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    placeholder="Leave blank to auto-generate from the title"
+                  />
+                </Field>
 
-                <Field label="Short Summary">
+                <Field
+                  label="Front-page card summary"
+                  hint="This is the shorter description shown on the homepage presentation card and in search results."
+                >
                   <textarea
                     name="shortSummary"
                     defaultValue={presentationEditor.shortSummary}
@@ -1209,7 +1384,10 @@ export default async function AdminPortalPage({
                 </Field>
 
                 <div id="presentation-content" className="scroll-mt-8">
-                  <Field label="Full Description">
+                  <Field
+                    label="Learn more — description"
+                    hint="This is the opening body copy at the top of the public Learn more page."
+                  >
                     <RichTextEditor
                       name="fullDescription"
                       defaultValue={presentationEditor.fullDescription}
@@ -1217,6 +1395,17 @@ export default async function AdminPortalPage({
                     />
                   </Field>
                 </div>
+
+                <Field
+                  label="Learn more — What to expect"
+                  hint="Shown in the What to expect section beneath the outcomes and equipment."
+                >
+                  <RichTextEditor
+                    name="contentSnippet"
+                    defaultValue={presentationEditor.contentSnippet ?? ""}
+                    placeholder="Explain what schools, students, or whānau can expect from this presentation."
+                  />
+                </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="Learning outcomes" hint="One per line — shown as a list on the public page">
@@ -1304,6 +1493,23 @@ export default async function AdminPortalPage({
 
                   <div className="mt-5 grid gap-4">
                     <Field
+                      label="Presentation colour"
+                      hint="Used consistently across the public website and every portal."
+                    >
+                      <div className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5">
+                        <input
+                          name="accentColor"
+                          type="color"
+                          defaultValue={presentationEditor.accentColor ?? "#18A83B"}
+                          className="h-10 w-14 cursor-pointer rounded-[10px] border-0 bg-transparent p-0"
+                          aria-label="Presentation colour"
+                        />
+                        <span className="text-sm text-[color:var(--text-soft)]">
+                          {presentationEditor.accentColor ?? "#18A83B"}
+                        </span>
+                      </div>
+                    </Field>
+                    <Field
                       label="Year levels"
                       hint="Comma separate multiple groups, e.g. Years 5 to 6, Years 7 to 8, Years 9 to 13 — each shows as its own tag on the website"
                     >
@@ -1333,7 +1539,7 @@ export default async function AdminPortalPage({
                     </Field>
                     <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
                       <input type="checkbox" name="isPublic" defaultChecked={presentationEditor.public} />
-                      Visible on public presentation pages
+                      Public — visible on public presentation pages
                     </label>
                   </div>
                 </div>
@@ -1352,14 +1558,25 @@ export default async function AdminPortalPage({
                           className="rounded-[20px] border border-[color:var(--border-soft)] bg-[linear-gradient(135deg,#f7fbff,#f9fcff)] px-4 py-4"
                         >
                           <p className="font-semibold text-[color:var(--navy)]">{resource.title}</p>
-                          <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {titleCase(resource.audience)} · {titleCase(resource.type)}
-                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className={resource.sharingScope === "public" ? "inline-flex rounded-full bg-[#e8f1fd] px-2.5 py-1 text-xs font-semibold text-[#1e4fae]" : "inline-flex rounded-full bg-[#f1edfd] px-2.5 py-1 text-xs font-semibold text-[#6941c6]"}>
+                              {resource.sharingScope === "public" ? "Public" : "Internal"}
+                            </span>
+                            <span className="text-sm text-[color:var(--text-soft)]">{titleCase(resource.type)}</span>
+                          </div>
                         </div>
                       ))}
                     <ButtonLink href="/admin/resources" variant="secondary" className="justify-center">
                       Manage resources
                     </ButtonLink>
+                    {presentationEditor.id ? (
+                      <ButtonLink
+                        href={`/admin/resources/new?presentation=${encodeURIComponent(presentationEditor.id)}`}
+                        className="justify-center"
+                      >
+                        Add presentation material
+                      </ButtonLink>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1421,19 +1638,46 @@ export default async function AdminPortalPage({
           </div>
         ) : null}
 
-        {route === "resources" ? (
+        {route === "training" ? (
           <div className="grid gap-4">
             {contentNotice?.scope === "resource" ? (
               <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
-              resources={portal.resources}
+              resources={portal.resources.filter((resource) => resource.category === "training")}
               presentations={portal.presentations.map((presentation) => ({
                 id: presentation.id,
                 title: presentation.title
               }))}
               action={saveResourceAction}
-              returnTo="/admin/resources"
+              returnTo="/admin/training"
+              mode="training"
+              initialTrainingView={
+                readSearchParam(resolvedSearchParams, "view") === "general" ? "general" : "packs"
+              }
+              initialTrainingPackId={readSearchParam(resolvedSearchParams, "pack")}
+              initialEditorOpen={readSearchParam(resolvedSearchParams, "add") === "1"}
+            />
+          </div>
+        ) : null}
+
+        {route === "materials" ? (
+          <div className="grid gap-4">
+            {contentNotice?.scope === "resource" ? (
+              <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
+            ) : null}
+            <ResourcesWorkspace
+              resources={portal.resources.filter(
+                (resource) => resource.category === "presentation_material"
+              )}
+              presentations={portal.presentations.map((presentation) => ({
+                id: presentation.id,
+                title: presentation.title
+              }))}
+              action={saveResourceAction}
+              returnTo="/admin/materials"
+              mode="materials"
+              initialEditorOpen={readSearchParam(resolvedSearchParams, "upload") === "1"}
             />
           </div>
         ) : null}
@@ -1521,6 +1765,7 @@ export default async function AdminPortalPage({
                   <Field label="Audiences">
                     <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm">
                       {[
+                        ["public", "Public website"],
                         ["school", "Schools"],
                         ["ambassador", "Ambassadors"],
                         ["staff", "Staff"]
@@ -1531,7 +1776,7 @@ export default async function AdminPortalPage({
                             name="audiences"
                             value={value}
                             defaultChecked={resourceEditor.audiences.includes(
-                              value as "school" | "ambassador" | "staff"
+                              value as "public" | "school" | "ambassador" | "staff"
                             )}
                           />
                           {label}
@@ -1550,10 +1795,55 @@ export default async function AdminPortalPage({
                       <option value="script">Script</option>
                       <option value="image">Image</option>
                       <option value="youtube">YouTube</option>
+                      <option value="link">External link</option>
                       <option value="file">Downloadable file</option>
                     </select>
                   </Field>
+                  <div className="lg:col-span-2">
+                    <Field label="Sharing permission">
+                      <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm sm:grid-cols-2">
+                        {[
+                          ["internal", "Internal", "NZ Esports use only. Not visible to schools."],
+                          ["public", "Public", "Approved to share with schools and the public site."]
+                        ].map(([value, label, detail]) => (
+                          <label key={value} className="flex items-start gap-2 text-[color:var(--navy)]">
+                            <input
+                              type="radio"
+                              name="sharingScope"
+                              value={value}
+                              defaultChecked={resourceEditor.sharingScope === value}
+                              className="mt-0.5"
+                            />
+                            <span>
+                              <span className="block font-semibold">{label}</span>
+                              <span className="mt-0.5 block text-xs font-normal text-[color:var(--text-soft)]">
+                                {detail}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs leading-5 text-[color:var(--text-soft)]">
+                        Public sharing is required for Schools to see this resource — internal
+                        resources stay hidden from school portals even when Schools is ticked.
+                      </p>
+                    </Field>
+                  </div>
                 </div>
+
+                <Field label="Shows under">
+                  <select
+                    name="category"
+                    defaultValue={resourceEditor.category}
+                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                  >
+                    <option value="resource">Resources — general reference material</option>
+                    <option value="training">Training — ambassador learning material</option>
+                    <option value="presentation_material">
+                      Presentation materials — ambassador session files
+                    </option>
+                  </select>
+                </Field>
 
                 <Field label="Tags" hint="Comma separated, e.g. wellbeing, parents, year-9">
                   <input
@@ -1563,7 +1853,7 @@ export default async function AdminPortalPage({
                   />
                 </Field>
 
-                <Field label="Presentation link">
+                <Field label="Linked presentation">
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
@@ -1576,6 +1866,9 @@ export default async function AdminPortalPage({
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs leading-5 text-[color:var(--text-soft)]">
+                    Linked ambassador resources are automatically included in the Materials tab.
+                  </p>
                 </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -1625,8 +1918,14 @@ export default async function AdminPortalPage({
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
                         Current file
                       </p>
-                      <ButtonLink href={resourceEditor.downloadUrl} variant="secondary" className="mt-3">
-                        Download current asset
+                      <ButtonLink
+                        href={resourceEditor.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variant="secondary"
+                        className="mt-3"
+                      >
+                        Open current asset
                       </ButtonLink>
                     </div>
                   ) : null}
@@ -1658,14 +1957,23 @@ export default async function AdminPortalPage({
                     Settings
                   </p>
                   <div className="mt-4 grid gap-3">
-                    <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                      <input type="checkbox" name="isCurrent" defaultChecked={resourceEditor.isCurrent} />
-                      Mark as current version
-                    </label>
-                    <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
-                      <input type="checkbox" name="isActive" defaultChecked={resourceEditor.isActive} />
-                      Visible to selected audience
-                    </label>
+                    {[
+                      ["published", "Published", "Visible to selected audiences"],
+                      ["draft", "Draft", "Staff and Super Admin only"],
+                      ["archived", "Archived", "Staff and Super Admin only"]
+                    ].map(([value, label, detail]) => (
+                      <label key={value} className="flex items-start gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
+                        <input
+                          type="radio"
+                          name="lifecycle"
+                          value={value}
+                          defaultChecked={
+                            value === (!resourceEditor.isActive ? "draft" : resourceEditor.isCurrent ? "published" : "archived")
+                          }
+                        />
+                        <span><span className="block font-semibold">{label}</span><span className="mt-0.5 block text-xs text-[color:var(--text-soft)]">{detail}</span></span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1902,6 +2210,30 @@ function readSearchParam(
 ) {
   const value = searchParams[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getReportApprovalNotice(searchParams: Record<string, string | string[] | undefined>) {
+  if (readSearchParam(searchParams, "approved") === "report") {
+    return readSearchParam(searchParams, "financeEmail") === "failed"
+      ? {
+          tone: "error" as const,
+          message: "Report approved and the invoice number is safe, but the finance email failed. Retry it from Payments."
+        }
+      : { tone: "success" as const, message: "Report approved and sent to finance automatically." };
+  }
+
+  if (readSearchParam(searchParams, "error") === "payment-details-required") {
+    return {
+      tone: "error" as const,
+      message: "Approval is blocked until the ambassador saves a valid account name and bank account number. They have been notified."
+    };
+  }
+
+  if (readSearchParam(searchParams, "error") === "report-review-failed") {
+    return { tone: "error" as const, message: "The report could not be approved. Please try again." };
+  }
+
+  return null;
 }
 
 function getEmailTemplatesNotice(
@@ -2146,6 +2478,10 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
     return { scope: "resource" as const, tone: "error" as const, message: "The resource could not be saved. Review the file and link details, then try again." };
   }
 
+  if (error === "resource-delete-failed") {
+    return { scope: "resource" as const, tone: "error" as const, message: "The resource could not be deleted. Please try again." };
+  }
+
   if (readSearchParam(searchParams, "saved") === "presentation") {
     return { scope: "presentation" as const, tone: "success" as const, message: "Presentation saved successfully." };
   }
@@ -2154,18 +2490,11 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
     return { scope: "resource" as const, tone: "success" as const, message: "Resource saved successfully." };
   }
 
-  return null;
-}
+  if (readSearchParam(searchParams, "deleted") === "resource") {
+    return { scope: "resource" as const, tone: "success" as const, message: "Resource deleted successfully." };
+  }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-        {label}
-      </p>
-      <p className="mt-2 text-sm leading-7 text-[color:var(--navy)]">{value}</p>
-    </div>
-  );
+  return null;
 }
 
 function NoticeBanner({
