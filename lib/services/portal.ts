@@ -53,6 +53,7 @@ export type ResourceRecord = {
   audiences: ResourceAudience[];
   sharingScope: ResourceSharingScope;
   tags: string[];
+  trainingPackId?: string;
   presentationTypeId?: string;
   presentationSlug?: string;
   presentationTitle?: string;
@@ -67,6 +68,13 @@ export type ResourceRecord = {
   isActive: boolean;
   updatedAt?: string;
   createdByName?: string;
+};
+
+export type TrainingPackRecord = {
+  id: string;
+  title: string;
+  presentationTypeId?: string;
+  createdAt?: string;
 };
 
 type RoleSummary = {
@@ -95,6 +103,7 @@ export type StaffPortalData = {
   schoolReviews: SchoolFeedbackSummary[];
   payments: PaymentRecord[];
   resources: ResourceRecord[];
+  trainingPacks: TrainingPackRecord[];
   notifications: PortalNotification[];
   activityLogs: BookingActivityLogSummary[];
   upcomingSessions: BookingSessionView[];
@@ -110,6 +119,7 @@ export type AdminPortalData = {
   presentationsCount: number;
   regions: Array<{ id: string; name: string; slug: string; isActive: boolean }>;
   resources: ResourceRecord[];
+  trainingPacks: TrainingPackRecord[];
   notifications: PortalNotification[];
   activityLogs: BookingActivityLogSummary[];
   reports: ReportSummary[];
@@ -211,7 +221,8 @@ async function loadPlatformDataUncached() {
     faqsResult,
     bookingActivityLogsResult,
     trainingModulesResult,
-    trainingLessonsResult
+    trainingLessonsResult,
+    trainingPacksResult
   ] = await Promise.all([
     admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
     admin
@@ -284,7 +295,11 @@ async function loadPlatformDataUncached() {
     admin
       .from("training_lessons")
       .select("id, training_module_id, title, lesson_type, content, youtube_url, sort_order")
-      .order("sort_order", { ascending: true })
+      .order("sort_order", { ascending: true }),
+    admin
+      .from("training_resource_packs")
+      .select("id, title, presentation_type_id, created_at")
+      .order("created_at", { ascending: true })
   ]);
   const shouldRetrySessionsWithoutWithdrawals =
     sessionsResult.error?.message?.includes("withdrawal_reason") ||
@@ -322,7 +337,8 @@ async function loadPlatformDataUncached() {
     faqs: faqsResult.data ?? [],
     bookingActivityLogs: bookingActivityLogsResult.data ?? [],
     trainingModules: trainingModulesResult.data ?? [],
-    trainingLessons: trainingLessonsResult.data ?? []
+    trainingLessons: trainingLessonsResult.data ?? [],
+    trainingPacks: trainingPacksResult.data ?? []
   };
 }
 
@@ -384,6 +400,7 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
         // audience itself as the sharing signal.
         sharingScope,
         tags: Array.isArray(resource.tags) ? (resource.tags as string[]) : [],
+        trainingPackId: (resource.training_pack_id as string | null) ?? undefined,
         presentationTypeId: (resource.presentation_type_id as string | null) ?? undefined,
         presentationSlug: (presentation?.slug as string | undefined) ?? undefined,
         presentationTitle: (presentation?.title as string | undefined) ?? undefined,
@@ -959,6 +976,15 @@ function mapPresentations(data: NonNullable<RawPlatformData>) {
   })) satisfies PresentationType[];
 }
 
+function mapTrainingPacks(data: NonNullable<RawPlatformData>): TrainingPackRecord[] {
+  return data.trainingPacks.map((pack) => ({
+    id: pack.id as string,
+    title: pack.title as string,
+    presentationTypeId: (pack.presentation_type_id as string | null) ?? undefined,
+    createdAt: (pack.created_at as string | null) ?? undefined
+  }));
+}
+
 function mapHomepageSections(data: NonNullable<RawPlatformData>) {
   return data.homepageSections.map((section) => ({
     id: section.id as string,
@@ -1065,6 +1091,12 @@ const demoSchoolReviews = demoTestimonials.map((testimonial) => ({
   isPublic: true
 })) satisfies SchoolFeedbackSummary[];
 
+const demoTrainingPacks = demoPresentations.map((presentation) => ({
+  id: presentation.id,
+  title: presentation.title,
+  presentationTypeId: presentation.id
+})) satisfies TrainingPackRecord[];
+
 // Demo data predates the category column — infer it the same way migration
 // 0015 backfills real rows: slide decks are presentation materials, other
 // ambassador prep content is training, school-facing items stay resources.
@@ -1100,6 +1132,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
         downloadUrl: resource.downloadUrl,
         embedUrl: resource.embedUrl
       })),
+      trainingPacks: demoTrainingPacks,
       notifications: [],
       activityLogs: [],
       upcomingSessions: demoBookingRequests.flatMap((booking) => booking.sessions),
@@ -1146,6 +1179,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
     schoolReviews,
     payments,
     resources,
+    trainingPacks: mapTrainingPacks(data),
     notifications: userId ? await loadUserNotifications(userId) : [],
     activityLogs,
     upcomingSessions,
@@ -1203,6 +1237,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
         tags: [],
         isActive: true
       })),
+      trainingPacks: demoTrainingPacks,
       notifications: [],
       activityLogs: [],
       reports: demoReports,
@@ -1248,6 +1283,7 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
     presentationsCount: presentations.length,
     regions,
     resources,
+    trainingPacks: mapTrainingPacks(data),
     notifications: userId ? await loadUserNotifications(userId) : [],
     activityLogs,
     reports,

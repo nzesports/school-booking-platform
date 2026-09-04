@@ -27,9 +27,11 @@ import { logoutAction } from "@/app/auth/actions";
 import {
   connectAmbassadorPortalAccountAction,
   createEmailTemplateAction,
+  createTrainingPackAction,
   deleteAmbassadorRecordAction,
   deletePortalUserAction,
   deleteRegionAction,
+  deleteTrainingPackAction,
   invitePortalUserAction,
   logStaffFeedbackAction,
   markNotificationReadAction,
@@ -1644,12 +1646,16 @@ export default async function AdminPortalPage({
               <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
+              key={readSearchParam(resolvedSearchParams, "add") === "1" ? "training-editor-open" : "training-editor-closed"}
               resources={portal.resources.filter((resource) => resource.category === "training")}
               presentations={portal.presentations.map((presentation) => ({
                 id: presentation.id,
                 title: presentation.title
               }))}
+              packs={portal.trainingPacks}
               action={saveResourceAction}
+              createPackAction={createTrainingPackAction}
+              deletePackAction={deleteTrainingPackAction}
               returnTo="/admin/training"
               mode="training"
               initialTrainingView={
@@ -1667,6 +1673,7 @@ export default async function AdminPortalPage({
               <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
+              key={readSearchParam(resolvedSearchParams, "upload") === "1" ? "materials-editor-open" : "materials-editor-closed"}
               resources={portal.resources.filter(
                 (resource) => resource.category === "presentation_material"
               )}
@@ -2482,6 +2489,38 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
     return { scope: "resource" as const, tone: "error" as const, message: "The resource could not be deleted. Please try again." };
   }
 
+  if (error === "invalid-training-pack") {
+    return { scope: "resource" as const, tone: "error" as const, message: "Enter a pack name before saving." };
+  }
+
+  if (error === "training-pack-save-failed") {
+    return { scope: "resource" as const, tone: "error" as const, message: "The training pack could not be created. Please try again." };
+  }
+
+  if (error === "training-pack-presentation-in-use") {
+    return { scope: "resource" as const, tone: "error" as const, message: "That presentation is already linked to another training pack. Choose a different presentation or leave it unlinked." };
+  }
+
+  if (error === "training-pack-storage-missing") {
+    return { scope: "resource" as const, tone: "error" as const, message: "Training pack storage has not been installed in this Supabase project. Apply database migrations 0035 and 0036, then try again." };
+  }
+
+  if (error === "training-pack-optional-link-pending") {
+    return { scope: "resource" as const, tone: "error" as const, message: "Standalone packs need the latest database update before they can be created." };
+  }
+
+  if (error === "training-pack-delete-failed") {
+    return { scope: "resource" as const, tone: "error" as const, message: "The training pack could not be deleted. Please try again." };
+  }
+
+  if (error === "training-pack-not-empty") {
+    return { scope: "resource" as const, tone: "error" as const, message: "Delete the resources inside this pack before deleting the pack." };
+  }
+
+  if (error === "training-pack-confirmation-mismatch") {
+    return { scope: "resource" as const, tone: "error" as const, message: "Type delete to confirm. Nothing was deleted." };
+  }
+
   if (readSearchParam(searchParams, "saved") === "presentation") {
     return { scope: "presentation" as const, tone: "success" as const, message: "Presentation saved successfully." };
   }
@@ -2490,8 +2529,16 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
     return { scope: "resource" as const, tone: "success" as const, message: "Resource saved successfully." };
   }
 
+  if (readSearchParam(searchParams, "saved") === "training-pack") {
+    return { scope: "resource" as const, tone: "success" as const, message: "Training pack created successfully." };
+  }
+
   if (readSearchParam(searchParams, "deleted") === "resource") {
     return { scope: "resource" as const, tone: "success" as const, message: "Resource deleted successfully." };
+  }
+
+  if (readSearchParam(searchParams, "deleted") === "training-pack") {
+    return { scope: "resource" as const, tone: "success" as const, message: "Training pack deleted. The presentation is unchanged." };
   }
 
   return null;

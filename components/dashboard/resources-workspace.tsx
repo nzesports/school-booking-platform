@@ -25,6 +25,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -32,7 +33,11 @@ import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 import type { ResourceAudience } from "@/lib/domain/types";
-import type { ResourceCategory, ResourceRecord } from "@/lib/services/portal";
+import type {
+  ResourceCategory,
+  ResourceRecord,
+  TrainingPackRecord
+} from "@/lib/services/portal";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
@@ -41,6 +46,7 @@ type ResourceStatus = "published" | "draft" | "archived";
 export type ResourceWorkspaceMode = "training" | "materials";
 type NewResourceDefaults = {
   category?: ResourceCategory;
+  trainingPackId?: string;
   presentationTypeId?: string;
 };
 
@@ -276,6 +282,9 @@ export function ResourcesWorkspace({
   resources,
   presentations,
   action,
+  packs = [],
+  createPackAction,
+  deletePackAction,
   returnTo,
   mode,
   initialTrainingView = "packs",
@@ -285,6 +294,9 @@ export function ResourcesWorkspace({
   resources: ResourceRecord[];
   presentations: Array<{ id: string; title: string }>;
   action: (formData: FormData) => void | Promise<void>;
+  packs?: TrainingPackRecord[];
+  createPackAction?: (formData: FormData) => void | Promise<void>;
+  deletePackAction?: (formData: FormData) => void | Promise<void>;
   returnTo: string;
   mode: ResourceWorkspaceMode;
   initialTrainingView?: "packs" | "general";
@@ -310,6 +322,18 @@ export function ResourcesWorkspace({
   const [selectedPackId, setSelectedPackId] = useState<string | null>(
     initialTrainingPackId ?? null
   );
+  const [packEditorOpen, setPackEditorOpen] = useState(false);
+  const [packPendingDeletion, setPackPendingDeletion] =
+    useState<TrainingPackRecord | null>(null);
+  const router = useRouter();
+
+  const closeEditor = () => {
+    setEditorResource(null);
+
+    if (initialEditorOpen) {
+      router.replace(returnTo, { scroll: false });
+    }
+  };
 
   const scopedResources = useMemo(() => {
     if (!isTraining) {
@@ -317,13 +341,25 @@ export function ResourcesWorkspace({
     }
 
     if (trainingView === "general") {
-      return resources.filter((resource) => !resource.presentationTypeId);
+      return resources.filter(
+        (resource) => !resource.trainingPackId && !resource.presentationTypeId
+      );
     }
 
-    return selectedPackId
-      ? resources.filter((resource) => resource.presentationTypeId === selectedPackId)
-      : [];
-  }, [isTraining, resources, selectedPackId, trainingView]);
+    if (!selectedPackId) {
+      return [];
+    }
+
+    const selectedPack = packs.find((pack) => pack.id === selectedPackId);
+
+    return resources.filter(
+      (resource) =>
+        resource.trainingPackId === selectedPackId ||
+        (!resource.trainingPackId &&
+          Boolean(selectedPack?.presentationTypeId) &&
+          resource.presentationTypeId === selectedPack?.presentationTypeId)
+    );
+  }, [isTraining, packs, resources, selectedPackId, trainingView]);
 
   const stats = useMemo(() => {
     const total = scopedResources.length;
@@ -342,28 +378,43 @@ export function ResourcesWorkspace({
 
   const trainingPacks = useMemo(() => {
     const packResources = new Map<string, ResourceRecord[]>();
+    const packIdByPresentationId = new Map(
+      packs.flatMap((pack) =>
+        pack.presentationTypeId ? [[pack.presentationTypeId, pack.id] as const] : []
+      )
+    );
 
     for (const resource of resources) {
-      if (resource.category !== "training" || !resource.presentationTypeId) {
+      if (resource.category !== "training") {
         continue;
       }
 
-      const existingItems = packResources.get(resource.presentationTypeId);
+      const packId =
+        resource.trainingPackId ??
+        (resource.presentationTypeId
+          ? packIdByPresentationId.get(resource.presentationTypeId)
+          : undefined);
+
+      if (!packId) {
+        continue;
+      }
+
+      const existingItems = packResources.get(packId);
 
       if (existingItems) {
         existingItems.push(resource);
       } else {
-        packResources.set(resource.presentationTypeId, [resource]);
+        packResources.set(packId, [resource]);
       }
     }
 
-    return presentations.map((presentation) => {
-      const items = packResources.get(presentation.id) ?? [];
+    return packs.map((pack) => {
+      const items = packResources.get(pack.id) ?? [];
       const published = items.filter((resource) => statusOf(resource) === "published").length;
 
-      return { presentation, items, published };
+      return { pack, items, published };
     });
-  }, [presentations, resources]);
+  }, [packs, resources]);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -425,16 +476,19 @@ export function ResourcesWorkspace({
     }
   };
   const selectedPack = trainingPacks.find(
-    ({ presentation }) => presentation.id === selectedPackId
+    ({ pack }) => pack.id === selectedPackId
   );
   const generalTrainingCount = resources.filter(
-    (resource) => resource.category === "training" && !resource.presentationTypeId
+    (resource) =>
+      resource.category === "training" &&
+      !resource.trainingPackId &&
+      !resource.presentationTypeId
   ).length;
   const showLibrary = !isTraining || trainingView === "general" || Boolean(selectedPack);
   const editorPackId =
     editorResource === "new"
-      ? newResourceDefaults.presentationTypeId
-      : editorResource?.presentationTypeId;
+      ? newResourceDefaults.trainingPackId
+      : editorResource?.trainingPackId;
   const editorReturnTo = isTraining
     ? `${returnTo}?view=${editorPackId ? "packs" : trainingView}${
         editorPackId ? `&pack=${encodeURIComponent(editorPackId)}` : ""
@@ -487,18 +541,29 @@ export function ResourcesWorkspace({
               </h2>
             </div>
           </div>
-          <span className="rounded-full bg-white px-3.5 py-2 text-sm font-semibold text-[#117a2e] shadow-sm">
-            {trainingPacks.filter((pack) => pack.published > 0).length}/{trainingPacks.length} packs published
-          </span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="rounded-full bg-white px-3.5 py-2 text-sm font-semibold text-[#117a2e] shadow-sm">
+              {trainingPacks.filter((pack) => pack.published > 0).length}/{trainingPacks.length} packs published
+            </span>
+            {createPackAction ? (
+              <Button
+                type="button"
+                onClick={() => setPackEditorOpen(true)}
+                className="min-h-[40px] rounded-[12px] px-4 shadow-none"
+              >
+                <Plus className="h-4 w-4" /> Add pack
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {trainingPacks.map(({ presentation, items, published }) => (
+          {trainingPacks.map(({ pack, items, published }) => (
             <article
-              key={presentation.id}
+              key={pack.id}
               className={cn(
                 "flex min-h-[168px] flex-col rounded-[20px] border bg-white p-4 transition",
-                selectedPackId === presentation.id
+                selectedPackId === pack.id
                   ? "border-[#18a83b] shadow-[0_12px_30px_rgba(17,122,46,0.1)]"
                   : "border-[color:var(--border-soft)] hover:border-[#bfe6d2]"
               )}
@@ -507,21 +572,47 @@ export function ResourcesWorkspace({
                 <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eaf8ee] text-[#117a2e]">
                   <Presentation className="h-4.5 w-4.5" />
                 </span>
-                <span className={cn(
-                  "rounded-full px-2.5 py-1 text-xs font-semibold",
-                  published > 0 ? "bg-[#eaf8ee] text-[#117a2e]" : "bg-[#f1f5f2] text-[#64748b]"
-                )}>
-                  {published > 0 ? `${published} published` : "Empty pack"}
-                </span>
+                <div className="flex items-center gap-2">
+                  {deletePackAction ? (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={items.length > 0}
+                      title={
+                        items.length > 0
+                          ? "Delete the resources in this pack before deleting the pack."
+                          : `Delete the ${pack.title} training pack`
+                      }
+                      aria-label={`Delete ${pack.title} training pack`}
+                      aria-haspopup="dialog"
+                      onClick={() => setPackPendingDeletion(pack)}
+                      className="h-8 min-h-0 w-8 rounded-[10px] border-[#f4b7b3] bg-[#fff7f6] px-0 py-0 text-[#c93b32] shadow-none hover:border-[#e88f88] hover:bg-[#fff0ee]"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : null}
+                  <span className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-semibold",
+                    published > 0 ? "bg-[#eaf8ee] text-[#117a2e]" : "bg-[#f1f5f2] text-[#64748b]"
+                  )}>
+                    {published > 0 ? `${published} published` : "Empty pack"}
+                  </span>
+                </div>
               </div>
-              <h3 className="mt-3 font-semibold text-[color:var(--navy)]">{presentation.title}</h3>
+              <h3 className="mt-3 font-semibold text-[color:var(--navy)]">{pack.title}</h3>
               <p className="mt-1 text-sm text-[color:var(--text-soft)]">
                 {items.length} {items.length === 1 ? "resource" : "resources"} in this training pack
               </p>
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 <Button
                   type="button"
-                  onClick={() => openNewResource({ category: "training", presentationTypeId: presentation.id })}
+                  onClick={() =>
+                    openNewResource({
+                      category: "training",
+                      trainingPackId: pack.id,
+                      presentationTypeId: pack.presentationTypeId
+                    })
+                  }
                   className="min-h-[38px] rounded-[11px] px-3 py-1.5 shadow-none"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add to pack
@@ -529,11 +620,11 @@ export function ResourcesWorkspace({
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => viewTrainingPack(presentation.id)}
-                  aria-pressed={selectedPackId === presentation.id}
+                  onClick={() => viewTrainingPack(pack.id)}
+                  aria-pressed={selectedPackId === pack.id}
                   className="min-h-[38px] rounded-[11px] border-[#bfe6d2] px-3 py-1.5 text-[#117a2e] shadow-none hover:bg-[#f0fbf5]"
                 >
-                  {selectedPackId === presentation.id ? "Close pack" : "Open pack"}
+                  {selectedPackId === pack.id ? "Close pack" : "Open pack"}
                 </Button>
               </div>
             </article>
@@ -565,7 +656,7 @@ export function ResourcesWorkspace({
                 {selectedPack ? "Selected presentation pack" : "General training"}
               </p>
               <h2 className="mt-1 text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
-                {selectedPack?.presentation.title ?? "General training resources"}
+                {selectedPack?.pack.title ?? "General training resources"}
               </h2>
             </div>
           </div>
@@ -575,7 +666,8 @@ export function ResourcesWorkspace({
             onClick={() =>
               openNewResource({
                 category: "training",
-                presentationTypeId: selectedPack?.presentation.id
+                trainingPackId: selectedPack?.pack.id,
+                presentationTypeId: selectedPack?.pack.presentationTypeId
               })
             }
             className="rounded-[14px] border-[#bfe6d2] bg-white text-[#117a2e] hover:bg-[#eaf8ee]"
@@ -956,17 +1048,162 @@ export function ResourcesWorkspace({
       {editorResource !== null ? (
         <ResourceEditorDialog
           resource={editorResource === "new" ? null : editorResource}
+          defaultTrainingPackId={
+            editorResource === "new" ? newResourceDefaults.trainingPackId : undefined
+          }
           defaultPresentationTypeId={
             editorResource === "new" ? newResourceDefaults.presentationTypeId : undefined
           }
+          packs={packs}
           presentations={presentations}
           action={action}
           returnTo={editorReturnTo}
           lockedCategory={lockedCategory}
-          onClose={() => setEditorResource(null)}
+          onClose={closeEditor}
+        />
+      ) : null}
+      {packEditorOpen && createPackAction ? (
+        <TrainingPackEditorDialog
+          action={createPackAction}
+          presentations={presentations}
+          returnTo={returnTo}
+          onClose={() => setPackEditorOpen(false)}
+        />
+      ) : null}
+      {packPendingDeletion && deletePackAction ? (
+        <DeleteTrainingPackDialog
+          pack={packPendingDeletion}
+          action={deletePackAction}
+          returnTo={returnTo}
+          onClose={() => setPackPendingDeletion(null)}
         />
       ) : null}
     </div>
+  );
+}
+
+function DeleteTrainingPackDialog({
+  pack,
+  action,
+  returnTo,
+  onClose
+}: {
+  pack: TrainingPackRecord;
+  action: (formData: FormData) => void | Promise<void>;
+  returnTo: string;
+  onClose: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const isConfirmed = confirmation.trim().toLowerCase() === "delete";
+
+  return createPortal(
+    <BookingDialogShell
+      kicker="Confirm deletion"
+      title="Delete training pack?"
+      onClose={onClose}
+      maxWidthClassName="max-w-[560px]"
+      overlayClassName="z-[90]"
+      compact
+    >
+      <form
+        action={action}
+        className="mt-6 grid gap-5"
+        onSubmit={(event) => {
+          if (!isConfirmed) {
+            event.preventDefault();
+          }
+        }}
+      >
+        <input type="hidden" name="packId" value={pack.id} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <label className="grid gap-2 text-sm font-semibold text-[color:var(--navy)]">
+          <span>
+            Type <strong>delete</strong> to permanently remove this training pack; its linked presentation will remain unchanged.
+          </span>
+          <input
+            name="confirmDelete"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="off"
+            autoFocus
+            placeholder="delete"
+            className="w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[#d66a62] focus:ring-4 focus:ring-[rgba(201,59,50,0.1)]"
+          />
+        </label>
+        <div className="flex items-center justify-end gap-3 border-t border-[color:var(--border-soft)] pt-4">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Keep pack
+          </Button>
+          <Button type="submit" variant="danger" disabled={!isConfirmed}>
+            <Trash2 className="h-4 w-4" /> Delete pack
+          </Button>
+        </div>
+      </form>
+    </BookingDialogShell>,
+    document.body
+  );
+}
+
+function TrainingPackEditorDialog({
+  action,
+  presentations,
+  returnTo,
+  onClose
+}: {
+  action: (formData: FormData) => void | Promise<void>;
+  presentations: Array<{ id: string; title: string }>;
+  returnTo: string;
+  onClose: () => void;
+}) {
+  const inputClassName =
+    "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+
+  return createPortal(
+    <BookingDialogShell
+      kicker="Ambassador training"
+      title="Add a presentation pack"
+      onClose={onClose}
+      maxWidthClassName="max-w-[560px]"
+      overlayClassName="z-[85]"
+    >
+      <form action={action} className="mt-6 grid gap-5">
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+          Pack name *
+          <input
+            name="title"
+            required
+            minLength={2}
+            autoFocus
+            placeholder="e.g. Tournament organiser training"
+            className={inputClassName}
+          />
+        </label>
+        <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+          Linked presentation
+          <select name="presentationTypeId" defaultValue="" className={inputClassName}>
+            <option value="">No linked presentation</option>
+            {presentations.map((presentation) => (
+              <option key={presentation.id} value={presentation.id}>
+                {presentation.title}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs font-normal leading-5 text-[color:var(--text-soft)]">
+            Optional. Linking a presentation automatically associates new pack resources with it.
+          </span>
+        </label>
+        <div className="flex items-center justify-end gap-3 border-t border-[color:var(--border-soft)] pt-4">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">
+            <Plus className="h-4 w-4" /> Add pack
+          </Button>
+        </div>
+      </form>
+    </BookingDialogShell>,
+    document.body
   );
 }
 
@@ -1021,7 +1258,9 @@ function ResourceActions({
 
 function ResourceEditorDialog({
   resource,
+  defaultTrainingPackId,
   defaultPresentationTypeId,
+  packs,
   presentations,
   action,
   returnTo,
@@ -1029,7 +1268,9 @@ function ResourceEditorDialog({
   onClose
 }: {
   resource: ResourceRecord | null;
+  defaultTrainingPackId?: string;
   defaultPresentationTypeId?: string;
+  packs: TrainingPackRecord[];
   presentations: Array<{ id: string; title: string }>;
   action: (formData: FormData) => void | Promise<void>;
   returnTo: string;
@@ -1049,6 +1290,9 @@ function ResourceEditorDialog({
   const [presentationTypeId, setPresentationTypeId] = useState(
     resource?.presentationTypeId ?? defaultPresentationTypeId ?? ""
   );
+  const [trainingPackId, setTrainingPackId] = useState(
+    resource?.trainingPackId ?? defaultTrainingPackId ?? ""
+  );
   const [audiences, setAudiences] = useState<ResourceAudience[]>(
     selectableInitialAudiences.length > 0 ? selectableInitialAudiences : ["ambassador"]
   );
@@ -1058,9 +1302,7 @@ function ResourceEditorDialog({
   const [resourceStatus, setResourceStatus] = useState<ResourceStatus>(
     resource ? statusOf(resource) : "published"
   );
-  const selectedPresentation = presentations.find(
-    (presentation) => presentation.id === presentationTypeId
-  );
+  const selectedTrainingPack = packs.find((pack) => pack.id === trainingPackId);
   const isTrainingResource = category === "training";
   const requiresPresentation = category === "presentation_material";
   const inputClassName =
@@ -1074,8 +1316,8 @@ function ResourceEditorDialog({
       title={
         resource
           ? resource.title
-          : isTrainingResource && selectedPresentation
-            ? `Add to ${selectedPresentation.title}`
+          : isTrainingResource && selectedTrainingPack
+            ? `Add to ${selectedTrainingPack.title}`
             : "Add a resource"
       }
       onClose={onClose}
@@ -1222,25 +1464,48 @@ function ResourceEditorDialog({
                   })}
                 </div>
               </fieldset>
-              <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
-                {requiresPresentation ? "Presentation *" : "Presentation pack"}
-                <select
-                  name="presentationTypeId"
-                  required={requiresPresentation}
-                  value={presentationTypeId}
-                  onChange={(event) => setPresentationTypeId(event.target.value)}
-                  className={inputClassName}
-                >
-                  <option value="">
-                    {requiresPresentation ? "Choose a presentation" : "General training"}
-                  </option>
-                  {presentations.map((presentation) => (
-                    <option key={presentation.id} value={presentation.id}>
-                      {presentation.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {isTrainingResource ? (
+                <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+                  Training pack
+                  <select
+                    name="trainingPackId"
+                    value={trainingPackId}
+                    onChange={(event) => {
+                      const nextPackId = event.target.value;
+                      const nextPack = packs.find((pack) => pack.id === nextPackId);
+                      setTrainingPackId(nextPackId);
+                      setPresentationTypeId(nextPack?.presentationTypeId ?? "");
+                    }}
+                    className={inputClassName}
+                  >
+                    <option value="">General training</option>
+                    {packs.map((pack) => (
+                      <option key={pack.id} value={pack.id}>
+                        {pack.title}
+                      </option>
+                    ))}
+                  </select>
+                  <input type="hidden" name="presentationTypeId" value={presentationTypeId} />
+                </label>
+              ) : (
+                <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+                  Presentation *
+                  <select
+                    name="presentationTypeId"
+                    required={requiresPresentation}
+                    value={presentationTypeId}
+                    onChange={(event) => setPresentationTypeId(event.target.value)}
+                    className={inputClassName}
+                  >
+                    <option value="">Choose a presentation</option>
+                    {presentations.map((presentation) => (
+                      <option key={presentation.id} value={presentation.id}>
+                        {presentation.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
                 <span className="inline-flex items-center gap-2"><Tags className="h-4 w-4 text-[color:var(--text-soft)]" /> Tags</span>
                 <input

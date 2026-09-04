@@ -446,6 +446,7 @@ const resourceSchema = z
     tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
     resourceType: z.string().min(1),
     category: z.enum(["resource", "training", "presentation_material"]).default("resource"),
+    trainingPackId: z.uuid().optional(),
     presentationTypeId: z.uuid().optional(),
     versionLabel: z.string().optional(),
     youtubeUrl: z.string().optional(),
@@ -5018,6 +5019,7 @@ export async function saveResourceAction(formData: FormData) {
     tags: splitCommaList(String(formData.get("tags") || "")),
     resourceType: String(formData.get("resourceType") || ""),
     category: String(formData.get("category") || "resource"),
+    trainingPackId: String(formData.get("trainingPackId") || "") || undefined,
     presentationTypeId: String(formData.get("presentationTypeId") || "") || undefined,
     versionLabel: String(formData.get("versionLabel") || "") || undefined,
     youtubeUrl: String(formData.get("youtubeUrl") || "") || undefined,
@@ -5072,6 +5074,7 @@ export async function saveResourceAction(formData: FormData) {
     tags: parsed.data.tags,
     resource_type: parsed.data.resourceType,
     category: normalizedCategory,
+    training_pack_id: parsed.data.trainingPackId || null,
     presentation_type_id: parsed.data.presentationTypeId || null,
     version_label: parsed.data.versionLabel || null,
     youtube_url: parsed.data.youtubeUrl || null,
@@ -5108,6 +5111,11 @@ export async function saveResourceAction(formData: FormData) {
     ({ data, error } = await runSave(savePayload));
   }
 
+  if (error?.message?.includes("training_pack_id")) {
+    delete savePayload.training_pack_id;
+    ({ data, error } = await runSave(savePayload));
+  }
+
   // Allow saves to continue in local environments that have not applied the
   // sharing-scope migration yet. The portal will treat those rows as internal.
   if (error?.message?.includes("sharing_scope")) {
@@ -5135,6 +5143,139 @@ export async function saveResourceAction(formData: FormData) {
   }
 
   redirect(appendSearchParam(parsed.data.returnTo, "saved", "resource"));
+}
+
+export async function createTrainingPackAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/admin/training"),
+    "/admin/training"
+  );
+  const parsed = z
+    .object({
+      title: z.string().trim().min(2).max(120),
+      presentationTypeId: z.uuid().optional()
+    })
+    .safeParse({
+      title: String(formData.get("title") || ""),
+      presentationTypeId: String(formData.get("presentationTypeId") || "") || undefined
+    });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-training-pack"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const insertPayload = {
+    title: parsed.data.title,
+    created_by: actor.id,
+    ...(parsed.data.presentationTypeId
+      ? { presentation_type_id: parsed.data.presentationTypeId }
+      : {})
+  };
+  const { data, error } = await admin
+    .from("training_resource_packs")
+    .insert(insertPayload)
+    .select("id")
+    .single();
+
+  if (error?.code === "23505" && parsed.data.presentationTypeId) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-presentation-in-use"));
+  }
+
+  if (
+    error?.code === "PGRST205" ||
+    error?.code === "42P01" ||
+    error?.message.toLowerCase().includes("training_resource_packs")
+  ) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-storage-missing"));
+  }
+
+  if (
+    error?.code === "23502" &&
+    error.message.toLowerCase().includes("presentation_type_id")
+  ) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-optional-link-pending"));
+  }
+
+  if (error || !data) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-save-failed"));
+  }
+
+  await logAuditEvent(actor.id, "training_pack.created", "training_resource_pack", data.id);
+  updateTag(PUBLIC_CONTENT_TAG);
+  revalidatePath("/admin/training");
+  revalidatePath("/staff/training");
+  redirect(appendSearchParam(returnTo, "saved", "training-pack"));
+}
+
+export async function deleteTrainingPackAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/admin/training"),
+    "/admin/training"
+  );
+  const parsed = z
+    .object({
+      packId: z.uuid(),
+      confirmDelete: z.string().trim().min(1).max(20)
+    })
+    .safeParse({
+      packId: String(formData.get("packId") || ""),
+      confirmDelete: String(formData.get("confirmDelete") || "")
+    });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-training-pack"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: pack, error: packError } = await admin
+    .from("training_resource_packs")
+    .select("id")
+    .eq("id", parsed.data.packId)
+    .maybeSingle();
+
+  if (packError || !pack) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-delete-failed"));
+  }
+
+  if (parsed.data.confirmDelete.toLowerCase() !== "delete") {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-confirmation-mismatch"));
+  }
+
+  const { count, error: resourceError } = await admin
+    .from("presentation_resources")
+    .select("id", { count: "exact", head: true })
+    .eq("training_pack_id", parsed.data.packId);
+
+  if (resourceError) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-delete-failed"));
+  }
+
+  if ((count ?? 0) > 0) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-not-empty"));
+  }
+
+  const { error } = await admin
+    .from("training_resource_packs")
+    .delete()
+    .eq("id", parsed.data.packId);
+
+  if (error) {
+    redirect(appendSearchParam(returnTo, "error", "training-pack-delete-failed"));
+  }
+
+  await logAuditEvent(
+    actor.id,
+    "training_pack.deleted",
+    "training_resource_pack",
+    parsed.data.packId
+  );
+  updateTag(PUBLIC_CONTENT_TAG);
+  revalidatePath("/admin/training");
+  revalidatePath("/staff/training");
+  redirect(appendSearchParam(returnTo, "deleted", "training-pack"));
 }
 
 export async function savePresentationAction(formData: FormData) {

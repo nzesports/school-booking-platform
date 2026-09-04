@@ -19,7 +19,9 @@ import {
 import { logoutAction } from "@/app/auth/actions";
 import {
   connectAmbassadorPortalAccountAction,
+  createTrainingPackAction,
   deleteAmbassadorRecordAction,
+  deleteTrainingPackAction,
   markNotificationReadAction,
   markReportReviewedAction,
   logStaffFeedbackAction,
@@ -523,12 +525,16 @@ export default async function StaffPortalPage({
               <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
+              key={readSearchParam(resolvedSearchParams, "add") === "1" ? "training-editor-open" : "training-editor-closed"}
               resources={portal.resources.filter((resource) => resource.category === "training")}
               presentations={portal.presentations.map((presentation) => ({
                 id: presentation.id,
                 title: presentation.title
               }))}
+              packs={portal.trainingPacks}
               action={saveResourceAction}
+              createPackAction={createTrainingPackAction}
+              deletePackAction={deleteTrainingPackAction}
               returnTo="/staff/training"
               mode="training"
               initialTrainingView={
@@ -546,6 +552,7 @@ export default async function StaffPortalPage({
               <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
             ) : null}
             <ResourcesWorkspace
+              key={readSearchParam(resolvedSearchParams, "upload") === "1" ? "materials-editor-open" : "materials-editor-closed"}
               resources={portal.resources.filter(
                 (resource) => resource.category === "presentation_material"
               )}
@@ -1177,6 +1184,62 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
     };
   }
 
+  if (error === "invalid-training-pack") {
+    return {
+      tone: "error" as const,
+      message: "Enter a pack name before saving."
+    };
+  }
+
+  if (error === "training-pack-save-failed") {
+    return {
+      tone: "error" as const,
+      message: "The training pack could not be created. Please try again."
+    };
+  }
+
+  if (error === "training-pack-presentation-in-use") {
+    return {
+      tone: "error" as const,
+      message: "That presentation is already linked to another training pack. Choose a different presentation or leave it unlinked."
+    };
+  }
+
+  if (error === "training-pack-storage-missing") {
+    return {
+      tone: "error" as const,
+      message: "Training pack storage has not been installed in this Supabase project. Apply database migrations 0035 and 0036, then try again."
+    };
+  }
+
+  if (error === "training-pack-optional-link-pending") {
+    return {
+      tone: "error" as const,
+      message: "Standalone packs need the latest database update before they can be created."
+    };
+  }
+
+  if (error === "training-pack-delete-failed") {
+    return {
+      tone: "error" as const,
+      message: "The training pack could not be deleted. Please try again."
+    };
+  }
+
+  if (error === "training-pack-not-empty") {
+    return {
+      tone: "error" as const,
+      message: "Delete the resources inside this pack before deleting the pack."
+    };
+  }
+
+  if (error === "training-pack-confirmation-mismatch") {
+    return {
+      tone: "error" as const,
+      message: "Type delete to confirm. Nothing was deleted."
+    };
+  }
+
   if (saved === "resource") {
     return {
       tone: "success" as const,
@@ -1184,10 +1247,24 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
     };
   }
 
+  if (saved === "training-pack") {
+    return {
+      tone: "success" as const,
+      message: "Training pack created successfully."
+    };
+  }
+
   if (deleted === "resource") {
     return {
       tone: "success" as const,
       message: "Resource deleted successfully."
+    };
+  }
+
+  if (deleted === "training-pack") {
+    return {
+      tone: "success" as const,
+      message: "Training pack deleted. The linked presentation is unchanged."
     };
   }
 
