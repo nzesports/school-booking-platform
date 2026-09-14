@@ -15,7 +15,6 @@ const SOCIAL_LINKS = [
   { href: "https://www.youtube.com/@nzesports", icon: "youtube", label: "YouTube" }
 ];
 
-const WEBSITE_URL = "https://www.nzesports.org.nz/";
 
 // Wraps every outgoing email body in the NZ Esports branded shell: logo
 // header with the School Presentations pill, white content card, and a footer
@@ -64,7 +63,7 @@ export function renderBrandedEmail(
                 <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto;">
                   <tr>
                     <td align="center" style="text-align:center; padding:0 0 26px 0;">
-                      <a href="${WEBSITE_URL}" style="display:inline-block; text-decoration:none;">
+                      <a href="${platformUrl}" style="display:inline-block; text-decoration:none;">
                         <img
                           src="${NZ_ESPORTS_LOGO}"
                           alt="NZ Esports"
@@ -96,7 +95,7 @@ ${bodyHtml}
             <tr>
               <td align="center" style="background:#f6fbfd; padding:36px 32px; text-align:center; border-top:1px solid #dcebf3;">
 
-                <a href="${WEBSITE_URL}" style="display:inline-block; text-decoration:none;">
+                <a href="${platformUrl}" style="display:inline-block; text-decoration:none;">
                   <img
                     src="${NZ_ESPORTS_LOGO}"
                     alt="NZ Esports"
@@ -136,7 +135,7 @@ ${socialIcons}
                 </p>
 
                 <p style="margin:0 auto 8px auto; max-width:500px; font-size:12px; line-height:1.6; color:#7a8798; text-align:center;">
-                  <a href="${WEBSITE_URL}" style="color:#13a64a; text-decoration:underline;">nzesports.org.nz</a>
+                  <a href="${platformUrl}" style="color:#13a64a; text-decoration:underline;">${new URL(platformUrl).host}</a>
                   &nbsp;·&nbsp;
                   <a href="${platformUrl}" style="color:#13a64a; text-decoration:underline;">Booking platform</a>
                   ${
@@ -149,7 +148,7 @@ ${socialIcons}
 
                 <p style="margin:0 auto; max-width:500px; font-size:12px; line-height:1.6; color:#7a8798; text-align:center;">
                   &copy; ${new Date().getFullYear()}
-                  <a href="${WEBSITE_URL}" style="color:#040F4B; text-decoration:none; font-weight:700;">NZ Esports</a>.
+                  <a href="${platformUrl}" style="color:#040F4B; text-decoration:none; font-weight:700;">NZ Esports</a>.
                   All rights reserved.
                 </p>
 

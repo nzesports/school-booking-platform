@@ -58,6 +58,9 @@ export default async function RootLayout({
       lang="en"
       className={`${quicksand.variable} ${rozhaOne.variable} ${lilitaOne.variable}`}
     >
+      {/* suppressHydrationWarning: browser extensions (ColorZilla, Grammarly, ...)
+          inject attributes into <body> before React hydrates; only this element's
+          attribute mismatches are suppressed, children are still validated. */}
       <body
         suppressHydrationWarning
         className="min-h-screen bg-[var(--page-background)] text-[color:var(--text-dark)] antialiased"

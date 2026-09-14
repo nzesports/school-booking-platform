@@ -23,10 +23,6 @@ import {
   sendAmbassadorApprovedEmail,
   sendAmbassadorAssignedEmail,
   sendAmbassadorWithdrawalResolvedEmail,
-  sendBookingCancelledEmail,
-  sendBookingConfirmedEmail,
-  sendBookingRescheduledEmail,
-  sendFeedbackRequestEmail,
   sendPaymentApprovalToFinanceEmail
 } from "@/lib/services/email-triggers";
 import {
@@ -45,6 +41,8 @@ import {
   uploadPrivateResourceFile,
   uploadPublicAsset
 } from "@/lib/services/storage";
+import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
+import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
@@ -1286,10 +1284,10 @@ export async function reviewAmbassadorAction(formData: FormData) {
       : { data: null };
 
     if (approvedUser?.email) {
-      void sendAmbassadorApprovedEmail({
+      scheduleEmail(() => sendAmbassadorApprovedEmail({
         ambassadorEmail: approvedUser.email as string,
         ambassadorName: (approvedUser.full_name as string | null) ?? "there"
-      }).catch(() => {});
+      }));
     }
   }
 
@@ -1881,6 +1879,9 @@ export async function saveManualBookingAction(formData: FormData) {
     reason: "Manual staff entry"
   });
 
+  if (effectiveStatus === "confirmed") {
+    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "confirmed"));
+  }
   await logAuditEvent(actor.id, "booking.manually_created", "booking_request", booking.id);
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -2041,6 +2042,9 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     relatedUrl: `/staff/bookings?booking=${booking.id}`
   }).catch(() => {});
 
+  if (status === "confirmed") {
+    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "confirmed"));
+  }
   await logAuditEvent(actor.id, "booking.ambassador_created", "booking_request", booking.id);
   revalidatePath("/ambassador");
   revalidatePath("/staff");
@@ -3652,26 +3656,8 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     }))
   ]);
 
-  const firstSession = (activeSessions ?? [])[0];
-  const [{ data: changeSchool }, { data: contact }, { data: presentation }] = await Promise.all([
-    booking.school_id
-      ? admin.from("schools").select("name").eq("id", booking.school_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    booking.primary_contact_id
-      ? admin
-          .from("school_contacts")
-          .select("full_name, email")
-          .eq("id", booking.primary_contact_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    firstSession?.presentation_type_id
-      ? admin
-          .from("presentation_types")
-          .select("title")
-          .eq("id", firstSession.presentation_type_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null })
-  ]);
+  const { data: changeSchool } = await admin.from("schools").select("name")
+    .eq("id", booking.school_id).maybeSingle();
   void notifyStaff({
     title: `${(changeSchool?.name as string | null) ?? "A school"} cancelled a booking`,
     body: parsed.data.notes ?? "The school cancelled its booking.",
@@ -3679,18 +3665,8 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     relatedUrl: "/staff/bookings"
   }).catch(() => {});
 
-  if (contact?.email && firstSession) {
-    void sendBookingCancelledEmail({
-      contactEmail: contact.email as string,
-      contactName: (contact.full_name as string | null) ?? "there",
-      schoolName: (changeSchool?.name as string | null) ?? "your school",
-      sessionDate: formatDateTime(firstSession.starts_at as string),
-      presentationTitle: (presentation?.title as string | null) ?? "your presentation",
-      bookingId: parsed.data.bookingRequestId,
-      referenceCode: (booking.reference_code as string | null) ?? undefined,
-      bookingSessionId: firstSession.id as string
-    }).catch(() => {});
-  }
+  scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+    (activeSessions ?? []).map((session) => session.id as string), "cancelled"));
 
   const ambassadorIds = [
     ...new Set(
@@ -3857,6 +3833,9 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
     relatedUrl: `/staff/bookings?booking=${parsed.data.bookingRequestId}`
   }).catch(() => {});
 
+  scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+    [parsed.data.bookingSessionId], "reschedule_requested", parsed.data.preferredDate));
+
   await logAuditEvent(
     actor.id,
     "session.reschedule_requested",
@@ -3993,27 +3972,15 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
 
   const [
     { data: school },
-    { data: presentation },
-    { data: contact },
-    { data: bookingRequest }
+    { data: contact }
   ] = await Promise.all([
     admin.from("schools").select("name, address").eq("id", session.school_id).maybeSingle(),
-    admin
-      .from("presentation_types")
-      .select("title")
-      .eq("id", session.presentation_type_id)
-      .maybeSingle(),
     admin
       .from("school_contacts")
       .select("id, full_name, email")
       .eq("school_id", session.school_id)
       .order("is_primary", { ascending: false })
       .limit(1)
-      .maybeSingle(),
-    admin
-      .from("booking_requests")
-      .select("reference_code")
-      .eq("id", session.booking_request_id)
       .maybeSingle()
   ]);
 
@@ -4039,20 +4006,10 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     }
   }
 
-  if (parsed.data.decision === "approve" && contact?.email) {
-    void sendBookingRescheduledEmail({
-      contactEmail: contact.email as string,
-      contactName: (contact.full_name as string | null) ?? "there",
-      schoolName: (school?.name as string | null) ?? "your school",
-      sessionDate: formatDateTime(finalStartsAt),
-      presentationTitle: (presentation?.title as string | null) ?? "your presentation",
-      bookingId: session.booking_request_id as string,
-      referenceCode: (bookingRequest?.reference_code as string | null) ?? undefined,
-      bookingSessionId: session.id as string,
-      sessionStartsAt: finalStartsAt,
-      sessionEndsAt: finalEndsAt
-    }).catch(() => {});
+  scheduleEmail(() => sendSchoolSessionEmails(session.booking_request_id as string,
+    [session.id as string], parsed.data.decision === "approve" ? "rescheduled" : "reschedule_declined"));
 
+  if (parsed.data.decision === "approve") {
     void syncSessionToCalendar({
       bookingSessionId: session.id as string,
       title: `Esports Session - ${(school?.name as string | null) ?? "School"}`,
@@ -4218,7 +4175,7 @@ export async function resolveSessionWithdrawalAction(formData: FormData) {
   }
 
   if (ambassadorUser?.email) {
-    void sendAmbassadorWithdrawalResolvedEmail({
+    scheduleEmail(() => sendAmbassadorWithdrawalResolvedEmail({
       ambassadorEmail: ambassadorUser.email as string,
       ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
       schoolName: (school?.name as string | null) ?? "School",
@@ -4227,7 +4184,7 @@ export async function resolveSessionWithdrawalAction(formData: FormData) {
       decision: approved ? "approved" : "declined",
       staffNote: parsed.data.note,
       bookingSessionId: parsed.data.bookingSessionId
-    }).catch(() => {});
+    }));
   }
 
   await logAuditEvent(
@@ -4530,7 +4487,7 @@ export async function assignAmbassadorAction(formData: FormData) {
     : { data: null };
 
   if (session && school && presentation && ambassadorUser?.email) {
-    void sendAmbassadorAssignedEmail({
+    scheduleEmail(() => sendAmbassadorAssignedEmail({
       ambassadorEmail: ambassadorUser.email as string,
       ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
       schoolName: (school.name as string | null) ?? "School",
@@ -4538,7 +4495,7 @@ export async function assignAmbassadorAction(formData: FormData) {
       sessionAddress: (school.address as string | null) ?? "",
       presentationTitle: (presentation.title as string | null) ?? "Presentation",
       bookingSessionId: parsed.data.bookingSessionId
-    }).catch(() => {});
+    }));
 
     void syncSessionToCalendar({
       bookingSessionId: parsed.data.bookingSessionId,
@@ -4676,6 +4633,7 @@ export async function updateBookingStatusAction(formData: FormData) {
   }
 
   const cascade = SESSION_CASCADE[parsed.data.status];
+  let affectedSessionIds: string[] = [];
 
   if (cascade) {
     let sessionUpdate = admin
@@ -4687,7 +4645,8 @@ export async function updateBookingStatusAction(formData: FormData) {
       sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
     }
 
-    const { error: cascadeError } = await sessionUpdate;
+    const { data: changedSessions, error: cascadeError } = await sessionUpdate.select("id");
+    affectedSessionIds = (changedSessions ?? []).map((session) => session.id as string);
 
     if (cascadeError) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
@@ -4709,69 +4668,17 @@ export async function updateBookingStatusAction(formData: FormData) {
     details: { status: parsed.data.status }
   });
 
-  if (
-    parsed.data.status === "confirmed" ||
-    parsed.data.status === "cancelled" ||
-    parsed.data.status === "completed_pending_report"
-  ) {
-    const { data: firstSession } = await admin
-      .from("booking_sessions")
-      .select("id, starts_at, ends_at, presentation_type_id")
+  if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
+    const event = parsed.data.status === "cancelled" ? "cancelled"
+      : existingBooking.status === "reschedule_requested" ? "rescheduled" : "confirmed";
+    scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId, affectedSessionIds, event));
+  }
+  if (parsed.data.status === "completed_pending_report" && existingBooking.status !== parsed.data.status) {
+    const { data: sessions } = await admin.from("booking_sessions").select("id")
       .eq("booking_request_id", parsed.data.bookingRequestId)
-      .order("starts_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    const { data: contact } = existingBooking.primary_contact_id
-      ? await admin
-          .from("school_contacts")
-          .select("full_name, email")
-          .eq("id", existingBooking.primary_contact_id)
-          .maybeSingle()
-      : { data: null };
-    const { data: school } = existingBooking.school_id
-      ? await admin.from("schools").select("name").eq("id", existingBooking.school_id).maybeSingle()
-      : { data: null };
-    const { data: presentation } = firstSession?.presentation_type_id
-      ? await admin
-          .from("presentation_types")
-          .select("title")
-          .eq("id", firstSession.presentation_type_id)
-          .maybeSingle()
-      : { data: null };
-
-    if (contact?.email && firstSession) {
-      const emailPayload = {
-        contactEmail: contact.email as string,
-        contactName: (contact.full_name as string | null) ?? "there",
-        schoolName: (school?.name as string | null) ?? "your school",
-        sessionDate: formatDateTime(firstSession.starts_at as string),
-        presentationTitle: (presentation?.title as string | null) ?? "your presentation",
-        bookingId: parsed.data.bookingRequestId,
-        referenceCode: (existingBooking.reference_code as string | null) ?? undefined,
-        bookingSessionId: firstSession.id as string,
-        // Raw timestamps feed the add-to-calendar links in confirm/reschedule emails.
-        sessionStartsAt: firstSession.starts_at as string,
-        sessionEndsAt: (firstSession.ends_at as string | null) ?? undefined
-      };
-
-      if (parsed.data.status === "confirmed") {
-        // Re-confirming after a reschedule request gets its own wording.
-        if (existingBooking.status === "reschedule_requested") {
-          void sendBookingRescheduledEmail(emailPayload).catch(() => {});
-        } else {
-          void sendBookingConfirmedEmail(emailPayload).catch(() => {});
-        }
-      }
-
-      if (parsed.data.status === "cancelled") {
-        void sendBookingCancelledEmail(emailPayload).catch(() => {});
-      }
-
-      // Delivered sessions trigger the post-session feedback invitation.
-      if (parsed.data.status === "completed_pending_report") {
-        void sendFeedbackRequestEmail(emailPayload).catch(() => {});
-      }
-    }
+      .not("status", "in", "(cancelled,declined)");
+    scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+      (sessions ?? []).map((session) => session.id as string), "feedback"));
   }
 
   await logAuditEvent(
@@ -4850,10 +4757,19 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
       sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
     }
 
-    const { error: cascadeError } = await sessionUpdate;
+    const { data: changedSessions, error: cascadeError } = await sessionUpdate.select("id, booking_request_id");
 
     if (cascadeError) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+    }
+
+    if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
+      const event = parsed.data.status;
+      for (const bookingId of parsed.data.bookingRequestIds) {
+        const ids = (changedSessions ?? []).filter((session) => session.booking_request_id === bookingId)
+          .map((session) => session.id as string);
+        if (ids.length) scheduleEmail(() => sendSchoolSessionEmails(bookingId, ids, event));
+      }
     }
   }
 

@@ -20,51 +20,73 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
   const { attachments, cc, replyTo, includeUnsubscribe, ...loggableEvent } = event;
 
   if (!config.isBrevoConfigured) {
+    console.error("[email] BREVO_API_KEY is missing; notification skipped.", {
+      templateKey: event.templateKey
+    });
     return {
       id: `email-${randomUUID()}`,
       status: "skipped_unconfigured" as const,
+      error: "BREVO_API_KEY is not configured for this deployment.",
       ...loggableEvent
     };
   }
 
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": config.brevoApiKey as string
-    },
-    body: JSON.stringify({
-      sender: {
-        name: config.brevoSenderName,
-        email: config.brevoSenderEmail
+  let response: Response;
+  try {
+    response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": config.brevoApiKey as string
       },
-      to: [{ email: event.recipientEmail }],
-      subject: event.subject,
-      // Every email ships inside the branded shell. Inbound contact notices
-      // omit newsletter-only unsubscribe controls.
-      htmlContent: renderBrandedEmail(event.html, { includeUnsubscribe }),
-      ...(includeUnsubscribe === false
-        ? {}
-        : {
-            headers: {
-              "List-Unsubscribe": `<mailto:${config.brevoSenderEmail}?subject=Unsubscribe>`
+      body: JSON.stringify({
+        sender: {
+          name: config.brevoSenderName,
+          email: config.brevoSenderEmail
+        },
+        to: [{ email: event.recipientEmail }],
+        subject: event.subject,
+        // Every email ships inside the branded shell. Inbound contact notices
+        // omit newsletter-only unsubscribe controls.
+        htmlContent: renderBrandedEmail(event.html, { includeUnsubscribe }),
+        ...(includeUnsubscribe === false
+          ? {}
+          : {
+              headers: {
+                "List-Unsubscribe": `<mailto:${config.brevoSenderEmail}?subject=Unsubscribe>`
+              }
+            }),
+        ...(replyTo ? { replyTo } : {}),
+        // Brevo rejects empty arrays for these keys, so only include them when populated.
+        ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
+        ...(attachments && attachments.length > 0
+          ? {
+              attachment: attachments.map((attachment) => ({
+                name: attachment.name,
+                content: attachment.contentBase64
+              }))
             }
-          }),
-      ...(replyTo ? { replyTo } : {}),
-      // Brevo rejects empty arrays for these keys, so only include them when populated.
-      ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
-      ...(attachments && attachments.length > 0
-        ? {
-            attachment: attachments.map((attachment) => ({
-              name: attachment.name,
-              content: attachment.contentBase64
-            }))
-          }
-        : {})
-    })
-  });
+          : {})
+      })
+    });
+  } catch {
+    console.error("[email] Brevo request failed or timed out.", {
+      templateKey: event.templateKey
+    });
+    return {
+      id: `email-${randomUUID()}`,
+      status: "failed" as const,
+      error: "Brevo request failed or timed out; delivery is unconfirmed. Check Brevo logs before retrying.",
+      ...loggableEvent
+    };
+  }
 
   if (!response.ok) {
+    console.error("[email] Brevo rejected the notification.", {
+      templateKey: event.templateKey,
+      statusCode: response.status
+    });
     return {
       id: `email-${randomUUID()}`,
       status: "failed" as const,

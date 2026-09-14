@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { config } from "@/lib/env";
+import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getAdminPortalData as getLiveAdminPortalData,
@@ -12,7 +13,7 @@ import type { BookingContactDefaults, BookingRequestInput } from "@/lib/domain/t
 import { sendBookingRequestReceivedEmail } from "@/lib/services/email-triggers";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
-import { nzDateTimeToIso, slugify } from "@/lib/utils";
+import { nzDateTimeToIso, slugify, titleCase } from "@/lib/utils";
 
 // Thrown when Supabase is configured but the service-role key is missing, so
 // the public form fails loudly instead of showing a fabricated confirmation.
@@ -47,16 +48,23 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   const schoolSlug = slugify(input.schoolName);
   const now = new Date().toISOString();
 
-  const { data: region } = await admin
-    .from("regions")
-    .select("id")
-    .eq("slug", regionSlug)
-    .maybeSingle();
-  const resolvedRegionId = (region?.id as string | undefined) ?? null;
+  // Fetch independent lookup data together, once for the entire request.
+  const [regionsResult, presentationsResult, linkedIdentity] = await Promise.all([
+    admin.from("regions").select("id, slug, name")
+      .in("slug", [...new Set([regionSlug, ...input.sessions.map((session) => session.regionSlug)])]),
+    admin.from("presentation_types").select("id, slug, title")
+      .in("slug", [...new Set(input.sessions.map((session) => session.presentationSlug))]),
+    input.submittedByUserId ? loadLinkedSchoolIdentity(input.submittedByUserId) : null
+  ]);
+  if (regionsResult.error) throw regionsResult.error;
+  if (presentationsResult.error) throw presentationsResult.error;
+  const regions = new Map((regionsResult.data ?? []).map((region) => [region.slug as string, region]));
+  const presentations = new Map((presentationsResult.data ?? []).map((presentation) => [presentation.slug as string, presentation]));
+  const resolvedRegionId = (regions.get(regionSlug)?.id as string | undefined) ?? null;
+  if (input.sessions.some((session) => !presentations.has(session.presentationSlug))) {
+    throw new Error("A requested presentation is no longer available.");
+  }
 
-  const linkedIdentity = input.submittedByUserId
-    ? await loadLinkedSchoolIdentity(input.submittedByUserId)
-    : null;
   const usesLinkedSchool =
     linkedIdentity && linkedIdentity.schoolName.trim().toLowerCase() === input.schoolName.trim().toLowerCase();
   const { data: existingSchool } = usesLinkedSchool
@@ -136,25 +144,20 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     throw bookingError;
   }
 
-  for (const session of input.sessions) {
-    const { data: presentationType } = await admin
-      .from("presentation_types")
-      .select("id")
-      .eq("slug", session.presentationSlug)
-      .maybeSingle();
-
-    await admin.from("booking_sessions").insert({
-      booking_request_id: bookingRequest.id,
-      school_id: schoolId,
-      region_id: resolvedRegionId,
-      presentation_type_id: (presentationType?.id as string | undefined) ?? null,
-      status: "tentative",
-      starts_at: nzDateTimeToIso(session.date, session.startTime),
-      ends_at: nzDateTimeToIso(session.date, session.endTime),
-      year_levels: session.yearLevels,
-      expected_student_count: session.expectedStudentCount
-    });
-  }
+  const sessionRows = input.sessions.map((session) => ({
+    booking_request_id: bookingRequest.id,
+    school_id: schoolId,
+    region_id: (regions.get(session.regionSlug)?.id as string | undefined) ?? null,
+    presentation_type_id: presentations.get(session.presentationSlug)!.id as string,
+    status: "tentative",
+    starts_at: nzDateTimeToIso(session.date, session.startTime),
+    ends_at: nzDateTimeToIso(session.date, session.endTime),
+    year_levels: session.yearLevels,
+    expected_student_count: session.expectedStudentCount
+  }));
+  // One insert for all sessions instead of two round trips per session.
+  const { error: sessionsError } = await admin.from("booking_sessions").insert(sessionRows);
+  if (sessionsError) throw sessionsError;
 
   await admin.from("booking_activity_logs").insert({
     booking_request_id: bookingRequest.id,
@@ -167,13 +170,23 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     }
   });
 
-  void sendBookingRequestReceivedEmail({
+  scheduleEmail(() => sendBookingRequestReceivedEmail({
     contactEmail: input.contactEmail,
     contactName: input.contactName,
     schoolName: input.schoolName,
     bookingId: bookingRequest.id as string,
-    referenceCode: (bookingRequest.reference_code as string | null) ?? undefined
-  }).catch(() => {});
+    referenceCode: (bookingRequest.reference_code as string | null) ?? undefined,
+    contactPhone: input.contactPhone,
+    schoolNotes: input.schoolNotes,
+    sessions: input.sessions.map((session, index) => ({
+      presentationTitle: presentations.get(session.presentationSlug)!.title as string,
+      regionName: (regions.get(session.regionSlug)?.name as string | undefined) ?? titleCase(session.regionSlug),
+      startsAt: sessionRows[index].starts_at,
+      endsAt: sessionRows[index].ends_at,
+      yearLevels: session.yearLevels,
+      expectedStudentCount: session.expectedStudentCount
+    }))
+  }));
   void notifyStaff({
     title: `New booking request from ${input.schoolName}`,
     body: `${input.contactName} submitted ${input.sessions.length} requested session${input.sessions.length === 1 ? "" : "s"}.`,

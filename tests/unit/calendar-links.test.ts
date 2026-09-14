@@ -19,6 +19,13 @@ const event: CalendarEventInput = {
 };
 
 describe("calendar links", () => {
+  it("keeps a session UID stable and folds long Unicode lines for calendar imports", () => {
+    const content = buildIcsContent({ ...event, uid: "session-1@book.nzesports.org.nz", cancelled: true, title: "Māori school presentation ".repeat(12) });
+    expect(content).toContain("UID:session-1@book.nzesports.org.nz");
+    expect(content).toContain("STATUS:CANCELLED");
+    expect(content.replace(/\r\n /g, "")).toContain("Māori school presentation ".repeat(12));
+    for (const line of content.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+  });
   it("builds provider URLs with UTC times and event details", () => {
     const google = new URL(googleCalendarUrl(event));
     const outlook = new URL(outlookLiveUrl(event));

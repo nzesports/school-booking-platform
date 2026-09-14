@@ -19,7 +19,7 @@ export async function GET(
 
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("starts_at, ends_at, presentation_types(title), schools(name, city)")
+    .select("starts_at, ends_at, status, presentation_types(title), schools(name, city, address)")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -28,15 +28,17 @@ export async function GET(
   }
 
   const presentation = session.presentation_types as { title?: string } | null;
-  const school = session.schools as { name?: string; city?: string } | null;
+  const school = session.schools as { name?: string; city?: string; address?: string } | null;
   const title = presentation?.title ?? "NZ Esports school presentation";
-  const location = [school?.name, school?.city].filter(Boolean).join(", ");
+  const location = [school?.name, school?.address, school?.city].filter(Boolean).join(", ");
   const startsAt = session.starts_at as string;
   const endsAt =
     (session.ends_at as string | null) ??
     new Date(new Date(startsAt).getTime() + 60 * 60 * 1000).toISOString();
 
   const ics = buildIcsContent({
+    uid: `${sessionId}@book.nzesports.org.nz`,
+    cancelled: ["cancelled", "declined"].includes(session.status as string),
     title: `${title} — NZ Esports presentation`,
     description: `NZ Esports school presentation${school?.name ? ` at ${school.name}` : ""}. Manage your booking: ${config.siteUrl}/school/bookings`,
     location,

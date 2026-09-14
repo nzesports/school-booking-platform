@@ -95,8 +95,11 @@ For a quick functional smoke test, run `npm run dev`, sign in with each local ac
 
 ## Environment
 
+Production runs at **https://book.nzesports.org.nz**. See [domain and email setup](docs/domain-and-email-setup.md) for Vercel, Supabase Auth, Brevo, and missing-email diagnostics.
+
 Copy `.env.example` to `.env.local` and fill the values you use:
 
+- `NEXT_PUBLIC_SITE_URL` must be `https://book.nzesports.org.nz` in Vercel Production; keep `http://localhost:3000` for local development.
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` enable live Supabase auth/data/storage.
 - `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` enable transactional email;
   `BREVO_CONTACT_EMAIL` selects the inbox that receives website contact messages.

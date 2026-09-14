@@ -10,6 +10,7 @@ import {
   sendAmbassadorApplicationReceivedEmail,
   sendSchoolWelcomeEmail
 } from "@/lib/services/email-triggers";
+import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
@@ -246,11 +247,11 @@ export async function registerSchoolAccountAction(
     };
   }
 
-  void sendSchoolWelcomeEmail({
+  scheduleEmail(() => sendSchoolWelcomeEmail({
     contactEmail: parsed.data.email,
     contactName: parsed.data.contactName,
     schoolName: parsed.data.schoolName
-  }).catch(() => {});
+  }));
 
   if (parsed.data.marketingConsent) {
     void addContactToTeachersList({
@@ -416,10 +417,10 @@ export async function registerAmbassadorAccountAction(
 
   updateTag(PLATFORM_DATA_TAG);
 
-  void sendAmbassadorApplicationReceivedEmail({
+  scheduleEmail(() => sendAmbassadorApplicationReceivedEmail({
     ambassadorEmail: parsed.data.email,
     ambassadorName: parsed.data.fullName
-  }).catch(() => {});
+  }));
 
   if (data.session) {
     await supabase.auth.signOut();

@@ -127,7 +127,10 @@ export async function submitBookingRequestAction(
     return { error: "Please review every session detail before sending your request." };
   }
 
-  const availabilityConfig = await loadAvailabilityConfig();
+  const [availabilityConfig, user] = await Promise.all([
+    loadAvailabilityConfig(),
+    getAuthenticatedPortalUser()
+  ]);
   const invalidDate = parsed.data.sessions.find(
     (session) =>
       !isWithinBookingWindow(session.date) ||
@@ -147,7 +150,6 @@ export async function submitBookingRequestAction(
     };
   }
 
-  const user = await getAuthenticatedPortalUser();
   let booking: Awaited<ReturnType<typeof submitBookingRequest>>;
 
   try {

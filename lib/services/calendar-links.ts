@@ -8,6 +8,8 @@ export type CalendarEventInput = {
   location?: string;
   startsAt: string;
   endsAt: string;
+  uid?: string;
+  cancelled?: boolean;
 };
 
 function toUtcStamp(iso: string) {
@@ -76,6 +78,7 @@ export function buildCalendarLinksEmailHtml(event: CalendarEventInput, icsUrl?: 
     { label: "Google Calendar", href: googleCalendarUrl(event) },
     { label: "Outlook", href: outlookLiveUrl(event) },
     { label: "Office 365", href: office365Url(event) },
+    { label: "Yahoo Calendar", href: yahooCalendarUrl(event) },
     ...(icsUrl ? [{ label: "Apple / .ics", href: icsUrl }] : [])
   ];
 
@@ -94,15 +97,34 @@ function escapeIcsText(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 }
 
+// RFC 5545 lines are limited to 75 octets. Fold on Unicode character
+// boundaries so long school names/URLs survive import across calendar apps.
+function foldIcsLine(line: string) {
+  const encoder = new TextEncoder();
+  let result = "";
+  let bytes = 0;
+  for (const character of line) {
+    const length = encoder.encode(character).length;
+    if (bytes + length > 75) {
+      result += "\r\n ";
+      bytes = 1;
+    }
+    result += character;
+    bytes += length;
+  }
+  return result;
+}
+
 export function buildIcsContent(event: CalendarEventInput) {
-  const uid = `${toUtcStamp(event.startsAt)}-${Math.random().toString(36).slice(2, 10)}@nzesports`;
+  const uid = event.uid ?? `${toUtcStamp(event.startsAt)}-${Math.random().toString(36).slice(2, 10)}@nzesports`;
 
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//NZ Esports//School Bookings//EN",
     "BEGIN:VEVENT",
-    `UID:${uid}`,
+    `UID:${escapeIcsText(uid)}`,
+    `STATUS:${event.cancelled ? "CANCELLED" : "CONFIRMED"}`,
     `DTSTAMP:${toUtcStamp(new Date().toISOString())}`,
     `DTSTART:${toUtcStamp(event.startsAt)}`,
     `DTEND:${toUtcStamp(event.endsAt)}`,
@@ -113,5 +135,6 @@ export function buildIcsContent(event: CalendarEventInput) {
     "END:VCALENDAR"
   ]
     .filter(Boolean)
-    .join("\r\n");
+    .map(foldIcsLine)
+    .join("\r\n") + "\r\n";
 }
