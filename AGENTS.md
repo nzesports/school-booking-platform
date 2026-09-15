@@ -1,5 +1,11 @@
 # Repository Agent Instructions
 
+## Working checkout
+
+- Use `/Users/laylaloots/school-booking-platform` as the single working checkout.
+- Work in this checkout for future tasks. Do not create extra clones or worktrees unless the user explicitly requests them.
+- `/Users/laylaloots/school-booking-platform-backups` contains inactive local backups of former duplicate checkouts; do not use these for development.
+
 ## Verification scope
 
 - By default, verify changes with `npm run typecheck` and `npm run lint` only.
