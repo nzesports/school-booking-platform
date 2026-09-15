@@ -39,6 +39,8 @@ import {
   deletePrivateResourceFile,
   uploadPrivateReportMedia,
   uploadPrivateResourceFile,
+  prepareResourceUpload,
+  validateUploadedResource,
   uploadPublicAsset
 } from "@/lib/services/storage";
 import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
@@ -130,6 +132,9 @@ const manualBookingSchema = z.object({
   schoolName: z.string().trim().min(2).max(200).optional(),
   newSchoolRegionId: z.uuid().optional(),
   presentationTypeId: z.uuid(),
+  contactName: z.string().trim().min(2).max(200),
+  contactEmail: z.string().trim().email().toLowerCase(),
+  contactPhone: z.string().trim().max(100).optional(),
   assignedAmbassadorId: z.string().optional(),
   outreachAmbassadorId: z.string().optional(),
   status: z.enum([
@@ -1793,12 +1798,15 @@ export async function saveManualBookingAction(formData: FormData) {
     schoolName: String(formData.get("schoolName") || "") || undefined,
     newSchoolRegionId: String(formData.get("newSchoolRegionId") || "") || undefined,
     presentationTypeId: String(formData.get("presentationTypeId") || ""),
+    contactName: String(formData.get("contactName") || ""),
+    contactEmail: String(formData.get("contactEmail") || ""),
+    contactPhone: String(formData.get("contactPhone") || "") || undefined,
     assignedAmbassadorId: String(formData.get("assignedAmbassadorId") || "") || undefined,
     outreachAmbassadorId: String(formData.get("outreachAmbassadorId") || "") || undefined,
     status: String(formData.get("status") || "tentative"),
     date: String(formData.get("date") || ""),
     startTime: String(formData.get("startTime") || ""),
-    durationMinutes: formData.get("durationMinutes") || 60,
+    durationMinutes: formData.get("durationMinutes") || 10,
     yearLevels: String(formData.get("yearLevels") || ""),
     expectedStudentCount: formData.get("expectedStudentCount") || 0,
     actualStudentCount: formData.get("actualStudentCount") || undefined,
@@ -1817,6 +1825,23 @@ export async function saveManualBookingAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-school-missing"));
   }
 
+  const { data: contact, error: contactError } = await admin
+    .from("school_contacts")
+    .insert({
+      school_id: school.id,
+      full_name: parsed.data.contactName,
+      email: parsed.data.contactEmail,
+      phone: parsed.data.contactPhone || null,
+      is_primary: false,
+      marketing_consent: false
+    })
+    .select("id")
+    .single();
+
+  if (contactError || !contact) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-save-failed"));
+  }
+
   const startsAt = new Date(nzDateTimeToIso(parsed.data.date, parsed.data.startTime));
   const endsAt = new Date(startsAt.getTime() + parsed.data.durationMinutes * 60 * 1000);
   // Manual entries never carry an actual ambassador_reports row, so a session
@@ -1831,6 +1856,7 @@ export async function saveManualBookingAction(formData: FormData) {
     .from("booking_requests")
     .insert({
       school_id: school.id,
+      primary_contact_id: contact.id,
       region_id: school.region_id ?? null,
       status: effectiveStatus,
       source: parsed.data.outreachAmbassadorId ? "ambassador" : "staff",
@@ -1881,6 +1907,11 @@ export async function saveManualBookingAction(formData: FormData) {
 
   if (effectiveStatus === "confirmed") {
     scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "confirmed"));
+  } else if (
+    (effectiveStatus === "tentative" || effectiveStatus === "applied") &&
+    !parsed.data.assignedAmbassadorId
+  ) {
+    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "tentative"));
   }
   await logAuditEvent(actor.id, "booking.manually_created", "booking_request", booking.id);
   revalidatePath("/staff");
@@ -4877,7 +4908,28 @@ export async function removeBookingInternalNoteAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "removed", "note"));
 }
 
+export async function prepareResourceUploadAction(input: { name: string; size: number }) {
+  const actor = await requirePortalAccess("staff");
+  const parsed = z.object({ name: z.string().min(1).max(255), size: z.number().int().positive() }).safeParse(input);
+  if (!parsed.success) return { error: "Choose a valid resource file." };
+  try {
+    return { upload: await prepareResourceUpload(actor.id, parsed.data.name, parsed.data.size) };
+  } catch (error) {
+    console.error("[resource-upload] Could not prepare upload", error);
+    return { error: "Could not start the upload. Check the file type and size, then try again." };
+  }
+}
+
+// Keep the standalone resource page's native form contract; the modal consumes
+// structured errors so a rejected upload never navigates away from its fields.
 export async function saveResourceAction(formData: FormData) {
+  const result = await saveResourceEditorAction(formData);
+  if (result.redirectTo) redirect(result.redirectTo);
+  const returnTo = sanitizeReturnTo(String(formData.get("returnTo") || "/staff/resources"), "/staff/resources");
+  redirect(appendSearchParam(returnTo, "error", result.errorCode ?? "resource-save-failed"));
+}
+
+export async function saveResourceEditorAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
     String(formData.get("returnTo") || "/staff/resources"),
@@ -4888,7 +4940,7 @@ export async function saveResourceAction(formData: FormData) {
     const resourceId = z.uuid().safeParse(String(formData.get("id") || ""));
 
     if (!resourceId.success) {
-      redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-resource"));
+      return { error: "Check the title, audience and presentation, then try again.", errorCode: "invalid-resource" };
     }
 
     const admin = getAdminClientOrThrow();
@@ -4899,7 +4951,7 @@ export async function saveResourceAction(formData: FormData) {
       .maybeSingle();
 
     if (resourceError || !resource) {
-      redirect(appendSearchParam(fallbackReturnTo, "error", "resource-delete-failed"));
+      return { error: "The resource could not be deleted. Please try again.", errorCode: "resource-delete-failed" };
     }
 
     const { error: deleteError } = await admin
@@ -4908,7 +4960,7 @@ export async function saveResourceAction(formData: FormData) {
       .eq("id", resourceId.data);
 
     if (deleteError) {
-      redirect(appendSearchParam(fallbackReturnTo, "error", "resource-delete-failed"));
+      return { error: "The resource could not be deleted. Please try again.", errorCode: "resource-delete-failed" };
     }
 
     if (resource.storage_path) {
@@ -4924,7 +4976,7 @@ export async function saveResourceAction(formData: FormData) {
     updateTag(PUBLIC_CONTENT_TAG);
     revalidatePath("/staff");
     revalidatePath("/admin");
-    redirect(appendSearchParam(fallbackReturnTo, "deleted", "resource"));
+    return { redirectTo: appendSearchParam(fallbackReturnTo, "deleted", "resource") };
   }
 
   const lifecycle = String(formData.get("lifecycle") || "");
@@ -4948,7 +5000,7 @@ export async function saveResourceAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-resource"));
+    return { error: "Check the title, audience and presentation, then try again.", errorCode: "invalid-resource" };
   }
 
   const normalizedCategory = parsed.data.category;
@@ -4968,18 +5020,28 @@ export async function saveResourceAction(formData: FormData) {
   // page files.) Checked before the file upload so a rejected submit does not
   // orphan an uploaded file.
   if (normalizedAudiences.length === 0) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-resource"));
+    return { error: "Check the title, audience and presentation, then try again.", errorCode: "invalid-resource" };
   }
 
   const file = formData.get("file");
   let storagePath: string | null = null;
+  const uploadedPath = String(formData.get("uploadedStoragePath") || "");
+  if (uploadedPath) {
+    try {
+      storagePath = await validateUploadedResource(actor.id, uploadedPath);
+    } catch (error) {
+      console.error("[resource-upload] Could not verify uploaded file", error);
+      return { error: "The uploaded file could not be verified. Please try again.", errorCode: "resource-upload-failed" };
+    }
+  }
 
-  if (file instanceof File && file.size > 0) {
+  if (!uploadedPath && file instanceof File && file.size > 0) {
     try {
       const upload = await uploadPrivateResourceFile(file);
       storagePath = upload.storagePath;
-    } catch {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "resource-upload-failed"));
+    } catch (error) {
+      console.error("[resource-upload] Upload failed", error);
+      return { error: "The file could not be uploaded. Check your connection and use a supported file up to 40 MB, then try again.", errorCode: "resource-upload-failed" };
     }
   }
 
@@ -5042,7 +5104,9 @@ export async function saveResourceAction(formData: FormData) {
   }
 
   if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "resource-save-failed"));
+    console.error("[resource-save] Save failed", { code: error.code, message: error.message });
+    if (storagePath && !uploadedPath) await deletePrivateResourceFile(storagePath).catch(() => undefined);
+    return { error: "The resource could not be saved. Your entries are still here; please try again.", errorCode: "resource-save-failed" };
   }
 
   const resourceId = parsed.data.id ?? data?.id;
@@ -5057,10 +5121,10 @@ export async function saveResourceAction(formData: FormData) {
   revalidatePath("/admin");
 
   if (!parsed.data.id && resourceId && parsed.data.returnTo.endsWith("/new")) {
-    redirect(`${parsed.data.returnTo.replace(/\/new$/, `/${resourceId}`)}?saved=resource`);
+    return { redirectTo: `${parsed.data.returnTo.replace(/\/new$/, `/${resourceId}`)}?saved=resource` };
   }
 
-  redirect(appendSearchParam(parsed.data.returnTo, "saved", "resource"));
+  return { redirectTo: appendSearchParam(parsed.data.returnTo, "saved", "resource") };
 }
 
 export async function createTrainingPackAction(formData: FormData) {

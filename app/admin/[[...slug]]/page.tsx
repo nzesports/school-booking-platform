@@ -46,6 +46,7 @@ import {
   savePresentationAction,
   savePortalProfileAction,
   saveRegionAction,
+  saveResourceEditorAction,
   saveResourceAction,
   updateUserAccessAction
 } from "@/app/portal/actions";
@@ -1653,7 +1654,7 @@ export default async function AdminPortalPage({
                 title: presentation.title
               }))}
               packs={portal.trainingPacks}
-              action={saveResourceAction}
+              action={saveResourceEditorAction}
               createPackAction={createTrainingPackAction}
               deletePackAction={deleteTrainingPackAction}
               returnTo="/admin/training"
@@ -1681,7 +1682,7 @@ export default async function AdminPortalPage({
                 id: presentation.id,
                 title: presentation.title
               }))}
-              action={saveResourceAction}
+              action={saveResourceEditorAction}
               returnTo="/admin/materials"
               mode="materials"
               initialEditorOpen={readSearchParam(resolvedSearchParams, "upload") === "1"}

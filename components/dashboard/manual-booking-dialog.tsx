@@ -61,18 +61,17 @@ export function ManualBookingDialog({
         ? createPortal(
             <BookingDialogShell
               title="Log booking"
-              description="Record a phone booking or an already-delivered session without sending the school through the public form."
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[980px]"
             >
-              <form action={action} className="mt-7 grid gap-4">
+              <form action={action} className="mt-5 grid gap-4">
                 <input
                   type="hidden"
                   name="returnTo"
                   value={`${basePath}/bookings?status=${activeView}&range=${range}`}
                 />
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid items-start gap-4 lg:grid-cols-2">
                   <SchoolCombobox schools={schools} regions={regions} />
                   <Field label="Presentation">
                     <select name="presentationTypeId" required className={fieldClassName}>
@@ -86,6 +85,18 @@ export function ManualBookingDialog({
                   </Field>
                 </div>
 
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <Field label="Teacher name">
+                    <input name="contactName" autoComplete="name" required minLength={2} className={fieldClassName} />
+                  </Field>
+                  <Field label="Teacher email">
+                    <input type="email" name="contactEmail" autoComplete="email" required className={fieldClassName} />
+                  </Field>
+                  <Field label="Phone (optional)">
+                    <input type="tel" name="contactPhone" autoComplete="tel" className={fieldClassName} />
+                  </Field>
+                </div>
+
                 <div className="grid gap-4 lg:grid-cols-4">
                   <Field label="Date">
                     <input type="date" name="date" required className={fieldClassName} />
@@ -93,19 +104,19 @@ export function ManualBookingDialog({
                   <Field label="Start time">
                     <input type="time" name="startTime" required className={fieldClassName} />
                   </Field>
-                  <Field label="Duration">
+                  <Field label="Duration (minutes)">
                     <input
                       type="number"
                       name="durationMinutes"
                       min={1}
-                      defaultValue={45}
+                      defaultValue={10}
                       required
                       className={fieldClassName}
                     />
                   </Field>
                   <Field label="Status">
                     <select name="status" defaultValue="confirmed" className={fieldClassName}>
-                      <option value="tentative">Tentative</option>
+                      <option value="tentative">Tentative / pending</option>
                       <option value="applied">Applied</option>
                       <option value="ambassador_assigned">Ambassador assigned</option>
                       <option value="confirmed">Confirmed</option>
@@ -146,7 +157,7 @@ export function ManualBookingDialog({
                   </Field>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid items-start gap-4 lg:grid-cols-2">
                   <Field label="Assigned ambassador">
                     <select name="assignedAmbassadorId" defaultValue="" className={fieldClassName}>
                       <option value="">Unassigned</option>
@@ -168,6 +179,12 @@ export function ManualBookingDialog({
                     </select>
                   </Field>
                 </div>
+
+                <p className="text-sm text-[color:var(--text-soft)]">
+                  Tentative / pending bookings without an ambassador send a pending booking email.
+                  Confirmed bookings send a confirmation email, even if an ambassador is unassigned.
+                  Both emails include the booking reference and session details.
+                </p>
 
                 <Field label="Internal notes">
                   <textarea
@@ -196,7 +213,7 @@ export function ManualBookingDialog({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-2">
+    <label className="grid content-start gap-2">
       <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
         {label}
       </span>

@@ -15,6 +15,7 @@ import {
   LayoutList,
   Link2,
   LockKeyhole,
+  LoaderCircle,
   PackageOpen,
   PencilLine,
   Play,
@@ -26,7 +27,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
@@ -39,8 +40,14 @@ import type {
   TrainingPackRecord
 } from "@/lib/services/portal";
 import { cn } from "@/lib/utils";
+import { RESOURCE_UPLOAD_MAX_BYTES, RESOURCE_UPLOAD_MAX_MB } from "@/lib/resource-upload";
+import { prepareResourceUploadAction } from "@/app/portal/actions";
+import { createClient } from "@/lib/supabase/browser";
 
 const PAGE_SIZE = 8;
+
+type ResourceSaveResult = { error?: string; redirectTo?: string };
+type ResourceSaveAction = (formData: FormData) => Promise<ResourceSaveResult>;
 
 type ResourceStatus = "published" | "draft" | "archived";
 export type ResourceWorkspaceMode = "training" | "materials";
@@ -293,7 +300,7 @@ export function ResourcesWorkspace({
 }: {
   resources: ResourceRecord[];
   presentations: Array<{ id: string; title: string }>;
-  action: (formData: FormData) => void | Promise<void>;
+  action: ResourceSaveAction;
   packs?: TrainingPackRecord[];
   createPackAction?: (formData: FormData) => void | Promise<void>;
   deletePackAction?: (formData: FormData) => void | Promise<void>;
@@ -1272,11 +1279,17 @@ function ResourceEditorDialog({
   defaultPresentationTypeId?: string;
   packs: TrainingPackRecord[];
   presentations: Array<{ id: string; title: string }>;
-  action: (formData: FormData) => void | Promise<void>;
+  action: ResourceSaveAction;
   returnTo: string;
   lockedCategory: ResourceCategory;
   onClose: () => void;
 }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const submitting = useRef(false);
+  const uploadedFile = useRef<{ file: File; path: string } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [progressLabel, setProgressLabel] = useState("Saving resource…");
   const category = lockedCategory;
   const selectableInitialAudiences = (resource?.audiences ?? ["ambassador"]).filter(
     (audience) =>
@@ -1320,11 +1333,69 @@ function ResourceEditorDialog({
             ? `Add to ${selectedTrainingPack.title}`
             : "Add a resource"
       }
-      onClose={onClose}
+      onClose={() => { if (!submitting.current) onClose(); }}
       maxWidthClassName="max-w-[1120px]"
       overlayClassName="z-[80]"
     >
-      <form action={action} className="mt-7 grid gap-5">
+      <form
+        className="mt-7 grid gap-5"
+        aria-busy={pending}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (submitting.current) return;
+          const submitter = (event.nativeEvent as SubmitEvent).submitter;
+          const formData = new FormData(event.currentTarget);
+          if (submitter instanceof HTMLButtonElement && submitter.name) {
+            formData.set(submitter.name, submitter.value);
+          }
+          const deleting = formData.get("intent") === "delete";
+          const file = formData.get("file");
+          if (!deleting && file instanceof File && file.size > RESOURCE_UPLOAD_MAX_BYTES) {
+            setSaveError(`This file is larger than ${RESOURCE_UPLOAD_MAX_MB} MB. Choose a smaller file and try again.`);
+            return;
+          }
+          setSaveError(null);
+          setProgressLabel(deleting ? "Deleting resource…" : file instanceof File && file.size > 0 ? "Uploading and saving…" : "Saving resource…");
+          submitting.current = true;
+          startTransition(async () => {
+            try {
+              if (!deleting && file instanceof File && file.size > 0) {
+                if (uploadedFile.current?.file !== file) {
+                  const prepared = await prepareResourceUploadAction({ name: file.name, size: file.size });
+                  if (!prepared.upload) {
+                    setSaveError(prepared.error || "Could not start the upload. Please try again.");
+                    return;
+                  }
+                  const { path, token, contentType } = prepared.upload;
+                  const { error } = await createClient().storage.from("resources")
+                    .uploadToSignedUrl(path, token, file, { contentType });
+                  if (error) {
+                    setSaveError(`Upload failed: ${error.message}. Your entries are still here; you can retry.`);
+                    return;
+                  }
+                  uploadedFile.current = { file, path };
+                }
+                formData.set("uploadedStoragePath", uploadedFile.current.path);
+              }
+              // Only metadata goes through the app server; file bytes go directly to storage.
+              formData.delete("file");
+              setProgressLabel(deleting ? "Deleting resource…" : "Saving resource…");
+              const result = await action(formData);
+              if (result.error) {
+                setSaveError(result.error);
+              } else if (result.redirectTo) {
+                onClose();
+                router.push(result.redirectTo);
+              }
+            } catch {
+              setSaveError("The request could not be completed. Your entries and selected file are still here. Check your connection and try again. If your session has expired, sign in again in another tab first.");
+            } finally {
+              submitting.current = false;
+            }
+          });
+        }}
+      >
+        <fieldset disabled={pending} className="grid min-w-0 gap-5">
         {resource?.id ? <input type="hidden" name="id" value={resource.id} /> : null}
         <input type="hidden" name="returnTo" value={returnTo} />
         <input type="hidden" name="category" value={category} />
@@ -1590,7 +1661,7 @@ function ResourceEditorDialog({
                   className={cn(inputClassName, "min-w-0 max-w-full cursor-pointer overflow-hidden border-dashed bg-[#f8fbf9] py-3 file:mr-3 file:rounded-[10px] file:border-0 file:bg-[#eaf8ee] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#117a2e]")}
                 />
                 <span className="text-xs font-normal leading-5 text-[color:var(--text-muted)]">
-                  PDF, Office documents, images, videos, text, or archive files up to 40 MB.
+                  PDF, Office documents, images, videos, text, or archive files up to {RESOURCE_UPLOAD_MAX_MB} MB.
                 </span>
               </label>
               {resource?.storagePath ? (
@@ -1641,6 +1712,17 @@ function ResourceEditorDialog({
           </EditorSection>
         </div>
 
+        {saveError ? (
+          <p role="alert" className="rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {saveError}
+          </p>
+        ) : null}
+        {pending ? (
+          <p role="status" className="flex items-center gap-2 text-sm font-semibold text-[#117a2e]">
+            <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+            {progressLabel} Please keep this window open.
+          </p>
+        ) : null}
         <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--border-soft)] pt-4">
           <div>
             {resource ? (
@@ -1702,7 +1784,7 @@ function ResourceEditorDialog({
               disabled={audiences.length === 0}
               className="rounded-[14px] border-[#117a2e] bg-[#117a2e] text-white shadow-[0_12px_28px_rgba(17,122,46,0.22)] hover:border-[#0d6726] hover:bg-[#0d6726]"
             >
-              <CircleCheck className="h-4 w-4" />
+              {pending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CircleCheck className="h-4 w-4" />}
               {resource
                 ? resourceStatus === "published"
                   ? "Publish changes"
@@ -1713,6 +1795,7 @@ function ResourceEditorDialog({
             </Button>
           </div>
         </div>
+        </fieldset>
       </form>
     </BookingDialogShell>,
     document.body

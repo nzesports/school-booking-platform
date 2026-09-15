@@ -31,6 +31,7 @@ import {
   saveManualSchoolAction,
   savePlatformSettingsAction,
   savePortalProfileAction,
+  saveResourceEditorAction,
   saveResourceAction
 } from "@/app/portal/actions";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
@@ -532,7 +533,7 @@ export default async function StaffPortalPage({
                 title: presentation.title
               }))}
               packs={portal.trainingPacks}
-              action={saveResourceAction}
+              action={saveResourceEditorAction}
               createPackAction={createTrainingPackAction}
               deletePackAction={deleteTrainingPackAction}
               returnTo="/staff/training"
@@ -560,7 +561,7 @@ export default async function StaffPortalPage({
                 id: presentation.id,
                 title: presentation.title
               }))}
-              action={saveResourceAction}
+              action={saveResourceEditorAction}
               returnTo="/staff/materials"
               mode="materials"
               initialEditorOpen={readSearchParam(resolvedSearchParams, "upload") === "1"}

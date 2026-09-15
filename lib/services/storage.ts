@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
+import { RESOURCE_UPLOAD_MAX_BYTES, RESOURCE_UPLOAD_MAX_MB } from "@/lib/resource-upload";
 
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
@@ -94,6 +95,37 @@ export function validatePublicAvatarFile(file: File) {
   }
 
   return expectedType;
+}
+
+export function validateResourceUpload(name: string, size: number) {
+  const contentType = PRIVATE_ALLOWED.get(fileExtension(name));
+  if (!contentType) throw new Error("This file type is not supported.");
+  if (!Number.isSafeInteger(size) || size <= 0 || size > RESOURCE_UPLOAD_MAX_BYTES) {
+    throw new Error(`Choose a file up to ${RESOURCE_UPLOAD_MAX_MB} MB.`);
+  }
+  return contentType;
+}
+
+export async function prepareResourceUpload(userId: string, name: string, size: number) {
+  const contentType = validateResourceUpload(name, size);
+  const admin = createAdminClient();
+  if (!admin) throw new Error("Storage is not configured.");
+  const path = buildStoragePath(`resource-library/${userId}`, name);
+  const { data, error } = await admin.storage.from("resources").createSignedUploadUrl(path);
+  if (error) throw error;
+  return { path: data.path, token: data.token, contentType };
+}
+
+export async function validateUploadedResource(userId: string, path: string) {
+  if (!path.startsWith(`resource-library/${userId}/`) || path.includes("..")) {
+    throw new Error("Invalid uploaded resource path.");
+  }
+  const admin = createAdminClient();
+  if (!admin) throw new Error("Storage is not configured.");
+  const { data, error } = await admin.storage.from("resources").info(path);
+  if (error) throw error;
+  validateResourceUpload(path, data.size ?? 0);
+  return path;
 }
 
 export async function uploadPrivateResourceFile(file: File, prefix = "resource-library") {

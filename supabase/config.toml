@@ -114,7 +114,7 @@ port = 56124
 [storage]
 enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "25MiB"
+file_size_limit = "250MiB"
 
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]

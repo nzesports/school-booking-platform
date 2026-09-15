@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/utils";
 import {
   sendBookingCancelledEmail,
   sendBookingConfirmedEmail,
+  sendBookingRequestReceivedEmail,
   sendBookingRescheduledEmail,
   sendFeedbackRequestEmail,
   sendSchoolRescheduleNoticeEmail
@@ -14,7 +15,7 @@ import {
 export async function sendSchoolSessionEmails(
   bookingId: string,
   sessionIds: string[],
-  event: "confirmed" | "cancelled" | "rescheduled" | "feedback" | "reschedule_requested" | "reschedule_declined",
+  event: "tentative" | "confirmed" | "cancelled" | "rescheduled" | "feedback" | "reschedule_requested" | "reschedule_declined",
   requestedDate?: string
 ) {
   if (!sessionIds.length) return;
@@ -25,10 +26,10 @@ export async function sendSchoolSessionEmails(
   if (error) throw error;
   const [contactResult, schoolResult, sessionsResult] = await Promise.all([
     booking.primary_contact_id
-      ? admin.from("school_contacts").select("email, full_name").eq("id", booking.primary_contact_id).single()
-      : admin.from("school_contacts").select("email, full_name").eq("school_id", booking.school_id)
+      ? admin.from("school_contacts").select("email, full_name, phone").eq("id", booking.primary_contact_id).single()
+      : admin.from("school_contacts").select("email, full_name, phone").eq("school_id", booking.school_id)
           .eq("is_primary", true).limit(1).single(),
-    admin.from("schools").select("name").eq("id", booking.school_id).single(),
+    admin.from("schools").select("name, regions(name)").eq("id", booking.school_id).single(),
     admin.from("booking_sessions").select("id, starts_at, ends_at, presentation_type_id, status, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
       .eq("booking_request_id", bookingId).in("id", sessionIds)
   ]);
@@ -43,6 +44,28 @@ export async function sendSchoolSessionEmails(
     .select("id, title").in("id", ids);
   if (presentationError) throw presentationError;
   const titles = new Map((presentations ?? []).map((presentation) => [presentation.id, presentation.title]));
+  if (event === "tentative") {
+    const result = await sendBookingRequestReceivedEmail({
+      contactEmail: contact.email as string,
+      contactName: (contact.full_name as string) || "there",
+      contactPhone: (contact.phone as string) || "",
+      schoolName: schoolResult.data.name as string,
+      bookingId,
+      referenceCode: booking.reference_code as string,
+      sessions: sessions.map((session) => ({
+        presentationTitle: (titles.get(session.presentation_type_id) as string) || "NZ Esports presentation",
+        regionName: relationOne(schoolResult.data.regions)?.name || "",
+        startsAt: session.starts_at as string,
+        endsAt: session.ends_at as string,
+        yearLevels: (session.year_levels as string) || "",
+        expectedStudentCount: Number(session.expected_student_count)
+      }))
+    });
+    if (result.status !== "sent") {
+      throw new Error("Pending booking notification could not be completed.");
+    }
+    return;
+  }
   const send = {
     confirmed: sendBookingConfirmedEmail, cancelled: sendBookingCancelledEmail,
     rescheduled: sendBookingRescheduledEmail, feedback: sendFeedbackRequestEmail,
