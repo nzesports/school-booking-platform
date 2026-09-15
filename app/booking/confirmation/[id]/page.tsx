@@ -35,7 +35,7 @@ export default async function BookingConfirmationPage({
             <span className="font-semibold text-[color:var(--navy)]">
               {booking.referenceCode}
             </span>
-            . Use this reference and the email address used for the booking to request a one-time email code, then view and manage your sessions in your browser.
+            . Use this reference and the email address used for the booking to view and manage your sessions in your browser.
           </p>
         ) : null}
         <div className="mt-8 flex flex-wrap justify-center gap-3">

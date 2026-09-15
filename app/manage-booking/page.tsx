@@ -1,7 +1,6 @@
-import { cookies } from "next/headers";
-import { CHALLENGE_COOKIE, CHANGE_NOTICE_HOURS } from "@/lib/services/booking-access-security";
+import { CHANGE_NOTICE_HOURS } from "@/lib/services/booking-access-security";
 import type { Metadata } from "next";
-import { CalendarClock, Hash, Mail, Check, ArrowLeft, ArrowRight, ChevronDown, Clock3, GraduationCap, LogOut, MapPin, ShieldCheck, UserRound, X } from "lucide-react";
+import { CalendarClock, Hash, ArrowLeft, ArrowRight, ChevronDown, Clock3, GraduationCap, LogOut, MapPin, ShieldCheck, UserRound, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,14 +9,13 @@ import { ButtonLink } from "@/components/ui/button";
 import { loadGuestBookings } from "@/lib/services/guest-booking-access";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import { formatDateTime, formatTime } from "@/lib/utils";
-import { changeGuestSessionAction, endBookingAccessAction, requestBookingAccessAction, verifyBookingAccessAction } from "./actions";
+import { changeGuestSessionAction, endBookingAccessAction, requestBookingAccessAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Manage your booking | NZ Esports", robots: { index: false, follow: false }, referrer: "no-referrer"
 };
 
 const messages: Record<string, string> = {
-  code: "That code is invalid or expired. Check the code or request a new one. Each code allows five attempts.",
   cutoff: "Changes within 24 hours of the session must be arranged with the team.",
   identifier: "Enter your six-digit booking reference and a valid booking email address.",
   "not-found": "Those details do not match a booking. Check your reference and booking email address, then try again.",
@@ -52,7 +50,6 @@ export default async function ManageBookingPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const verifying = params.verify === "1" && Boolean((await cookies()).get(CHALLENGE_COOKIE)?.value);
   let bookings: Awaited<ReturnType<typeof loadGuestBookings>> = null;
   let loadFailed = false;
   try { bookings = await loadGuestBookings(); } catch { loadFailed = true; }
@@ -71,28 +68,11 @@ export default async function ManageBookingPage({ searchParams }: {
       {params.success === "cancelled" || params.success === "rescheduled" ? <p role="status" className="mb-6 rounded-2xl bg-green-50 p-5 text-green-900">Your session has been {params.success}. We will email the booking contact with the updated details and notify the team and assigned ambassador.</p> : null}
       {!bookings && !loadFailed ? <Card className="overflow-hidden p-0 md:p-0">
         <div className="border-b border-green-100 bg-gradient-to-r from-green-50 to-sky-50 px-6 py-5 sm:px-8">
-          <ol aria-label="Booking access steps" className="flex items-center gap-3 text-xs sm:text-sm">
-            <li aria-current={!verifying ? "step" : undefined} className="flex items-center gap-2 text-green-800"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-green-700 text-xs font-semibold text-white">{verifying ? <Check className="h-4 w-4" aria-hidden="true" /> : "1"}</span>Your details</li>
-            <li className="h-px min-w-4 flex-1 bg-green-200" aria-hidden="true" role="presentation" />
-            <li aria-current={verifying ? "step" : undefined} className={`flex items-center gap-2 ${verifying ? "text-green-800" : "text-slate-500"}`}><span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${verifying ? "bg-green-700 text-white" : "border border-slate-200 bg-white"}`}>2</span>Verify email</li>
-          </ol>
+          <div className="flex items-center gap-3"><Hash className="h-6 w-6 text-green-700" aria-hidden="true" /><h2 className="text-2xl font-semibold">Find your booking</h2></div>
         </div>
         <div className="px-6 py-7 sm:px-8 sm:py-8">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-700">{verifying ? <Mail className="h-6 w-6" aria-hidden="true" /> : <Hash className="h-6 w-6" aria-hidden="true" />}</div>
-          <h2 className="text-2xl font-semibold">{verifying ? "Check your inbox" : "Find your booking"}</h2>
-          <p className="mt-2 text-sm font-normal leading-6 text-[color:var(--text-muted)]">{verifying ? "If your details match a booking, we’ll email you an eight-digit code." : "Use your booking reference and email. We’ll send a code to verify it’s you."}</p>
-          {verifying ? <>
-            <form action={verifyBookingAccessAction} className="mt-6 space-y-5">
-              <label className="block text-sm font-medium" htmlFor="booking-verification-code">Verification code</label>
-              <Input id="booking-verification-code" name="code" required minLength={8} maxLength={8} pattern="[0-9]{8}" inputMode="numeric" autoComplete="one-time-code" aria-describedby="code-expiry" className="!mt-2 h-14 text-center font-mono text-xl tracking-[0.25em] sm:tracking-[0.4em]" />
-              <p id="code-expiry" className="!mt-2 flex items-center gap-1.5 text-xs text-[color:var(--text-muted)]"><Clock3 className="h-3.5 w-3.5" aria-hidden="true" />Valid for 10 minutes. Keep this page open.</p>
-              <PendingSubmitButton type="submit" className="min-h-12 w-full" pendingLabel="Verifying...">Verify & view booking<ArrowRight className="h-4 w-4" aria-hidden="true" /></PendingSubmitButton>
-            </form>
-            <div className="mt-6 border-t border-slate-100 pt-5 text-center">
-              <p className="text-xs leading-5 text-[color:var(--text-muted)]">No code yet? Check your spam folder or try your details again.</p>
-              <form action={endBookingAccessAction} className="mt-2"><PendingSubmitButton type="submit" variant="ghost" className="text-xs font-medium">Change details or request a new code</PendingSubmitButton></form>
-            </div>
-          </> : <form action={requestBookingAccessAction} className="mt-6 space-y-5">
+          <p className="text-sm font-normal leading-6 text-[color:var(--text-muted)]">Enter your booking reference and email to view your details.</p>
+          <form action={requestBookingAccessAction} className="mt-6 space-y-5">
             <div>
               <label htmlFor="booking-reference" className="block text-sm font-medium">6-digit booking reference</label>
               <Input id="booking-reference" name="reference" required minLength={6} maxLength={6} pattern="[0-9]{6}" inputMode="numeric" autoComplete="off" aria-describedby="reference-hint" className="mt-2 h-12 font-mono tracking-widest" />
@@ -102,8 +82,8 @@ export default async function ManageBookingPage({ searchParams }: {
               <label htmlFor="booking-email" className="block text-sm font-medium">Booking email address</label>
               <Input id="booking-email" name="email" type="email" required maxLength={254} autoComplete="email" autoCapitalize="none" spellCheck={false} className="mt-2 h-12" />
             </div>
-            <PendingSubmitButton type="submit" className="min-h-12 w-full" pendingLabel="Requesting code...">Send verification code<ArrowRight className="h-4 w-4" aria-hidden="true" /></PendingSubmitButton>
-          </form>}
+            <PendingSubmitButton type="submit" className="min-h-12 w-full" pendingLabel="Finding booking...">View booking<ArrowRight className="h-4 w-4" aria-hidden="true" /></PendingSubmitButton>
+          </form>
         </div>
         <div className="flex items-center justify-center gap-2 border-t border-slate-100 bg-slate-50/70 px-6 py-4 text-xs text-[color:var(--text-muted)]"><ShieldCheck className="h-4 w-4 shrink-0 text-green-700" aria-hidden="true" />Private access. No account or password needed.</div>
       </Card> : null}

@@ -181,7 +181,7 @@ export function SessionDetailsButton({
               <SessionChangeSummary session={session} />
               {canReview ? <details className="mt-4 rounded-xl border border-slate-200 p-4">
                 <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
-                <p className="mt-2 text-sm text-slate-600">End all active guest sessions and unused verification codes for this booking. The contact will need a new email code to access it again.</p>
+                <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
                 <form action={revokeBookingGuestAccessAction} className="mt-3">
                   <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
                   <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />

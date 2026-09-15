@@ -159,7 +159,7 @@ export function bookingCalendarDescription(input: {
     "",
     "Need to cancel or reschedule?",
     `Manage your booking: ${input.manageUrl}`,
-    "Enter the booking reference and the email address used for the booking and verify with the one-time code sent to your email to view and manage this booking in your browser. Changes within 24 hours must be arranged with the team. No account or password is needed.",
+    "Enter the booking reference and the email address used for the booking to view and manage this booking in your browser. Changes within 24 hours must be arranged with the team. No account or password is needed.",
     "Select View booking, choose your session, then select Cancel or Reschedule. New dates must be at least seven days ahead."
   ].filter((line) => line !== "").join("\n");
 }

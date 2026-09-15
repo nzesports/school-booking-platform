@@ -46,6 +46,6 @@ export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
     html: `<div data-school-session-details="true"><h3 style="margin:24px 0 8px;">Session details</h3>
       <table style="width:100%;border-collapse:collapse;">${rows.map(([label, value]) =>
         `<tr><th scope="row" style="padding:7px 12px 7px 0;text-align:left;vertical-align:top;">${label}</th><td style="padding:7px 0;">${escapeHtml(value)}</td></tr>`
-      ).join("")}</table><p style="font-size:12px;line-height:1.5;font-style:italic;">Need to cancel or reschedule? <a href="${escapeHtml(siteUrl)}/manage-booking">Manage your booking</a> by entering the booking reference shown above and the email address used for the booking. Verify with the one-time code sent to your email, then view your details and make changes in your browser. Changes within 24 hours of the session must be arranged with the team. No account or password is needed.</p></div>`
+      ).join("")}</table><p style="font-size:12px;line-height:1.5;font-style:italic;">Need to cancel or reschedule? <a href="${escapeHtml(siteUrl)}/manage-booking">Manage your booking</a> by entering the booking reference shown above and the email address used for the booking. View your details and make changes in your browser. Changes within 24 hours of the session must be arranged with the team. No account or password is needed.</p></div>`
   };
 }

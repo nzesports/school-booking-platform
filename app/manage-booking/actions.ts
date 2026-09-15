@@ -8,8 +8,7 @@ import { config } from "@/lib/env";
 import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGuestBookingGrant, loadGuestBookings } from "@/lib/services/guest-booking-access";
-import { ACCESS_COOKIE, CHALLENGE_COOKIE, SESSION_SECONDS, CHALLENGE_SECONDS, CHANGE_NOTICE_HOURS, newAccessSecret, validAccessSecret, hashAccessSecret, newVerificationCode, verificationCodeHash, privateRateKey } from "@/lib/services/booking-access-security";
-import { sendTransactionalEmail } from "@/lib/services/email";
+import { ACCESS_COOKIE, CHALLENGE_COOKIE, SESSION_SECONDS, CHANGE_NOTICE_HOURS, newAccessSecret, validAccessSecret, hashAccessSecret, privateRateKey } from "@/lib/services/booking-access-security";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
 import { notifyStaff, notifyUser } from "@/lib/services/notifications";
@@ -39,56 +38,25 @@ export async function requestBookingAccessAction(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
   if (!/^\d{6}$/.test(reference) || email.length > 254 || !z.email().safeParse(email).success) redirect("/manage-booking?error=identifier");
   const admin = createAdminClient();
-  if (!admin || !config.supabaseServiceRoleKey || !config.isBrevoConfigured) redirect("/manage-booking?error=unavailable");
+  if (!admin || !config.supabaseServiceRoleKey) redirect("/manage-booking?error=unavailable");
   if (!await checkRate("request-ip", await clientAddress(), 20)) redirect("/manage-booking?error=rate");
   const emailAllowed = await checkRate("request-email", email, 5);
   const referenceAllowed = await checkRate("request-reference", reference, 5);
   const { data: booking, error } = await admin.from("booking_requests")
     .select("id, reference_code, guest_access_version, contact:school_contacts!booking_requests_primary_contact_id_fkey(email)").eq("reference_code", reference).maybeSingle();
   if (error) { console.error("[booking-access] Lookup unavailable", { code: error.code }); redirect("/manage-booking?error=unavailable"); }
-  const challenge = newAccessSecret();
-  const jar = await cookies();
-  const previous = jar.get(CHALLENGE_COOKIE)?.value;
-  if (previous && validAccessSecret(previous)) await admin.from("booking_access_challenges").update({ consumed_at: new Date().toISOString() }).eq("challenge_hash", hashAccessSecret(previous));
-  jar.set(CHALLENGE_COOKIE, challenge, { ...cookieOptions, maxAge: CHALLENGE_SECONDS });
-  if (emailAllowed && referenceAllowed && booking && relationOne(booking.contact)?.email?.trim().toLowerCase() === email) {
-    const code = newVerificationCode();
-    const challengeHash = hashAccessSecret(challenge);
-    const { error: insertError } = await admin.from("booking_access_challenges").insert({
-      challenge_hash: challengeHash, booking_request_id: booking.id, email, reference_code: reference,
-      access_version: booking.guest_access_version, code_hash: verificationCodeHash(challenge, code, config.supabaseServiceRoleKey)
-    });
-    if (insertError) { console.error("[booking-access] Verification unavailable", { code: insertError.code }); redirect("/manage-booking?error=unavailable"); }
-    scheduleEmail(async () => {
-      try {
-        const result = await sendTransactionalEmail({ templateKey: "booking_access_code", recipientEmail: email,
-          bookingReference: reference, subject: "Your booking verification code",
-          html: `<p>Your booking verification code is:</p><p style="font-size:28px;letter-spacing:4px;font-weight:bold">${code}</p><p>Enter it in the browser where you requested access. It expires in ten minutes and can be used once. Do not share this code with anyone.</p><p>If you did not request this code, you can ignore this email. Your booking has not changed.</p>` });
-        if (result.status !== "sent") throw new Error("Delivery failed");
-      } catch {
-        await admin.from("booking_access_challenges").update({ consumed_at: new Date().toISOString() }).eq("challenge_hash", challengeHash);
-        console.error("[booking-access] Verification email delivery failed");
-      }
-    });
-  }
-  // Identical response for mismatched details and recipient throttling.
-  redirect("/manage-booking?verify=1");
-}
-
-export async function verifyBookingAccessAction(formData: FormData) {
-  const jar = await cookies();
-  const challenge = jar.get(CHALLENGE_COOKIE)?.value || "";
-  const code = String(formData.get("code") || "").trim();
-  if (!validAccessSecret(challenge) || !/^\d{8}$/.test(code)) redirect("/manage-booking?verify=1&error=code");
-  if (!await checkRate("verify-ip", await clientAddress(), 30)) redirect("/manage-booking?error=rate");
-  const admin = createAdminClient();
-  if (!admin || !config.supabaseServiceRoleKey) redirect("/manage-booking?error=unavailable");
+  if (!emailAllowed || !referenceAllowed) redirect("/manage-booking?error=rate");
+  if (!booking || relationOne(booking.contact)?.email?.trim().toLowerCase() !== email) redirect("/manage-booking?error=not-found");
   const token = newAccessSecret();
-  const { data, error } = await admin.rpc("verify_booking_access_code", {
-    p_challenge_hash: hashAccessSecret(challenge), p_code_hash: verificationCodeHash(challenge, code, config.supabaseServiceRoleKey), p_token_hash: hashAccessSecret(token)
+  const { error: sessionError } = await admin.from("booking_access_sessions").insert({
+    token_hash: hashAccessSecret(token), booking_request_id: booking.id, email,
+    reference_code: reference, access_version: booking.guest_access_version
   });
-  if (error) redirect("/manage-booking?error=unavailable");
-  if (!data) redirect("/manage-booking?verify=1&error=code");
+  if (sessionError) {
+    console.error("[booking-access] Session creation unavailable", { code: sessionError.code });
+    redirect("/manage-booking?error=unavailable");
+  }
+  const jar = await cookies();
   const previous = jar.get(ACCESS_COOKIE)?.value;
   if (previous && validAccessSecret(previous)) await admin.from("booking_access_sessions").update({ revoked_at: new Date().toISOString() }).eq("token_hash", hashAccessSecret(previous));
   jar.set(ACCESS_COOKIE, token, { ...cookieOptions, maxAge: SESSION_SECONDS });
