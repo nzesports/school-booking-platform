@@ -1,3 +1,4 @@
+import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import {
@@ -28,7 +29,7 @@ export async function sendSchoolSessionEmails(
       : admin.from("school_contacts").select("email, full_name").eq("school_id", booking.school_id)
           .eq("is_primary", true).limit(1).single(),
     admin.from("schools").select("name").eq("id", booking.school_id).single(),
-    admin.from("booking_sessions").select("id, starts_at, ends_at, presentation_type_id, status, expected_student_count, year_levels")
+    admin.from("booking_sessions").select("id, starts_at, ends_at, presentation_type_id, status, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
       .eq("booking_request_id", bookingId).in("id", sessionIds)
   ]);
   if (contactResult.error) throw contactResult.error;
@@ -51,6 +52,7 @@ export async function sendSchoolSessionEmails(
       sendSchoolRescheduleNoticeEmail({ ...opts, decision: "declined" })
   }[event];
   const results = await Promise.allSettled(sessions.map((session) => send({
+    ambassadorName: relationOne(relationOne(session.ambassador_profiles)?.profiles)?.full_name || relationOne(session.ambassador_profiles)?.display_name || undefined,
     contactEmail: contact.email as string,
     contactName: (contact.full_name as string) || "there",
     schoolName: schoolResult.data.name as string,
@@ -65,7 +67,7 @@ export async function sendSchoolSessionEmails(
     bookingSessionId: session.id as string,
     referenceCode: booking.reference_code as string
   })));
-  if (results.some((result) => result.status === "rejected")) {
+  if (results.some((result) => result.status === "rejected" || result.value.status !== "sent")) {
     throw new Error("One or more session notifications could not be completed.");
   }
 }

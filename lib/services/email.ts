@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 
+import { createAdminClient } from "@/lib/supabase/admin";
+import { relationOne } from "@/lib/supabase/relation";
 import { config } from "@/lib/env";
 import { renderBrandedEmail } from "@/lib/services/email-layout";
 
 type EmailEventInput = {
+  bookingReference?: string;
+  bookingRequestId?: string;
+  bookingSessionId?: string;
   templateKey: string;
   recipientEmail: string;
   subject: string;
@@ -31,6 +36,29 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
     };
   }
 
+  let reference = event.bookingReference;
+  if (!reference && (event.bookingRequestId || event.bookingSessionId)) {
+    const admin = createAdminClient();
+    if (!admin) throw new Error("Cannot resolve booking email reference.");
+    if (event.bookingRequestId) {
+      const { data, error } = await admin.from("booking_requests")
+        .select("reference_code").eq("id", event.bookingRequestId).single();
+      if (error) throw new Error("Cannot resolve booking email reference.");
+      reference = data.reference_code as string;
+    } else {
+      const { data, error } = await admin.from("booking_sessions")
+        .select("booking_requests(reference_code)").eq("id", event.bookingSessionId!).single();
+      if (error) throw new Error("Cannot resolve booking email reference.");
+      reference = relationOne(data.booking_requests)?.reference_code;
+    }
+  }
+  const escapedReference = reference?.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[character]!);
+  const referenceMarker = escapedReference
+    ? `<p style="margin:0 0 20px;"><span style="display:inline-block;border:1px solid #d8e4ee;border-radius:8px;background:#f3f7fb;padding:6px 10px;color:#344663;font-size:12px;letter-spacing:0.04em;">Booking ref: <strong style="font-family:monospace;font-size:13px;">${escapedReference}</strong></span></p>`
+    : "";
+
   let response: Response;
   try {
     response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -49,7 +77,7 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
         subject: event.subject,
         // Every email ships inside the branded shell. Inbound contact notices
         // omit newsletter-only unsubscribe controls.
-        htmlContent: renderBrandedEmail(event.html, { includeUnsubscribe }),
+        htmlContent: renderBrandedEmail(referenceMarker + event.html, { includeUnsubscribe }),
         ...(includeUnsubscribe === false
           ? {}
           : {

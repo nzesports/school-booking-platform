@@ -35,6 +35,7 @@ import type {
 } from "@/lib/domain/types";
 import { unstable_cache } from "next/cache";
 
+import { loadSessionRescheduleHistory } from "@/lib/services/session-change-history";
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -222,7 +223,8 @@ async function loadPlatformDataUncached() {
     bookingActivityLogsResult,
     trainingModulesResult,
     trainingLessonsResult,
-    trainingPacksResult
+    trainingPacksResult,
+    sessionRescheduleHistory
   ] = await Promise.all([
     admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
     admin
@@ -299,7 +301,8 @@ async function loadPlatformDataUncached() {
     admin
       .from("training_resource_packs")
       .select("id, title, presentation_type_id, created_at")
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: true }),
+    loadSessionRescheduleHistory()
   ]);
   const shouldRetrySessionsWithoutWithdrawals =
     sessionsResult.error?.message?.includes("withdrawal_reason") ||
@@ -313,6 +316,7 @@ async function loadPlatformDataUncached() {
     : null;
 
   return {
+    sessionRescheduleHistory,
     profiles: profilesResult.data ?? [],
     regions: regionsResult.data ?? [],
     schools: schoolsResult.data ?? [],
@@ -518,6 +522,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
 
     const mappedSession: BookingSessionView = {
       id: session.id as string,
+      rescheduleHistory: data.sessionRescheduleHistory[session.id as string],
       presentationTypeId: (session.presentation_type_id as string | null) ?? undefined,
       presentationSlug: (presentation?.slug as string | undefined) ?? "presentation",
       presentationTitle: (presentation?.title as string | undefined) ?? "Presentation",

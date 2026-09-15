@@ -31,11 +31,11 @@ export default async function BookingConfirmationPage({
         </p>
         {!isOwningSchoolUser && booking?.referenceCode ? (
           <p className="mt-4 text-base leading-7 text-[color:var(--text-muted)]">
-            Optional support reference:{" "}
+            Booking reference:{" "}
             <span className="font-semibold text-[color:var(--navy)]">
               {booking.referenceCode}
             </span>
-            . You only need this if you contact our team about the request.
+            . Use this reference and the email address used for the booking to request a one-time email code, then view and manage your sessions in your browser.
           </p>
         ) : null}
         <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -48,6 +48,7 @@ export default async function BookingConfirmationPage({
             </>
           ) : (
             <>
+              <ButtonLink href="/manage-booking">Manage booking without an account</ButtonLink>
               <AuthModalButton mode="signup" role="school">
                 Create an account to view bookings
               </AuthModalButton>

@@ -9,7 +9,8 @@ import { buildBookingReceipt } from "./booking-receipt";
 export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
   expectedStudentCount: "120",
   yearLevels: "Years 7 to 8",
-  sessionSummary: buildSchoolEmailDetails({ schoolName: "Rangitoto College", presentationTitle: "Digital Wellbeing", sessionStartsAt: "2026-09-14T21:30:00.000Z", sessionEndsAt: "2026-09-14T22:30:00.000Z", expectedStudentCount: 120, yearLevels: "Years 7 to 8" }).html,
+  referenceCode: "100011",
+  sessionSummary: buildSchoolEmailDetails({ referenceCode: "100011", ambassadorName: "Aroha Ngata", schoolName: "Rangitoto College", presentationTitle: "Digital Wellbeing", sessionStartsAt: "2026-09-14T21:30:00.000Z", sessionEndsAt: "2026-09-14T22:30:00.000Z", expectedStudentCount: 120, yearLevels: "Years 7 to 8" }).html,
   contactName: "Jordan Smith",
   contactEmail: "jordan@example.nz",
   contactPhone: "09 555 0100",
@@ -21,7 +22,7 @@ export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
     contactName: "Jordan Smith",
     contactEmail: "jordan@example.nz",
     contactPhone: "09 555 0100",
-    referenceCode: "BK-2026-0412",
+    referenceCode: "100011",
     sessions: [{
       presentationTitle: "Digital Wellbeing",
       regionName: "Auckland",
@@ -32,7 +33,7 @@ export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
     }]
   }),
   schoolName: "Rangitoto College",
-  bookingId: "BK-2026-0412",
+  bookingId: "100011",
   sessionDate: "Tue, 15 Sep 2026 · 9:30 am",
   presentationTitle: "Digital Wellbeing",
   ambassadorName: "Aroha Ngata",

@@ -16,12 +16,15 @@ import {
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { revokeBookingGuestAccessAction } from "@/app/portal/actions";
+import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import {
+  bookingCalendarDescription,
   buildIcsContent,
   googleCalendarUrl,
   office365Url,
@@ -29,6 +32,7 @@ import {
   yahooCalendarUrl,
   type CalendarEventInput
 } from "@/lib/services/calendar-links";
+import { siteUrl } from "@/lib/site-url";
 import { cn } from "@/lib/utils";
 
 const NZ_TIME_ZONE = "Pacific/Auckland";
@@ -108,15 +112,17 @@ export function SessionDetailsButton({
 
   const location = session.locationAddress || session.schoolAddress || session.schoolName;
   const calendarEvent: CalendarEventInput = {
+    uid: `${session.id}@book.nzesports.org.nz`,
+    cancelled: ["cancelled", "declined"].includes(session.status),
     title: `${session.presentationTitle} — ${session.schoolName}`,
-    description: [
-      `NZ Esports school presentation: ${session.presentationTitle}.`,
-      `Year levels: ${session.yearLevels}.`,
-      `Expected students: ${session.expectedStudentCount}.`,
-      session.contactName ? `School contact: ${session.contactName}.` : ""
-    ]
-      .filter(Boolean)
-      .join(" "),
+    description: bookingCalendarDescription({
+      presentationTitle: session.presentationTitle,
+      schoolName: session.schoolName,
+      ambassadorName: session.assignedAmbassadorName,
+      yearLevels: session.yearLevels,
+      expectedStudentCount: session.expectedStudentCount,
+      manageUrl: `${siteUrl}/manage-booking`
+    }) + (session.contactName ? `\nSchool contact: ${session.contactName}` : ""),
     location,
     startsAt: session.startsAt,
     endsAt: session.endsAt
@@ -172,6 +178,16 @@ export function SessionDetailsButton({
               overlayClassName="z-[80]"
               compact
             >
+              <SessionChangeSummary session={session} />
+              {canReview ? <details className="mt-4 rounded-xl border border-slate-200 p-4">
+                <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
+                <p className="mt-2 text-sm text-slate-600">End all active guest sessions and unused verification codes for this booking. The contact will need a new email code to access it again.</p>
+                <form action={revokeBookingGuestAccessAction} className="mt-3">
+                  <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
+                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                  <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Ending access...">End guest access</PendingSubmitButton>
+                </form>
+              </details> : null}
               <p className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-[14px] bg-[color:var(--green-soft)] px-3.5 py-2 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)] md:text-lg">
                 <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
                 {formatNzDate(session.startsAt)}

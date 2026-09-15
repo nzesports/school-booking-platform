@@ -1,3 +1,4 @@
+import { siteUrl } from "@/lib/site-url";
 import { formatTime } from "@/lib/utils";
 import { formatSchoolEmailDate } from "./school-email-details";
 
@@ -52,6 +53,7 @@ export function buildBookingReceipt(details: BookingReceiptDetails) {
       ${row("Phone", details.contactPhone)}
     </table>
     ${sessions}
+    <p style="font-size:12px;line-height:1.5;font-style:italic;">Cancel or reschedule without an account at <a href="${escapeHtml(siteUrl)}/manage-booking">Manage booking</a>. Enter your booking reference and the email address used for the booking and verify with the one-time code sent to your email to view your details and make changes in your browser. Changes within 24 hours must be arranged with the team.</p>
     <p>The exact venue address and room will be confirmed with your school.</p>
     ${details.schoolNotes ? `<h3>School notes</h3><p style="white-space:pre-line;">${escapeHtml(details.schoolNotes)}</p>` : ""}`;
 }

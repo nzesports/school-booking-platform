@@ -15,7 +15,8 @@ const navItems = [
   { href: "/#how-it-works", label: "How It Works" },
   { href: "/resources", label: "Resources" },
   { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" }
+  { href: "/contact", label: "Contact" },
+  { href: "/manage-booking", label: "Manage booking" }
 ];
 
 export function SiteHeader() {
@@ -29,7 +30,7 @@ export function SiteHeader() {
       <header className="site-shell flex min-h-[92px] items-center justify-between gap-4 py-4">
         <BrandLockup compact size="nav" />
 
-        <nav className="hidden items-center gap-7 text-sm font-medium text-[color:var(--navy)] xl:flex">
+        <nav className="hidden items-center gap-6 text-sm font-medium text-[color:var(--navy)] xl:flex 2xl:gap-10">
           {navItems.map((item) => (
             <Link
               key={item.href}

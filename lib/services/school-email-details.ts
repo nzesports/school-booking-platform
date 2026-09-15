@@ -1,6 +1,9 @@
+import { siteUrl } from "@/lib/site-url";
 import { formatTime } from "@/lib/utils";
 
 export type SchoolEmailDetails = {
+  ambassadorName?: string;
+  referenceCode?: string;
   schoolName: string;
   presentationTitle: string;
   sessionStartsAt: string;
@@ -23,6 +26,8 @@ function escapeHtml(value: string) {
 
 export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
   const vars = {
+    ambassadorName: details.ambassadorName || "To be assigned",
+    referenceCode: details.referenceCode || "Not recorded",
     schoolName: details.schoolName,
     presentationTitle: details.presentationTitle,
     sessionDate: formatSchoolEmailDate(details.sessionStartsAt),
@@ -31,6 +36,7 @@ export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
     yearLevels: details.yearLevels || "Not recorded"
   };
   const rows = [
+    ["Ambassador", vars.ambassadorName], ["Booking reference", vars.referenceCode],
     ["Presentation", vars.presentationTitle], ["School / location", vars.schoolName],
     ["Date", vars.sessionDate], ["Time", vars.sessionTime],
     ["Expected students", vars.expectedStudentCount], ["Year groups", vars.yearLevels]
@@ -40,6 +46,6 @@ export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
     html: `<div data-school-session-details="true"><h3 style="margin:24px 0 8px;">Session details</h3>
       <table style="width:100%;border-collapse:collapse;">${rows.map(([label, value]) =>
         `<tr><th scope="row" style="padding:7px 12px 7px 0;text-align:left;vertical-align:top;">${label}</th><td style="padding:7px 0;">${escapeHtml(value)}</td></tr>`
-      ).join("")}</table></div>`
+      ).join("")}</table><p style="font-size:12px;line-height:1.5;font-style:italic;">Need to cancel or reschedule? <a href="${escapeHtml(siteUrl)}/manage-booking">Manage your booking</a> by entering the booking reference shown above and the email address used for the booking. Verify with the one-time code sent to your email, then view your details and make changes in your browser. Changes within 24 hours of the session must be arranged with the team. No account or password is needed.</p></div>`
   };
 }

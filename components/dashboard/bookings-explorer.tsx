@@ -31,6 +31,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 
+import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
 import { colourWithAlpha } from "@/lib/presentation-colors";
@@ -909,6 +910,7 @@ export function BookingsExplorer({
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <StatusPill value={session.status} />
+                                <SessionChangeSummary session={session} compact />
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <SessionDetailsButton
@@ -1050,6 +1052,8 @@ function CompactSessionCard({
         </div>
         <StatusPill value={session.status} />
       </div>
+
+      <SessionChangeSummary session={session} compact />
 
       <dl className="mt-3 grid gap-2 rounded-[11px] bg-[#f7f9fc] p-3 sm:grid-cols-2">
         <div className="min-w-0">

@@ -233,6 +233,11 @@ export interface BookingSessionView {
   bookingStatus?: BookingStatus;
   withdrawalReason?: string;
   withdrawalRequestedAt?: string;
+  rescheduleHistory?: Array<{
+    changedAt: string;
+    previousStartsAt?: string;
+    startsAt?: string;
+  }>;
   rescheduleRequestedDate?: string;
   rescheduleRequestNotes?: string;
   rescheduleRequestedAt?: string;

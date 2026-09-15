@@ -3963,6 +3963,8 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
       actor_id: actor.id,
       actor_type: "staff",
       details: {
+        previous_starts_at: session.starts_at,
+        previous_ends_at: session.ends_at,
         starts_at: finalStartsAt,
         ends_at: finalEndsAt,
         restored_status: previousStatus
@@ -5459,6 +5461,12 @@ export async function sendTestEmailAction(formData: FormData) {
   }
 
   const result = await sendTransactionalEmail({
+    bookingReference: [
+      "booking_request_received", "school_booking_confirmed", "school_booking_cancelled",
+      "school_booking_rescheduled", "school_session_reminder", "school_feedback_request",
+      "school_reschedule_requested", "school_reschedule_declined", "ambassador_assignment_confirmation",
+      "ambassador_withdrawal_approved", "ambassador_withdrawal_declined", "invoice_to_finance"
+    ].includes(templateKey) ? "100011" : undefined,
     templateKey: `${templateKey}_test`,
     recipientEmail: actor.email,
     subject: `[Test] ${substituteSampleValues(template.subject as string)}`,
@@ -6226,4 +6234,16 @@ export async function retryFinancePaymentEmailAction(formData: FormData) {
       emailSent ? "finance-email" : "invoice-email-failed"
     )
   );
+}
+
+export async function revokeBookingGuestAccessAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const bookingId = z.uuid().parse(String(formData.get("bookingRequestId") || ""));
+  const returnTo = sanitizeReturnTo(String(formData.get("returnTo") || "/staff/bookings"), "/staff/bookings");
+  const admin = getAdminClientOrThrow();
+  const { data, error } = await admin.rpc("revoke_booking_guest_access", { p_booking_id: bookingId });
+  if (error || !data) throw new Error("Could not end guest access. Please try again.");
+  await logAuditEvent(actor.id, "booking.guest_access_revoked", "booking_request", bookingId);
+  revalidatePath("/manage-booking");
+  redirect(appendSearchParam(returnTo, "updated", "guest-access-ended"));
 }

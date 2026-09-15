@@ -138,3 +138,28 @@ export function buildIcsContent(event: CalendarEventInput) {
     .map(foldIcsLine)
     .join("\r\n") + "\r\n";
 }
+
+// Shared plain text for every calendar provider; keep HTML out of ICS details.
+export function bookingCalendarDescription(input: {
+  presentationTitle: string;
+  schoolName: string;
+  ambassadorName?: string | null;
+  referenceCode?: string | null;
+  yearLevels?: string | null;
+  expectedStudentCount?: number | null;
+  manageUrl: string;
+}) {
+  return [
+    `NZ Esports school presentation: ${input.presentationTitle}`,
+    `School: ${input.schoolName}`,
+    `Ambassador: ${input.ambassadorName || "To be assigned"}`,
+    input.referenceCode ? `Booking reference: ${input.referenceCode}` : "",
+    input.yearLevels ? `Year groups: ${input.yearLevels}` : "",
+    input.expectedStudentCount != null ? `Expected students: ${input.expectedStudentCount}` : "",
+    "",
+    "Need to cancel or reschedule?",
+    `Manage your booking: ${input.manageUrl}`,
+    "Enter the booking reference and the email address used for the booking and verify with the one-time code sent to your email to view and manage this booking in your browser. Changes within 24 hours must be arranged with the team. No account or password is needed.",
+    "Select View booking, choose your session, then select Cancel or Reschedule. New dates must be at least seven days ahead."
+  ].filter((line) => line !== "").join("\n");
+}

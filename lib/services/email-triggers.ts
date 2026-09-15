@@ -1,7 +1,7 @@
 import { config } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { buildCalendarLinksEmailHtml } from "./calendar-links";
+import { bookingCalendarDescription, buildCalendarLinksEmailHtml } from "./calendar-links";
 import { sendTransactionalEmail } from "./email";
 import { buildBookingReceipt, type BookingReceiptSession } from "./booking-receipt";
 import { formatLongDate, formatTime } from "@/lib/utils";
@@ -111,9 +111,15 @@ async function sendSchoolSessionEmail(
   event: Parameters<typeof sendTransactionalEmail>[0],
   details: ReturnType<typeof buildSchoolEmailDetails>
 ) {
+  const calendarNote = event.templateKey === "school_booking_cancelled"
+    ? '<p style="font-size:12px;line-height:1.5;font-style:italic;">If you added this session to your calendar, please remove the cancelled event.</p>'
+    : event.templateKey === "school_booking_rescheduled"
+      ? '<p style="font-size:12px;line-height:1.5;font-style:italic;">If you previously added this session to your calendar, replace the old event with the updated date and time.</p>'
+      : "";
   return sendTransactionalEmail({
     ...event,
-    html: event.html.includes(details.html) ? event.html : `${event.html}${details.html}`
+    bookingReference: details.vars.referenceCode === "Not recorded" ? undefined : details.vars.referenceCode,
+    html: (event.html.includes(details.html) ? event.html : `${event.html}${details.html}`) + calendarNote
   });
 }
 
@@ -148,6 +154,8 @@ export async function sendBookingRequestReceivedEmail(opts: {
     regionName: opts.sessions.map((session) => session.regionName).join("; ")
   }, { bookingSummary });
   const result = await sendTransactionalEmail({
+    bookingReference: opts.referenceCode,
+    bookingRequestId: opts.bookingId,
     templateKey: "booking_request_received",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "We've received your booking request",
@@ -156,7 +164,7 @@ export async function sendBookingRequestReceivedEmail(opts: {
       `
       <p>Hi ${contactName},</p>
       <p>Thank you for your booking request for <strong>${schoolName}</strong>.</p>
-      <p>Your optional support reference is <strong>${referenceCode}</strong>.</p>
+      <p>Your booking reference is <strong>${referenceCode}</strong>.</p>
       <p>Our team will be in touch within 2 business days to confirm your session.</p>
       <p>If you want to access the school portal, sign up with this same email address after
       verification and your school contact record will be linked automatically.</p>
@@ -178,6 +186,10 @@ function calendarLinksBlock(opts: {
   sessionStartsAt?: string;
   sessionEndsAt?: string;
   bookingSessionId?: string;
+  ambassadorName?: string;
+  referenceCode?: string;
+  yearLevels?: string;
+  expectedStudentCount?: number | null;
 }) {
   if (!opts.sessionStartsAt) {
     return "";
@@ -190,7 +202,7 @@ function calendarLinksBlock(opts: {
   return buildCalendarLinksEmailHtml(
     {
       title: `${opts.presentationTitle} — NZ Esports presentation`,
-      description: `NZ Esports school presentation at ${opts.schoolName}. Manage your booking: ${config.siteUrl}/school/bookings`,
+      description: bookingCalendarDescription({ ...opts, manageUrl: `${config.siteUrl}/manage-booking` }),
       location: opts.schoolName,
       startsAt: opts.sessionStartsAt,
       endsAt
@@ -230,6 +242,8 @@ export async function sendBookingConfirmedEmail(opts: SchoolEmailDetails & {
     { calendarLinks }
   );
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "school_booking_confirmed",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your session is confirmed",
@@ -281,6 +295,8 @@ export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
     reviewUrl
   });
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "school_feedback_request",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? `How was your ${opts.presentationTitle} session?`,
@@ -339,6 +355,8 @@ export async function sendBookingRescheduledEmail(opts: SchoolEmailDetails & {
     { calendarLinks }
   );
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "school_booking_rescheduled",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your NZ Esports presentation has been rescheduled",
@@ -387,6 +405,8 @@ export async function sendSessionReminderEmail(opts: SchoolEmailDetails & {
     bookingId: opts.referenceCode ?? ""
   });
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "school_session_reminder",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? `Coming up: ${opts.presentationTitle} at your school`,
@@ -526,6 +546,8 @@ export async function sendBookingCancelledEmail(opts: SchoolEmailDetails & {
     bookingSessionId: opts.bookingSessionId ?? ""
   });
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "school_booking_cancelled",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your session has been cancelled",
@@ -563,6 +585,8 @@ export async function sendSchoolRescheduleNoticeEmail(
     requestedDate: opts.requestedDate ?? "To be discussed"
   });
   const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
     templateKey,
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? (requested ? "We've received your reschedule request" : "Your reschedule request could not be approved"),
@@ -602,6 +626,7 @@ export async function sendAmbassadorAssignedEmail(opts: {
     bookingSessionId: opts.bookingSessionId
   });
   const result = await sendTransactionalEmail({
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "ambassador_assignment_confirmation",
     recipientEmail: opts.ambassadorEmail,
     subject: template?.subject ?? `Session confirmed: ${opts.presentationTitle} at ${opts.schoolName}`,
@@ -654,6 +679,7 @@ export async function sendAmbassadorWithdrawalResolvedEmail(opts: {
     portalUrl
   });
   const result = await sendTransactionalEmail({
+    bookingSessionId: opts.bookingSessionId,
     templateKey,
     recipientEmail: opts.ambassadorEmail,
     subject:
@@ -730,6 +756,7 @@ export async function sendPaymentApprovalToFinanceEmail(opts: {
     { confirmationButton, gstLine }
   );
   const result = await sendTransactionalEmail({
+    bookingSessionId: opts.bookingSessionId,
     templateKey: "invoice_to_finance",
     recipientEmail: opts.toEmail,
     subject: template?.subject ?? `Ambassador invoice ${opts.invoiceNumber} - ${opts.ambassadorName}`,

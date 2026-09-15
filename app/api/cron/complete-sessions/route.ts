@@ -7,6 +7,7 @@ import {
   sendFeedbackRequestEmail,
   sendSessionReminderEmail
 } from "@/lib/services/email-triggers";
+import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 
@@ -53,10 +54,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Supabase admin access is unavailable." }, { status: 503 });
   }
 
+  const { error: pruneError } = await admin.rpc("prune_booking_access_records");
+  if (pruneError) console.error("[booking-access] Access cleanup failed", { code: pruneError.code });
+
   const now = new Date().toISOString();
   const { data: dueSessions, error } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels")
+    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
     .in("status", DELIVERABLE_STATUSES)
     .lt("ends_at", now);
 
@@ -132,6 +136,7 @@ export async function GET(request: NextRequest) {
 
     if (contact?.email) {
       const result = await sendFeedbackRequestEmail({
+        ambassadorName: relationOne(relationOne(session.ambassador_profiles)?.profiles)?.full_name || relationOne(session.ambassador_profiles)?.display_name || undefined,
         contactEmail: contact.email as string,
         contactName: (contact.full_name as string | null) ?? "there",
         schoolName: (school?.name as string | null) ?? "your school",
@@ -142,6 +147,7 @@ export async function GET(request: NextRequest) {
         yearLevels: (session.year_levels as string) || "",
         presentationTitle: (presentation?.title as string | null) ?? "your presentation",
         bookingId: session.booking_request_id as string,
+        referenceCode: (booking?.reference_code as string | null) ?? undefined,
         bookingSessionId: session.id as string
       }).catch(() => null);
 
@@ -178,7 +184,7 @@ export async function GET(request: NextRequest) {
   ).toISOString();
   const { data: upcomingSessions } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels")
+    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
     .in("status", DELIVERABLE_STATUSES)
     .gt("starts_at", now)
     .lte("starts_at", reminderWindowEnd);
@@ -218,6 +224,7 @@ export async function GET(request: NextRequest) {
 
     if (contact?.email) {
       const result = await sendSessionReminderEmail({
+        ambassadorName: relationOne(relationOne(session.ambassador_profiles)?.profiles)?.full_name || relationOne(session.ambassador_profiles)?.display_name || undefined,
         contactEmail: contact.email as string,
         contactName: (contact.full_name as string | null) ?? "there",
         schoolName: (school?.name as string | null) ?? "your school",

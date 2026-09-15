@@ -20,6 +20,7 @@ import {
   UsersRound,
   Zap
 } from "lucide-react";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { logoutAction } from "@/app/auth/actions";
@@ -47,7 +48,7 @@ import { Input } from "@/components/ui/input";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
-import { requirePortalAccess } from "@/lib/services/auth";
+import { getAuthenticatedPortalUser, requirePortalAccess } from "@/lib/services/auth";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import { isDeliveredSession } from "@/lib/services/dashboard-insights";
 import { getSchoolPortalData, loadUserNotifications } from "@/lib/services/portal";
@@ -105,6 +106,9 @@ export default async function SchoolPortalPage({
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const route = slug?.join("/") ?? "";
+  if (route.startsWith("bookings") && !(await getAuthenticatedPortalUser())) {
+    redirect("/manage-booking");
+  }
   const actor = await requirePortalAccess("school");
   const portal = await getSchoolPortalData(actor.id);
   const notifications = await loadUserNotifications(actor.id);
@@ -539,6 +543,7 @@ export default async function SchoolPortalPage({
 
         {route === "bookings" ? (
           <div className="grid gap-5">
+            <div><ButtonLink href="/manage-booking" variant="secondary">Manage booking by reference</ButtonLink></div>
             <div className="grid gap-4 md:grid-cols-3">
               <SchoolStatTile
                 icon={<CalendarDays className="h-5 w-5" />}
