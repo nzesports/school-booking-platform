@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
@@ -429,6 +430,7 @@ export default async function AdminPortalPage({
         headerAction={
           route === "bookings" ? (
             <ManualBookingDialog
+              key={readSearchParam(resolvedSearchParams, "reference") || "new-booking"}
               basePath="/admin"
               schools={portal.schools}
               regions={portal.regions}
@@ -533,6 +535,7 @@ export default async function AdminPortalPage({
               <NoticeBanner tone={contentNotice.tone}>{contentNotice.message}</NoticeBanner>
             ) : null}
             <BookingLifecyclePanel
+              key={portal.bookings.map((booking) => booking.id).join(",")}
               basePath="/admin"
               bookings={portal.bookings}
               presentations={portal.presentations}
@@ -835,12 +838,12 @@ export default async function AdminPortalPage({
                     </select>
                   </Field>
                   <div className="grid items-end">
-                    <button
+                    <PendingSubmitButton unstyled
                       type="submit"
                       className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                     >
                       Send invite
-                    </button>
+                    </PendingSubmitButton>
                   </div>
                 </form>
               </div>
@@ -1025,13 +1028,13 @@ export default async function AdminPortalPage({
                           </span>
                         ) : (
                           <>
-                            <button
+                            <PendingSubmitButton unstyled
                               type="submit"
                               form={accessFormId}
                               className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
                             >
                               Save
-                            </button>
+                            </PendingSubmitButton>
                             {isDeleteOpen ? (
                               <ButtonLink
                                 href={usersHref()}
@@ -1080,12 +1083,12 @@ export default async function AdminPortalPage({
                           />
                         </Field>
                         <div className="flex flex-wrap gap-3">
-                          <button
+                          <PendingSubmitButton unstyled
                             type="submit"
                             className="inline-flex min-h-[46px] items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff0f0] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
                           >
                             Permanently delete user
-                          </button>
+                          </PendingSubmitButton>
                           <ButtonLink href={usersHref()} variant="secondary" className="min-h-[46px]">
                             Keep user
                           </ButtonLink>
@@ -1606,22 +1609,22 @@ export default async function AdminPortalPage({
                   Cancel
                 </ButtonLink>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button
+                  <PendingSubmitButton unstyled
                     type="submit"
                     name="intent"
                     value="draft"
                     className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
                   >
                     Save Draft
-                  </button>
-                  <button
+                  </PendingSubmitButton>
+                  <PendingSubmitButton unstyled
                     type="submit"
                     name="intent"
                     value="publish"
                     className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#95d2ab] bg-[linear-gradient(135deg,#30b45f,#18a83b)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(24,168,59,0.2)]"
                   >
                     {isCreatingPresentation ? "Create Presentation" : "Update Presentation"}
-                  </button>
+                  </PendingSubmitButton>
                 </div>
               </div>
             </form>
@@ -1990,12 +1993,12 @@ export default async function AdminPortalPage({
                 <ButtonLink href="/admin/resources" variant="secondary">
                   Cancel
                 </ButtonLink>
-                <button
+                <PendingSubmitButton unstyled
                   type="submit"
                   className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                 >
                   {isCreatingResource ? "Create Resource" : "Update Resource"}
-                </button>
+                </PendingSubmitButton>
               </div>
             </form>
           </Card>
@@ -2040,9 +2043,9 @@ export default async function AdminPortalPage({
                       <input type="checkbox" name="isActive" defaultChecked={section.isActive} />
                       Section is active
                     </label>
-                    <button type="submit" className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]">
+                    <PendingSubmitButton unstyled type="submit" className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]">
                       Save section
-                    </button>
+                    </PendingSubmitButton>
                   </div>
                   <div className="rounded-[24px] border border-[color:var(--border-soft)] bg-white/92 p-5">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
@@ -2163,12 +2166,12 @@ export default async function AdminPortalPage({
                       <form action={markNotificationReadAction}>
                         <input type="hidden" name="notificationId" value={notification.id} />
                         <input type="hidden" name="redirectTo" value="/admin/activity" />
-                        <button
+                        <PendingSubmitButton unstyled
                           type="submit"
                           className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
                         >
                           Mark as read
-                        </button>
+                        </PendingSubmitButton>
                       </form>
                     ) : null}
                   </div>
@@ -2407,6 +2410,38 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
 }
 
 function getContentNotice(searchParams: Record<string, string | string[] | undefined>) {
+  if (readSearchParam(searchParams, "deleted") === "bookings") {
+    const count = Number(readSearchParam(searchParams, "deletedCount")) || 0;
+    return {
+      scope: "booking" as const,
+      tone: "success" as const,
+      message: count ? `${count} booking${count === 1 ? "" : "s"} deleted successfully.` : "The selected bookings have already been removed."
+    };
+  }
+  if (["booking-delete-failed", "invalid-booking-deletion"].includes(readSearchParam(searchParams, "error") || "")) {
+    return {
+      scope: "booking" as const,
+      tone: "error" as const,
+      message: "The bookings could not be deleted. Select up to 100 bookings and try again."
+    };
+  }
+
+  if (readSearchParam(searchParams, "created") === "booking") {
+    const reference = readSearchParam(searchParams, "reference");
+    return {
+      scope: "booking" as const,
+      tone: "success" as const,
+      message: reference ? `Booking logged successfully. Reference: ${reference}.` : "Booking logged successfully."
+    };
+  }
+  if (readSearchParam(searchParams, "error") === "booking-in-progress") {
+    return {
+      scope: "booking" as const,
+      tone: "error" as const,
+      message: "This booking is already being saved. Check the booking list before trying again."
+    };
+  }
+
   const error = readSearchParam(searchParams, "error");
   const withdrawal = readSearchParam(searchParams, "withdrawal");
   const resolved = readSearchParam(searchParams, "resolved");
@@ -2556,6 +2591,7 @@ function NoticeBanner({
 }) {
   return (
     <div
+      role={tone === "error" ? "alert" : "status"}
       className={cn(
         "rounded-[22px] border px-4 py-3 text-sm font-medium",
         tone === "success"

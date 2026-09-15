@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   Bell,
   ChevronRight,
@@ -278,13 +279,13 @@ export function EmailTemplatesWorkspace({
               ))}
               <form action={sendTestAction} className="ml-auto pb-2">
                 <input type="hidden" name="templateKey" value={selected.key} />
-                <button
+                <PendingSubmitButton unstyled
                   type="submit"
                   className="inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] border border-[#c4dbfb] bg-white px-3 text-xs font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
                 >
                   <Send className="h-3.5 w-3.5" />
                   Send test to me
-                </button>
+                </PendingSubmitButton>
               </form>
             </div>
 

@@ -462,12 +462,12 @@ export function SessionDetailsButton({
                       <input type="hidden" name="bookingSessionId" value={session.id} />
                       <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
                       <input type="hidden" name="decision" value="approve" />
-                      <button
+                      <PendingSubmitButton unstyled
                         type="submit"
                         className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.22)] transition hover:bg-[#12852f] sm:w-auto"
                       >
                         Approve withdrawal - reopen session
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                     <form
                       action={resolveWithdrawalAction}
@@ -486,12 +486,12 @@ export function SessionDetailsButton({
                           className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
                         />
                       </label>
-                      <button
+                      <PendingSubmitButton unstyled
                         type="submit"
                         className="inline-flex min-h-[44px] items-center justify-center rounded-[12px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
                       >
                         Decline - keep assigned
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   </div>
                 </div>

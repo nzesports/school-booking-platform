@@ -908,12 +908,12 @@ function VolunteerDirectoryControls({
             className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
           />
         </label>
-        <button
+        <PendingSubmitButton unstyled
           type="submit"
           className="inline-flex min-h-[48px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#c0dff2]"
         >
           Search
-        </button>
+        </PendingSubmitButton>
         {query.trim() ? (
           <ButtonLink
             href={`${basePath}?tab=profiles&roster=${activeStatus}&sort=${sort}`}

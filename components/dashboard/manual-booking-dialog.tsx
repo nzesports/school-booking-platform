@@ -41,6 +41,7 @@ export function ManualBookingDialog({
   action: (formData: FormData) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [submissionId, setSubmissionId] = useState("");
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
 
   return (
@@ -49,7 +50,7 @@ export function ManualBookingDialog({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => setOpen(true)}
+          onClick={() => { setSubmissionId(crypto.randomUUID()); setOpen(true); }}
           className="min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
         >
           <CirclePlus className="h-4 w-4" />
@@ -66,6 +67,7 @@ export function ManualBookingDialog({
               maxWidthClassName="max-w-[980px]"
             >
               <form action={action} className="mt-5 grid gap-4">
+                <input type="hidden" name="submissionId" value={submissionId} />
                 <input
                   type="hidden"
                   name="returnTo"
@@ -198,7 +200,7 @@ export function ManualBookingDialog({
                   <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="bg-[#2563eb] text-white hover:bg-[#1d4fd7]">
+                  <Button type="submit" pendingLabel="Saving booking…" className="bg-[#2563eb] text-white hover:bg-[#1d4fd7]">
                     Save booking
                   </Button>
                 </div>

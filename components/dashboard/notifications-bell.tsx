@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Bell, CircleCheck, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -202,14 +203,14 @@ export function NotificationsBell({
                                   value={notification.id}
                                 />
                                 <input type="hidden" name="redirectTo" value={currentPath} />
-                                <button
+                                <PendingSubmitButton unstyled
                                   type="submit"
                                   style={{ fontSize: "10px", lineHeight: "14px" }}
                                   className="inline-flex min-h-[30px] items-center justify-center gap-1 whitespace-nowrap rounded-[9px] border border-[color:var(--border-soft)] bg-white px-2.5 text-[10px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f6f9fd]"
                                 >
                                   <CircleCheck className="h-2.5 w-2.5" />
                                   Mark as read
-                                </button>
+                                </PendingSubmitButton>
                               </form>
                             ) : null}
                           </div>

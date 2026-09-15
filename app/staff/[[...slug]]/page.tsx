@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { ReactNode } from "react";
 import type { ResourceAudience } from "@/lib/domain/types";
 import { redirect } from "next/navigation";
@@ -302,6 +303,7 @@ export default async function StaffPortalPage({
         headerAction={
           route === "bookings" ? (
             <ManualBookingDialog
+              key={readSearchParam(resolvedSearchParams, "reference") || "new-booking"}
               basePath="/staff"
               schools={portal.schools}
               regions={portal.regions}
@@ -401,6 +403,7 @@ export default async function StaffPortalPage({
               <NoticeBanner tone={resourceNotice.tone}>{resourceNotice.message}</NoticeBanner>
             ) : null}
             <BookingLifecyclePanel
+              key={portal.bookings.map((booking) => booking.id).join(",")}
               basePath="/staff"
               bookings={portal.bookings}
               presentations={portal.presentations}
@@ -872,12 +875,12 @@ export default async function StaffPortalPage({
                 <ButtonLink href="/staff/resources" variant="secondary">
                   Cancel
                 </ButtonLink>
-                <button
+                <PendingSubmitButton unstyled
                   type="submit"
                   className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
                 >
                   {isCreatingResource ? "Create Resource" : "Update Resource"}
-                </button>
+                </PendingSubmitButton>
               </div>
             </form>
           </Card>
@@ -960,12 +963,12 @@ export default async function StaffPortalPage({
                       <form action={markNotificationReadAction}>
                         <input type="hidden" name="notificationId" value={notification.id} />
                         <input type="hidden" name="redirectTo" value="/staff/activity" />
-                        <button
+                        <PendingSubmitButton unstyled
                           type="submit"
                           className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
                         >
                           Mark as read
-                        </button>
+                        </PendingSubmitButton>
                       </form>
                     ) : null}
                   </div>
@@ -1105,6 +1108,34 @@ function getAmbassadorNotice(searchParams: Record<string, string | string[] | un
 }
 
 function getStaffContentNotice(searchParams: Record<string, string | string[] | undefined>) {
+  if (readSearchParam(searchParams, "deleted") === "bookings") {
+    const count = Number(readSearchParam(searchParams, "deletedCount")) || 0;
+    return {
+      tone: "success" as const,
+      message: count ? `${count} booking${count === 1 ? "" : "s"} deleted successfully.` : "The selected bookings have already been removed."
+    };
+  }
+  if (["booking-delete-failed", "invalid-booking-deletion"].includes(readSearchParam(searchParams, "error") || "")) {
+    return {
+      tone: "error" as const,
+      message: "The bookings could not be deleted. Select up to 100 bookings and try again."
+    };
+  }
+
+  if (readSearchParam(searchParams, "created") === "booking") {
+    const reference = readSearchParam(searchParams, "reference");
+    return {
+      tone: "success" as const,
+      message: reference ? `Booking logged successfully. Reference: ${reference}.` : "Booking logged successfully."
+    };
+  }
+  if (readSearchParam(searchParams, "error") === "booking-in-progress") {
+    return {
+      tone: "error" as const,
+      message: "This booking is already being saved. Check the booking list before trying again."
+    };
+  }
+
   const error = readSearchParam(searchParams, "error");
   const saved = readSearchParam(searchParams, "saved");
   const deleted = readSearchParam(searchParams, "deleted");
@@ -1283,6 +1314,7 @@ function NoticeBanner({
 }) {
   return (
     <div
+      role={tone === "error" ? "alert" : "status"}
       className={cn(
         "rounded-[22px] border px-4 py-3 text-sm",
         tone === "success"

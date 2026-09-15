@@ -4,6 +4,7 @@ import { CalendarCheck2, FileText, UserRound, UsersRound } from "lucide-react";
 import {
   assignAmbassadorAction,
   bulkUpdateBookingStatusAction,
+  bulkDeleteBookingsAction,
   mergeSchoolAction,
   resolveSessionRescheduleAction,
   resolveSessionWithdrawalAction,
@@ -11,6 +12,7 @@ import {
 } from "@/app/portal/actions";
 import { BookingsExplorer } from "@/components/dashboard/bookings-explorer";
 import { SchoolsExplorer } from "@/components/dashboard/schools-explorer";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type {
   AmbassadorProfile,
@@ -93,7 +95,16 @@ export function BookingLifecyclePanel({
         />
       </div>
 
+      {activeView !== "all" ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--text-soft)]">
+          <p>Showing {activeView === "current" ? "bookings needing attention" : `${activeView} bookings`} in both views.</p>
+          <ButtonLink href={`${basePath}/bookings?status=all&range=${range}`} variant="secondary">
+            Show all bookings
+          </ButtonLink>
+        </div>
+      ) : null}
       <BookingsExplorer
+        key={`${activeView}:${initialBookingId || ""}`}
         bookings={filteredBookings}
         allBookings={bookings}
         basePath={basePath}
@@ -107,6 +118,7 @@ export function BookingLifecyclePanel({
         presentationTitles={presentations.map((presentation) => presentation.title)}
         updateStatusAction={updateBookingStatusAction}
         bulkUpdateStatusAction={bulkUpdateBookingStatusAction}
+        bulkDeleteAction={bulkDeleteBookingsAction}
         assignAmbassadorAction={assignAmbassadorAction}
         resolveWithdrawalAction={resolveSessionWithdrawalAction}
         resolveRescheduleAction={resolveSessionRescheduleAction}

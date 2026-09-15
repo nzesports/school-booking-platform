@@ -91,7 +91,7 @@ export function readBookingLifecycleView(value?: string | string[] | null): Book
   const view = Array.isArray(value) ? value[0] : value;
   return bookingLifecycleOptions.some((option) => option.value === view)
     ? (view as BookingLifecycleView)
-    : "current";
+    : "all";
 }
 
 export function readDashboardCustomRange(

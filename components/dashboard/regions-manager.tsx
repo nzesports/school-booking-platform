@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { MapPinned, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -84,10 +85,6 @@ export function RegionsManager({
                 index > 0 && "border-t border-[color:var(--border-soft)]"
               )}
             >
-              <form id={formId} action={saveAction} className="hidden">
-                <input type="hidden" name="id" value={region.id} />
-              </form>
-
               <div>
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] lg:hidden">
                   Region
@@ -129,22 +126,25 @@ export function RegionsManager({
               </label>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <form id={formId} action={saveAction}>
+                  <input type="hidden" name="id" value={region.id} />
+                <PendingSubmitButton unstyled
                   type="submit"
                   form={formId}
                   className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
                 >
                   Save
-                </button>
+                </PendingSubmitButton>
+                </form>
                 <form action={deleteAction}>
                   <input type="hidden" name="id" value={region.id} />
-                  <button
+                  <PendingSubmitButton unstyled
                     type="submit"
                     className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[12px] border border-[#f3b4b4] bg-[#fff6f6] px-3.5 text-sm font-semibold text-[#9d2424] transition hover:bg-[#fff0f0]"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete
-                  </button>
+                  </PendingSubmitButton>
                 </form>
               </div>
             </div>

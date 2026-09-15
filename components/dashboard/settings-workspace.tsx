@@ -1,3 +1,4 @@
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { CalendarClock, CircleDollarSign, Mail } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -259,12 +260,12 @@ function SettingsCard({
         {children}
 
         <div className="flex justify-end">
-          <button
+          <PendingSubmitButton unstyled
             type="submit"
             className="inline-flex min-h-[46px] items-center justify-center rounded-[14px] bg-[color:var(--green)] px-5 text-sm font-semibold text-white transition hover:bg-[#128a30]"
           >
             Save changes
-          </button>
+          </PendingSubmitButton>
         </div>
       </form>
     </Card>

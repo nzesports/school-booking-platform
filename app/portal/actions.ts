@@ -128,6 +128,7 @@ const schoolMergeSchema = z.object({
 });
 
 const manualBookingSchema = z.object({
+  submissionId: z.uuid(),
   schoolId: z.uuid().optional(),
   schoolName: z.string().trim().min(2).max(200).optional(),
   newSchoolRegionId: z.uuid().optional(),
@@ -1794,6 +1795,7 @@ export async function saveManualBookingAction(formData: FormData) {
     "/staff/bookings"
   );
   const parsed = manualBookingSchema.safeParse({
+    submissionId: String(formData.get("submissionId") || ""),
     schoolId: String(formData.get("schoolId") || "") || undefined,
     schoolName: String(formData.get("schoolName") || "") || undefined,
     newSchoolRegionId: String(formData.get("newSchoolRegionId") || "") || undefined,
@@ -1819,6 +1821,30 @@ export async function saveManualBookingAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
+  const successUrl = (bookingId: string, referenceCode: string) => {
+    const [pathname, query] = parsed.data.returnTo.split("?");
+    const params = new URLSearchParams(query);
+    params.set("status", "all");
+    params.set("created", "booking");
+    params.set("booking", bookingId);
+    params.set("reference", referenceCode);
+    return `${pathname}?${params.toString()}`;
+  };
+  const replayExistingBooking = async () => {
+    const { data: existing } = await admin.from("booking_requests")
+      .select("id, reference_code, booking_sessions(id)")
+      .eq("id", parsed.data.submissionId).eq("staff_owner_id", actor.id).maybeSingle();
+    if (!existing) return;
+    if (!existing.booking_sessions?.length) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-in-progress"));
+    }
+    revalidatePath("/staff");
+    revalidatePath("/admin");
+    redirect(successUrl(existing.id, existing.reference_code));
+  };
+  // A stable ID per opened form makes repeated submissions the same booking.
+  // The database primary key also protects concurrent requests.
+  await replayExistingBooking();
   const school = await resolveManualBookingSchool(admin, parsed.data);
 
   if (!school) {
@@ -1855,6 +1881,7 @@ export async function saveManualBookingAction(formData: FormData) {
   const { data: booking, error: bookingError } = await admin
     .from("booking_requests")
     .insert({
+      id: parsed.data.submissionId,
       school_id: school.id,
       primary_contact_id: contact.id,
       region_id: school.region_id ?? null,
@@ -1864,8 +1891,10 @@ export async function saveManualBookingAction(formData: FormData) {
       staff_owner_id: actor.id,
       internal_notes: parsed.data.internalNotes || null
     })
-    .select("id")
+    .select("id, reference_code")
     .single();
+
+  if (bookingError?.code === "23505") await replayExistingBooking();
 
   if (bookingError || !booking) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-save-failed"));
@@ -1894,6 +1923,7 @@ export async function saveManualBookingAction(formData: FormData) {
     .single();
 
   if (sessionError || !session) {
+    await admin.from("booking_requests").delete().eq("id", booking.id);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-session-save-failed"));
   }
 
@@ -1916,7 +1946,7 @@ export async function saveManualBookingAction(formData: FormData) {
   await logAuditEvent(actor.id, "booking.manually_created", "booking_request", booking.id);
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(appendSearchParam(parsed.data.returnTo, "created", "booking"));
+  redirect(successUrl(booking.id, booking.reference_code));
 }
 
 export async function saveAmbassadorBookingAction(formData: FormData) {
@@ -4724,6 +4754,35 @@ export async function updateBookingStatusAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/school");
   redirect(appendSearchParam(parsed.data.returnTo, "updated", "status"));
+}
+
+export async function bulkDeleteBookingsAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(String(formData.get("returnTo") || "/staff/bookings"), "/staff/bookings");
+  const parsed = z.array(z.uuid()).min(1).max(100).safeParse(
+    [...new Set(formData.getAll("bookingRequestId").map(String))]
+  );
+  if (!parsed.success) {
+    redirect(appendSearchParam(returnTo, "error", "invalid-booking-deletion"));
+  }
+  const admin = getAdminClientOrThrow();
+  // One DELETE keeps the selected batch atomic. Session dependencies cascade;
+  // retained email/media records are detached by their SET NULL constraints.
+  const { data, error } = await admin.from("booking_requests")
+    .delete().in("id", parsed.data).select("id, reference_code");
+  if (error) {
+    console.error("[booking-delete] Could not delete selected bookings", { code: error.code });
+    redirect(appendSearchParam(returnTo, "error", "booking-delete-failed"));
+  }
+  for (const booking of data ?? []) {
+    await logAuditEvent(actor.id, "booking.deleted", "booking_request", booking.id);
+  }
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/school");
+  revalidatePath("/ambassador");
+  const resultUrl = appendSearchParam(returnTo, "deleted", "bookings");
+  redirect(appendSearchParam(resultUrl, "deletedCount", String(data?.length ?? 0)));
 }
 
 export async function bulkUpdateBookingStatusAction(formData: FormData) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -638,12 +639,12 @@ function PendingSchoolMerges({
               </option>
             ))}
           </select>
-          <button
+          <PendingSubmitButton unstyled
             type="submit"
             className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
           >
             Merge school
-          </button>
+          </PendingSubmitButton>
         </form>
       ))}
     </div>

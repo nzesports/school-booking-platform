@@ -1,4 +1,8 @@
-import Link from "next/link";
+"use client";
+
+import Link, { useLinkStatus } from "next/link";
+import { LoaderCircle } from "lucide-react";
+import { useFormStatus } from "react-dom";
 import type { ButtonHTMLAttributes, ComponentProps, PropsWithChildren } from "react";
 
 import { cn } from "@/lib/utils";
@@ -16,24 +20,40 @@ const variants = {
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: keyof typeof variants;
+  pendingLabel?: string;
+  loading?: boolean;
+  unstyled?: boolean;
 };
 
 export function Button({
   className,
   variant = "primary",
   type = "button",
+  pendingLabel = "Working…",
+  loading = false,
+  unstyled = false,
+  children,
+  disabled,
   ...props
 }: ButtonProps) {
+  const { pending } = useFormStatus();
+  const busy = loading || (type === "submit" && pending);
   return (
     <button
       type={type}
-      className={cn(
+      className={unstyled ? cn("disabled:cursor-wait disabled:opacity-60", className) : cn(
         "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[14px] border px-3.5 py-1.5 text-[13px] font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(4,15,75,0.14)] disabled:cursor-not-allowed disabled:opacity-60 [&>svg]:order-first [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0",
         variants[variant],
         className
       )}
       {...props}
-    />
+      disabled={disabled || busy}
+      aria-disabled={disabled || busy}
+      aria-busy={busy || undefined}
+    >
+      {busy ? <LoaderCircle className={cn("h-4 w-4 animate-spin", unstyled && "mr-2")} aria-hidden="true" /> : null}
+      {busy ? <span role="status">{pendingLabel}</span> : children}
+    </button>
   );
 }
 
@@ -79,7 +99,17 @@ export function ButtonLink({
       className={classes}
       {...props}
     >
+      <LinkPendingIndicator />
       {children}
     </Link>
   );
+}
+
+function LinkPendingIndicator() {
+  const { pending } = useLinkStatus();
+  return pending ? (
+    <span role="status" aria-label="Loading page">
+      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+    </span>
+  ) : null;
 }

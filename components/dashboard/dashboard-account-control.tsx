@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   ChevronDown,
   Headphones,
@@ -171,14 +172,14 @@ export function DashboardAccountControl({
           </Link>
           {logoutAction ? (
             <form action={logoutAction} role="none">
-              <button
+              <PendingSubmitButton unstyled
                 type="submit"
                 role="menuitem"
                 className="flex min-h-11 w-full items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff4f3]"
               >
                 <LogOut className="h-4 w-4" />
                 Log out
-              </button>
+              </PendingSubmitButton>
             </form>
           ) : (
             <Link

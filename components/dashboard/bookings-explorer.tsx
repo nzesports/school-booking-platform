@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   addDays,
   addMonths,
@@ -24,6 +25,7 @@ import {
   Mail,
   MapPin,
   Search,
+  Trash2,
   UserRound,
   X
 } from "lucide-react";
@@ -280,13 +282,13 @@ function BulkStatusSubmitButton({ count }: { count: number }) {
   const { pending } = useFormStatus();
 
   return (
-    <button
+    <PendingSubmitButton unstyled
       type="submit"
       disabled={pending}
       className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] bg-[#246bff] px-4 text-xs font-semibold text-white transition hover:bg-[#1d5ce0] disabled:cursor-wait disabled:opacity-60"
     >
       {pending ? "Updating…" : `Update ${count} booking${count === 1 ? "" : "s"}`}
-    </button>
+    </PendingSubmitButton>
   );
 }
 
@@ -301,6 +303,7 @@ export function BookingsExplorer({
   presentationTitles,
   updateStatusAction,
   bulkUpdateStatusAction,
+  bulkDeleteAction,
   assignAmbassadorAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
@@ -317,6 +320,7 @@ export function BookingsExplorer({
   presentationTitles: string[];
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   bulkUpdateStatusAction: (formData: FormData) => void | Promise<void>;
+  bulkDeleteAction: (formData: FormData) => void | Promise<void>;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
@@ -397,13 +401,11 @@ export function BookingsExplorer({
 
   const calendarSessions = useMemo(
     () =>
-      allBookings
-        .filter(matchesFilters)
+      filtered
         .flatMap((booking) =>
           booking.sessions.map((session) => ({ session, schoolName: booking.schoolName }))
         ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allBookings, query, regionFilter, presentationFilter, statusFilter]
+    [filtered]
   );
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -567,6 +569,32 @@ export function BookingsExplorer({
                   ))}
                 </select>
                 <BulkStatusSubmitButton count={selectedBookingIds.size} />
+              </form>
+              <form
+                action={bulkDeleteAction}
+                onSubmit={(event) => {
+                  const selected = allBookings.filter((booking) => selectedBookingIds.has(booking.id));
+                  const details = selected.map((booking) => `${booking.schoolName} — ${booking.referenceCode || booking.id}`).join("\n");
+                  if (!window.confirm(`Permanently delete ${selectedBookingIds.size} selected booking(s)?\n\n${details}\n\nTheir sessions, reports and payment records will also be deleted. Email history and uploaded media will be kept. No cancellation emails will be sent. This cannot be undone.`)) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                {[...selectedBookingIds].map((id) => (
+                  <input key={id} type="hidden" name="bookingRequestId" value={id} />
+                ))}
+                <input type="hidden" name="returnTo" value={returnTo} />
+                <PendingSubmitButton
+                  type="submit"
+                  variant="danger"
+                  pendingLabel="Deleting…"
+                  aria-label={`Delete ${selectedBookingIds.size} selected booking${selectedBookingIds.size === 1 ? "" : "s"}`}
+                  title="Delete selected bookings"
+                  className="min-h-[38px] rounded-[10px]"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Delete
+                </PendingSubmitButton>
               </form>
               <button
                 type="button"
@@ -895,12 +923,12 @@ export function BookingsExplorer({
                                     assignedId={session.assignedAmbassadorId}
                                     assignedName={session.assignedAmbassadorName}
                                   />
-                                  <button
+                                  <PendingSubmitButton unstyled
                                     type="submit"
                                     className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] shadow-[0_6px_14px_rgba(37,99,235,0.08)] transition hover:bg-[#f4f8ff]"
                                   >
                                     Assign
-                                  </button>
+                                  </PendingSubmitButton>
                                 </form>
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 text-sm font-semibold text-[color:var(--navy)]">
@@ -1089,12 +1117,12 @@ function CompactSessionCard({
               assignedId={session.assignedAmbassadorId}
               assignedName={session.assignedAmbassadorName}
             />
-            <button
+            <PendingSubmitButton unstyled
               type="submit"
               className="inline-flex min-h-[36px] items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] transition hover:bg-[#f4f8ff]"
             >
               Assign
-            </button>
+            </PendingSubmitButton>
           </form>
         </div>
         <SessionDetailsButton
@@ -1156,12 +1184,12 @@ function WithdrawalReviewPanel({
             <input type="hidden" name="bookingSessionId" value={session.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="decision" value="approve" />
-            <button
+            <PendingSubmitButton unstyled
               type="submit"
               className="inline-flex min-h-[42px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]"
             >
               Approve withdrawal - reopen session
-            </button>
+            </PendingSubmitButton>
           </form>
           <form action={action} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <input type="hidden" name="bookingSessionId" value={session.id} />
@@ -1172,12 +1200,12 @@ function WithdrawalReviewPanel({
               placeholder="Reply to the ambassador..."
               className="min-h-[42px] rounded-[14px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
             />
-            <button
+            <PendingSubmitButton unstyled
               type="submit"
               className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
             >
               Decline - keep assigned
-            </button>
+            </PendingSubmitButton>
           </form>
         </div>
       </div>
