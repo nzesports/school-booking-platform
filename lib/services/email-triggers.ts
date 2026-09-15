@@ -6,6 +6,8 @@ import { sendTransactionalEmail } from "./email";
 import { buildBookingReceipt, type BookingReceiptSession } from "./booking-receipt";
 import { formatLongDate, formatTime } from "@/lib/utils";
 
+import { buildSchoolEmailDetails, type SchoolEmailDetails } from "./school-email-details";
+
 type EmailResult = Awaited<ReturnType<typeof sendTransactionalEmail>>;
 
 function escapeHtml(value: string) {
@@ -96,6 +98,25 @@ async function renderTemplate(
   };
 }
 
+async function renderSchoolTemplate(
+  details: ReturnType<typeof buildSchoolEmailDetails>,
+  key: string,
+  vars: Record<string, string>,
+  htmlVars: Record<string, string> = {}
+) {
+  return renderTemplate(key, { ...vars, ...details.vars }, { ...htmlVars, sessionSummary: details.html });
+}
+
+async function sendSchoolSessionEmail(
+  event: Parameters<typeof sendTransactionalEmail>[0],
+  details: ReturnType<typeof buildSchoolEmailDetails>
+) {
+  return sendTransactionalEmail({
+    ...event,
+    html: event.html.includes(details.html) ? event.html : `${event.html}${details.html}`
+  });
+}
+
 export async function sendBookingRequestReceivedEmail(opts: {
   contactEmail: string;
   contactName: string;
@@ -178,7 +199,7 @@ function calendarLinksBlock(opts: {
   );
 }
 
-export async function sendBookingConfirmedEmail(opts: {
+export async function sendBookingConfirmedEmail(opts: SchoolEmailDetails & {
   contactEmail: string;
   contactName: string;
   schoolName: string;
@@ -190,12 +211,13 @@ export async function sendBookingConfirmedEmail(opts: {
   sessionStartsAt?: string;
   sessionEndsAt?: string;
 }) {
+  const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
   const calendarLinks = calendarLinksBlock(opts);
-  const template = await renderTemplate(
+  const template = await renderSchoolTemplate(details,
     "school_booking_confirmed",
     {
       contactName: opts.contactName,
@@ -207,7 +229,7 @@ export async function sendBookingConfirmedEmail(opts: {
     },
     { calendarLinks }
   );
-  const result = await sendTransactionalEmail({
+  const result = await sendSchoolSessionEmail({
     templateKey: "school_booking_confirmed",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your session is confirmed",
@@ -221,7 +243,7 @@ export async function sendBookingConfirmedEmail(opts: {
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>We'll send you a reminder closer to the date.</p>
     `
-  });
+  }, details);
 
   await logEmail(result, {
     bookingRequestId: opts.bookingId,
@@ -233,7 +255,7 @@ export async function sendBookingConfirmedEmail(opts: {
 
 // Sent when staff mark a booking delivered, inviting the school to complete
 // the post-session feedback form in their portal.
-export async function sendFeedbackRequestEmail(opts: {
+export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
   contactEmail: string;
   contactName: string;
   schoolName: string;
@@ -242,6 +264,7 @@ export async function sendFeedbackRequestEmail(opts: {
   bookingId?: string;
   bookingSessionId?: string;
 }) {
+  const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
@@ -250,14 +273,14 @@ export async function sendFeedbackRequestEmail(opts: {
   const reviewUrl = opts.bookingSessionId
     ? `${config.siteUrl}/feedback/${opts.bookingSessionId}`
     : `${config.siteUrl}/school/reviews`;
-  const template = await renderTemplate("school_feedback_request", {
+  const template = await renderSchoolTemplate(details, "school_feedback_request", {
     contactName: opts.contactName,
     schoolName: opts.schoolName,
     sessionDate: opts.sessionDate,
     presentationTitle: opts.presentationTitle,
     reviewUrl
   });
-  const result = await sendTransactionalEmail({
+  const result = await sendSchoolSessionEmail({
     templateKey: "school_feedback_request",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? `How was your ${opts.presentationTitle} session?`,
@@ -273,7 +296,7 @@ export async function sendFeedbackRequestEmail(opts: {
       <p>If your school has a portal account you can also leave it under
       Bookings &rarr; Leave review.</p>
     `
-  });
+  }, details);
 
   await logEmail(result, {
     bookingRequestId: opts.bookingId,
@@ -285,7 +308,7 @@ export async function sendFeedbackRequestEmail(opts: {
 
 // Sent when a reschedule request is resolved and the booking is re-confirmed
 // with its (new) session time.
-export async function sendBookingRescheduledEmail(opts: {
+export async function sendBookingRescheduledEmail(opts: SchoolEmailDetails & {
   contactEmail: string;
   contactName: string;
   schoolName: string;
@@ -298,12 +321,13 @@ export async function sendBookingRescheduledEmail(opts: {
   sessionEndsAt?: string;
   isConfirmed?: boolean;
 }) {
+  const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
   const calendarLinks = opts.isConfirmed === false ? "" : calendarLinksBlock(opts);
-  const template = opts.isConfirmed === false ? null : await renderTemplate(
+  const template = opts.isConfirmed === false ? null : await renderSchoolTemplate(details,
     "school_booking_rescheduled",
     {
       contactName: opts.contactName,
@@ -314,7 +338,7 @@ export async function sendBookingRescheduledEmail(opts: {
     },
     { calendarLinks }
   );
-  const result = await sendTransactionalEmail({
+  const result = await sendSchoolSessionEmail({
     templateKey: "school_booking_rescheduled",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your NZ Esports presentation has been rescheduled",
@@ -329,7 +353,7 @@ export async function sendBookingRescheduledEmail(opts: {
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>${opts.isConfirmed === false ? "Your requested date has been updated; final booking confirmation is still pending." : "Your session is confirmed. We will send a reminder closer to the day."}</p>
     `
-  });
+  }, details);
 
   await logEmail(result, {
     bookingRequestId: opts.bookingId,
@@ -340,7 +364,7 @@ export async function sendBookingRescheduledEmail(opts: {
 }
 
 // Reminder ahead of an upcoming confirmed session (sent by the hourly cron).
-export async function sendSessionReminderEmail(opts: {
+export async function sendSessionReminderEmail(opts: SchoolEmailDetails & {
   contactEmail: string;
   contactName: string;
   schoolName: string;
@@ -350,18 +374,19 @@ export async function sendSessionReminderEmail(opts: {
   referenceCode?: string;
   bookingSessionId?: string;
 }) {
+  const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
-  const template = await renderTemplate("school_session_reminder", {
+  const template = await renderSchoolTemplate(details, "school_session_reminder", {
     contactName: opts.contactName,
     schoolName: opts.schoolName,
     sessionDate: opts.sessionDate,
     presentationTitle: opts.presentationTitle,
     bookingId: opts.referenceCode ?? ""
   });
-  const result = await sendTransactionalEmail({
+  const result = await sendSchoolSessionEmail({
     templateKey: "school_session_reminder",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? `Coming up: ${opts.presentationTitle} at your school`,
@@ -375,7 +400,7 @@ export async function sendSessionReminderEmail(opts: {
       <p>Handy checklist: projector or screen ready, microphone if the space needs one,
       and let the office know our ambassador is visiting.</p>
     `
-  });
+  }, details);
 
   await logEmail(result, {
     bookingRequestId: opts.bookingId,
@@ -477,7 +502,7 @@ export async function sendAmbassadorApprovedEmail(opts: {
   return result;
 }
 
-export async function sendBookingCancelledEmail(opts: {
+export async function sendBookingCancelledEmail(opts: SchoolEmailDetails & {
   contactEmail: string;
   contactName: string;
   schoolName: string;
@@ -487,11 +512,12 @@ export async function sendBookingCancelledEmail(opts: {
   referenceCode?: string;
   bookingSessionId?: string;
 }) {
+  const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
-  const template = await renderTemplate("school_booking_cancelled", {
+  const template = await renderSchoolTemplate(details, "school_booking_cancelled", {
     contactName: opts.contactName,
     schoolName: opts.schoolName,
     sessionDate: opts.sessionDate,
@@ -499,7 +525,7 @@ export async function sendBookingCancelledEmail(opts: {
     bookingId: opts.referenceCode ?? "",
     bookingSessionId: opts.bookingSessionId ?? ""
   });
-  const result = await sendTransactionalEmail({
+  const result = await sendSchoolSessionEmail({
     templateKey: "school_booking_cancelled",
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Your session has been cancelled",
@@ -512,7 +538,7 @@ export async function sendBookingCancelledEmail(opts: {
       ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       <p>If this was unexpected, reply to this email and our team will help.</p>
     `
-  });
+  }, details);
 
   await logEmail(result, {
     bookingRequestId: opts.bookingId,
@@ -528,20 +554,27 @@ export async function sendSchoolRescheduleNoticeEmail(
     requestedDate?: string;
   }
 ) {
+  const details = buildSchoolEmailDetails(opts);
   const requested = opts.decision === "requested";
-  const result = await sendTransactionalEmail({
-    templateKey: requested ? "school_reschedule_requested" : "school_reschedule_declined",
+  const templateKey = requested ? "school_reschedule_requested" : "school_reschedule_declined";
+  const template = await renderSchoolTemplate(details, templateKey, {
+    contactName: opts.contactName,
+    bookingId: opts.referenceCode ?? "",
+    requestedDate: opts.requestedDate ?? "To be discussed"
+  });
+  const result = await sendSchoolSessionEmail({
+    templateKey,
     recipientEmail: opts.contactEmail,
-    subject: requested ? "We've received your reschedule request" : "Your reschedule request could not be approved",
+    subject: template?.subject ?? (requested ? "We've received your reschedule request" : "Your reschedule request could not be approved"),
     includeUnsubscribe: false,
-    html: `<p>Hi ${escapeHtml(opts.contactName)},</p>
+    html: template?.html ?? `<p>Hi ${escapeHtml(opts.contactName)},</p>
       <p>${requested ? "We have received your request to reschedule" : "We could not approve the reschedule request for"}
       <strong>${escapeHtml(opts.presentationTitle)}</strong> at <strong>${escapeHtml(opts.schoolName)}</strong>.</p>
       <p>Current session: ${escapeHtml(opts.sessionDate)}.</p>
       ${opts.requestedDate ? `<p>Requested date: ${escapeHtml(opts.requestedDate)}.</p>` : ""}
       <p>${requested ? "Your new date is not confirmed yet. We will email you after reviewing the request." : "The original session date and time are unchanged. Please contact our team to discuss another date."}</p>
       ${opts.referenceCode ? `<p>Reference: ${escapeHtml(opts.referenceCode)}</p>` : ""}`
-  });
+  }, details);
   await logEmail(result, { bookingRequestId: opts.bookingId, bookingSessionId: opts.bookingSessionId, recipientType: "school" });
   return result;
 }

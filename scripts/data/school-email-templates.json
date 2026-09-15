@@ -1,0 +1,58 @@
+[
+  {
+    "template_key": "booking_request_received",
+    "name": "School booking request received",
+    "subject": "We have received your presentation request",
+    "body_html": "<p>Hi {{contactName}},</p><p>Thanks for your booking request for <strong>{{schoolName}}</strong>. Your request is pending approval.</p><p>Reference: <strong>{{bookingId}}</strong>.</p>{{bookingSummary}}",
+    "body_text": "Hi {{contactName}}, Your request is pending approval. Reference: {{bookingId}}. {{bookingSummary}}"
+  },
+  {
+    "template_key": "school_booking_confirmed",
+    "name": "School booking confirmed",
+    "subject": "Confirmed: {{presentationTitle}} \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>Your presentation is confirmed. Here are the details for this session.</p>{{sessionSummary}}<p>{{calendarLinks}}</p>",
+    "body_text": "Hi {{contactName}}, Your session is confirmed. Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_booking_cancelled",
+    "name": "School booking cancelled",
+    "subject": "Cancelled: {{presentationTitle}} \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>The following session has been <strong>cancelled</strong>. The date and time below identify the cancelled session.</p>{{sessionSummary}}<p>Please remove this session from your calendar. Contact our team if you would like to arrange another booking.</p>",
+    "body_text": "Hi {{contactName}}, The following session is CANCELLED. Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_booking_rescheduled",
+    "name": "School booking rescheduled",
+    "subject": "Rescheduled: {{presentationTitle}} \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>Your presentation has been rescheduled. The updated session details are below.</p>{{sessionSummary}}<p>Please update your existing calendar event to avoid keeping the old time.</p><p>{{calendarLinks}}</p>",
+    "body_text": "Hi {{contactName}}, Your session has been rescheduled. Updated details: Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_reschedule_requested",
+    "name": "School reschedule request received",
+    "subject": "Reschedule request received \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>We have received your request for a new date: <strong>{{requestedDate}}</strong>. Your new date is not confirmed yet.</p><p>The existing session details are below. We will email you once your request has been reviewed.</p>{{sessionSummary}}",
+    "body_text": "Hi {{contactName}}, Requested new date: {{requestedDate}}. Not yet confirmed. Current session: Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_reschedule_declined",
+    "name": "School reschedule request declined",
+    "subject": "Reschedule request declined \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>We could not approve your reschedule request. The original session date and time are unchanged:</p>{{sessionSummary}}<p>Please contact our team to discuss another date.</p>",
+    "body_text": "Hi {{contactName}}, Reschedule declined. The original session details remain: Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_session_reminder",
+    "name": "School session reminder",
+    "subject": "Reminder: {{presentationTitle}} \u2014 {{schoolName}}",
+    "body_html": "<p>Hi {{contactName}},</p><p>Your presentation is coming up. Please check the session details below and let us know if anything needs correcting.</p>{{sessionSummary}}",
+    "body_text": "Hi {{contactName}}, Your presentation is coming up. Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}."
+  },
+  {
+    "template_key": "school_feedback_request",
+    "name": "School feedback request",
+    "subject": "How was your {{presentationTitle}} session?",
+    "body_html": "<p>Hi {{contactName}},</p><p>Thank you for hosting our presentation. Please share your feedback about this session:</p>{{sessionSummary}}<p><a href=\"{{reviewUrl}}\">Leave your feedback</a> \u2014 no login needed.</p>",
+    "body_text": "Hi {{contactName}}, Thank you for hosting. Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}. Feedback: {{reviewUrl}}"
+  }
+]

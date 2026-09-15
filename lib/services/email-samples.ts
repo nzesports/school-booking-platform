@@ -1,3 +1,4 @@
+import { buildSchoolEmailDetails } from "./school-email-details";
 import { siteUrl } from "@/lib/site-url";
 
 import { buildCalendarLinksEmailHtml } from "./calendar-links";
@@ -6,6 +7,9 @@ import { buildBookingReceipt } from "./booking-receipt";
 // Sample placeholder values shared by the template editor preview and the
 // "Send test" action so {{placeholders}} render as something realistic.
 export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
+  expectedStudentCount: "120",
+  yearLevels: "Years 7 to 8",
+  sessionSummary: buildSchoolEmailDetails({ schoolName: "Rangitoto College", presentationTitle: "Digital Wellbeing", sessionStartsAt: "2026-09-14T21:30:00.000Z", sessionEndsAt: "2026-09-14T22:30:00.000Z", expectedStudentCount: 120, yearLevels: "Years 7 to 8" }).html,
   contactName: "Jordan Smith",
   contactEmail: "jordan@example.nz",
   contactPhone: "09 555 0100",

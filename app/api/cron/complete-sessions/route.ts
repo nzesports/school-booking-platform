@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
   const now = new Date().toISOString();
   const { data: dueSessions, error } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at")
+    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels")
     .in("status", DELIVERABLE_STATUSES)
     .lt("ends_at", now);
 
@@ -136,6 +136,10 @@ export async function GET(request: NextRequest) {
         contactName: (contact.full_name as string | null) ?? "there",
         schoolName: (school?.name as string | null) ?? "your school",
         sessionDate: formatDateTime(session.starts_at as string),
+        sessionStartsAt: session.starts_at as string,
+        sessionEndsAt: session.ends_at as string,
+        expectedStudentCount: session.expected_student_count == null ? null : Number(session.expected_student_count),
+        yearLevels: (session.year_levels as string) || "",
         presentationTitle: (presentation?.title as string | null) ?? "your presentation",
         bookingId: session.booking_request_id as string,
         bookingSessionId: session.id as string
@@ -174,7 +178,7 @@ export async function GET(request: NextRequest) {
   ).toISOString();
   const { data: upcomingSessions } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at")
+    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels")
     .in("status", DELIVERABLE_STATUSES)
     .gt("starts_at", now)
     .lte("starts_at", reminderWindowEnd);
@@ -218,6 +222,10 @@ export async function GET(request: NextRequest) {
         contactName: (contact.full_name as string | null) ?? "there",
         schoolName: (school?.name as string | null) ?? "your school",
         sessionDate: formatDateTime(session.starts_at as string),
+        sessionStartsAt: session.starts_at as string,
+        sessionEndsAt: session.ends_at as string,
+        expectedStudentCount: session.expected_student_count == null ? null : Number(session.expected_student_count),
+        yearLevels: (session.year_levels as string) || "",
         presentationTitle: (presentation?.title as string | null) ?? "your presentation",
         bookingId: session.booking_request_id as string,
         referenceCode: (booking?.reference_code as string | null) ?? undefined,

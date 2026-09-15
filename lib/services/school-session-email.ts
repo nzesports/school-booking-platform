@@ -28,7 +28,7 @@ export async function sendSchoolSessionEmails(
       : admin.from("school_contacts").select("email, full_name").eq("school_id", booking.school_id)
           .eq("is_primary", true).limit(1).single(),
     admin.from("schools").select("name").eq("id", booking.school_id).single(),
-    admin.from("booking_sessions").select("id, starts_at, ends_at, presentation_type_id, status")
+    admin.from("booking_sessions").select("id, starts_at, ends_at, presentation_type_id, status, expected_student_count, year_levels")
       .eq("booking_request_id", bookingId).in("id", sessionIds)
   ]);
   if (contactResult.error) throw contactResult.error;
@@ -58,6 +58,8 @@ export async function sendSchoolSessionEmails(
     sessionDate: formatDateTime(session.starts_at as string),
     sessionStartsAt: session.starts_at as string,
     sessionEndsAt: session.ends_at as string,
+    expectedStudentCount: session.expected_student_count == null ? null : Number(session.expected_student_count),
+    yearLevels: (session.year_levels as string) || "",
     isConfirmed: session.status === "confirmed",
     bookingId,
     bookingSessionId: session.id as string,
