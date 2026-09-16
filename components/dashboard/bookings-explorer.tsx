@@ -1,5 +1,6 @@
 "use client";
 
+import { StatusEmailForm } from "@/components/dashboard/status-email-form";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   addDays,
@@ -567,7 +568,7 @@ export function BookingsExplorer({
               {selectedBookingIds.size} booking{selectedBookingIds.size === 1 ? "" : "s"} selected
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <form action={bulkUpdateStatusAction} className="flex flex-wrap items-center gap-2">
+              <StatusEmailForm action={bulkUpdateStatusAction} className="flex flex-wrap items-center gap-2">
                 {[...selectedBookingIds].map((bookingRequestId) => (
                   <input
                     key={bookingRequestId}
@@ -593,7 +594,7 @@ export function BookingsExplorer({
                   ))}
                 </select>
                 <BulkStatusSubmitButton count={selectedBookingIds.size} />
-              </form>
+              </StatusEmailForm>
               <form
                 action={bulkDeleteAction}
                 onSubmit={(event) => {
@@ -770,7 +771,7 @@ export function BookingsExplorer({
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
                       Status
                     </p>
-                    <form action={updateStatusAction} className="min-w-0">
+                    <StatusEmailForm action={updateStatusAction} className="min-w-0">
                       <input type="hidden" name="bookingRequestId" value={booking.id} />
                       <input type="hidden" name="returnTo" value={cardReturnTo} />
                       <AutoSaveBookingStatus
@@ -778,7 +779,7 @@ export function BookingsExplorer({
                         options={statusOptions}
                         compact
                       />
-                    </form>
+                    </StatusEmailForm>
                   </div>
 
                   <div className="min-w-0 2xl:pl-2.5">

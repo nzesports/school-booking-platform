@@ -43,7 +43,9 @@ import {
   validateUploadedResource,
   uploadPublicAsset
 } from "@/lib/services/storage";
-import { sendSchoolStatusChangeEmails } from "@/lib/services/school-session-email";
+import { emailDeliveryContext } from "@/lib/services/email-delivery-context";
+import { statusEmailEvent } from "@/lib/services/status-email-choice";
+import { sendSchoolSessionEmails, sendSchoolStatusChangeEmails } from "@/lib/services/school-session-email";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -427,9 +429,14 @@ const NON_TERMINAL_SESSION_STATUSES = [
 ];
 
 const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] }>> = {
+  requested: { to: "requested", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
+  tentative: { to: "tentative", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
+  closed: { to: "closed", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
+  completed_pending_report: { to: "completed_pending_report", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
   confirmed: {
     to: "confirmed",
     onlyFrom: [
+      "requested",
       "tentative",
       "applied",
       "ambassador_assigned"
@@ -4706,7 +4713,8 @@ export async function updateBookingStatusAction(formData: FormData) {
     let sessionUpdate = admin
       .from("booking_sessions")
       .update({ status: cascade.to })
-      .eq("booking_request_id", parsed.data.bookingRequestId);
+      .eq("booking_request_id", parsed.data.bookingRequestId)
+      .neq("status", cascade.to);
 
     if (cascade.onlyFrom) {
       sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
@@ -4732,20 +4740,14 @@ export async function updateBookingStatusAction(formData: FormData) {
     action: "booking.status_updated",
     actor_id: actor.id,
     actor_type: "staff",
-    details: { status: parsed.data.status }
+    details: { status: parsed.data.status, email_choice: formData.get("emailChoice") === "send" ? "send" : "skip" }
   });
 
-  if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
-    const event = parsed.data.status === "cancelled" ? "cancelled"
-      : existingBooking.status === "reschedule_requested" ? "rescheduled" : "confirmed";
-    scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId, affectedSessionIds, event));
-  }
-  if (parsed.data.status === "completed_pending_report" && existingBooking.status !== parsed.data.status) {
-    const { data: sessions } = await admin.from("booking_sessions").select("id")
-      .eq("booking_request_id", parsed.data.bookingRequestId)
-      .not("status", "in", "(cancelled,declined)");
-    scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
-      (sessions ?? []).map((session) => session.id as string), "feedback"));
+  const emailEvent = statusEmailEvent(parsed.data.status);
+  if (formData.get("emailChoice") === "send" && emailEvent && affectedSessionIds.length) {
+    const event = emailEvent === "confirmed" && existingBooking.status === "reschedule_requested" ? "rescheduled" : emailEvent;
+    scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: parsed.data.bookingRequestId }, () =>
+      sendSchoolSessionEmails(parsed.data.bookingRequestId, affectedSessionIds, event)));
   }
 
   await logAuditEvent(
@@ -4847,7 +4849,8 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
     let sessionUpdate = admin
       .from("booking_sessions")
       .update({ status: cascade.to })
-      .in("booking_request_id", parsed.data.bookingRequestIds);
+      .in("booking_request_id", parsed.data.bookingRequestIds)
+      .neq("status", cascade.to);
 
     if (cascade.onlyFrom) {
       sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
@@ -4859,12 +4862,13 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
     }
 
-    if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
-      const event = parsed.data.status;
+    const event = statusEmailEvent(parsed.data.status);
+    if (formData.get("emailChoice") === "send" && event) {
       for (const bookingId of parsed.data.bookingRequestIds) {
         const ids = (changedSessions ?? []).filter((session) => session.booking_request_id === bookingId)
           .map((session) => session.id as string);
-        if (ids.length) scheduleEmail(() => sendSchoolStatusChangeEmails(bookingId, ids, event));
+        if (ids.length) scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: bookingId }, () =>
+          sendSchoolSessionEmails(bookingId, ids, event)));
       }
     }
   }

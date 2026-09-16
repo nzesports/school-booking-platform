@@ -34,3 +34,7 @@ All booking-linked transactional mail checks the persistent policy at the final 
 ## Verification
 
 Run only `npm run typecheck` and `npm run lint`. The user performs application checks: list/calendar consistency, teacher positions, silent imports, pending-to-confirmed automatic emails (single and bulk changes), suppressed historical reminders, explicit manual send confirmation, duplicate-click prevention, email history and successful refresh of outcomes. No real email is sent as part of implementation verification.
+
+## Status update email choice
+
+Individual and bulk staff/admin status changes ask whether to send the relevant school email. Only an explicit `emailChoice=send` schedules it; omitted choices and `skip` update silently. Completed changes offer the school feedback email. Only sessions changed by the update are emailed. Explicit sends can notify imported bookings without clearing their persistent background-email guard. This choice applies to the current status update, not future scheduled reminders for ordinary bookings. The Emails tab still supports a separate preview and confirmed manual send.
