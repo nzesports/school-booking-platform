@@ -880,9 +880,9 @@ export function BookingsExplorer({
                       <div className="mt-3 hidden overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white 2xl:block">
                         <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0">
                         <colgroup>
-                          <col className="w-[9%]" />
+                          <col className="w-[17%]" />
                           <col className="w-[13%]" />
-                          <col className="w-[19%]" />
+                          <col className="w-[11%]" />
                           <col className="w-[26%]" />
                           <col className="w-[8%]" />
                           <col className="w-[12%]" />
@@ -912,12 +912,12 @@ export function BookingsExplorer({
                           {booking.sessions.map((session) => (
                             <Fragment key={session.id}>
                             <tr className="align-middle">
-                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
-                                <span className="flex items-center gap-2.5 text-sm font-semibold text-[color:var(--navy)]">
+                              <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-3.5 align-top">
+                                <span className="flex items-start gap-2.5 text-sm font-semibold text-[color:var(--navy)]">
                                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#e8f1fd] text-[#2563eb]">
                                     <CalendarDays className="h-4 w-4" />
                                   </span>
-                                  <span>
+                                  <span className="whitespace-nowrap">
                                     {formatShortDate(session.startsAt, true)}
                                     <span className="block text-sm font-medium text-[color:var(--text-soft)]">
                                       {formatTime(session.startsAt)}
@@ -951,7 +951,7 @@ export function BookingsExplorer({
                                   />
                                   <PendingSubmitButton unstyled
                                     type="submit"
-                                    className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] shadow-[0_6px_14px_rgba(37,99,235,0.08)] transition hover:bg-[#f4f8ff]"
+                                    className="inline-flex h-8 min-h-[32px] shrink-0 items-center justify-center rounded-lg border border-[#dbe6f5] bg-white px-2.5 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
                                   >
                                     Assign
                                   </PendingSubmitButton>
@@ -969,7 +969,7 @@ export function BookingsExplorer({
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <SessionDetailsButton
                                   session={session}
-                                  className="min-h-[36px] rounded-[9px] border-[#dbe6f5] px-3 py-1 text-xs font-semibold text-[#2563eb]"
+                                  className="h-8 min-h-[32px] rounded-lg border-[#dbe6f5] px-2.5 py-1 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none [&>svg]:h-3.5 [&>svg]:w-3.5"
                                   label={
                                     <>
                                       <Eye className="h-3.5 w-3.5" />
@@ -1145,7 +1145,7 @@ function CompactSessionCard({
             />
             <PendingSubmitButton unstyled
               type="submit"
-              className="inline-flex min-h-[36px] items-center justify-center rounded-[9px] border border-[#75a2ff] bg-white px-3 text-xs font-semibold text-[#2563eb] transition hover:bg-[#f4f8ff]"
+              className="inline-flex h-8 min-h-[32px] items-center justify-center rounded-lg border border-[#dbe6f5] bg-white px-2.5 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
             >
               Assign
             </PendingSubmitButton>
@@ -1153,7 +1153,7 @@ function CompactSessionCard({
         </div>
         <SessionDetailsButton
           session={session}
-          className="min-h-[36px] w-full rounded-[9px] border-[#dbe6f5] px-3 py-1 text-xs font-semibold text-[#2563eb] xl:w-auto"
+          className="h-8 min-h-[32px] w-full rounded-lg border-[#dbe6f5] px-2.5 py-1 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none xl:w-auto"
           label={
             <>
               <Eye className="h-3.5 w-3.5" />
@@ -1537,7 +1537,7 @@ function AmbassadorSearchSelect({
             }
           }}
           placeholder={assignedName ?? "Search ambassadors..."}
-          className="min-h-[34px] min-w-0 flex-1 bg-transparent text-xs text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+          className="h-[30px] min-h-[30px] min-w-0 flex-1 bg-transparent text-xs! leading-4! text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
         />
         {text ? (
           <button

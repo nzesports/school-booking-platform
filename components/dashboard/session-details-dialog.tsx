@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Copy,
+  MessageSquare,
   GraduationCap,
   Eye,
   MapPin,
@@ -179,6 +180,7 @@ export function SessionDetailsButton({
               title={session.presentationTitle}
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[1120px]"
+              bodyClassName="px-6 py-7 md:px-10 md:py-9 lg:px-12 lg:py-10"
               overlayClassName="z-[80]"
               compact
             >
@@ -188,17 +190,17 @@ export function SessionDetailsButton({
               ]} />}
               {canReview && tab === "emails" ? <BookingEmailsPanel sessionId={session.id} /> : <>
               <SessionChangeSummary session={session} />
-              <p className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-[14px] bg-[color:var(--green-soft)] px-3.5 py-2 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)] md:text-lg">
+              <p className="mt-5 flex flex-wrap items-center gap-2 text-base font-semibold tracking-[-0.02em] text-[#117a2e] md:text-lg">
                 <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
                 {formatNzDate(session.startsAt)}
-                <span className="text-[#117a2e]">·</span>
+                <span aria-hidden="true">·</span>
                 {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
               </p>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <section aria-label="Session overview" className="mt-4 rounded-2xl bg-slate-50/80 p-5 md:p-6">
+              <div className="grid gap-5 md:grid-cols-3">
                 <DetailTile
                   icon={<School2 className="h-6 w-6" />}
-                  iconClassName="bg-[#e6f5ec] text-[#117a2e]"
                   label="School"
                 >
                   <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
@@ -208,7 +210,6 @@ export function SessionDetailsButton({
 
                 <DetailTile
                   icon={<UsersRound className="h-6 w-6" />}
-                  iconClassName="bg-[#eceafb] text-[#6a5cd0]"
                   label="Audience"
                 >
                   <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
@@ -218,7 +219,6 @@ export function SessionDetailsButton({
 
                 <DetailTile
                   icon={<GraduationCap className="h-6 w-6" />}
-                  iconClassName="bg-[#e3f2fd] text-[#1565c0]"
                   label="Students"
                 >
                   <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
@@ -232,10 +232,9 @@ export function SessionDetailsButton({
                 </DetailTile>
               </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="mt-5 grid gap-5 border-t border-slate-200/70 pt-5 md:grid-cols-2">
                 <DetailTile
                   icon={<MapPin className="h-6 w-6" />}
-                  iconClassName="bg-[#eceafb] text-[#6a5cd0]"
                   label="Location"
                 >
                   {session.regionName ? (
@@ -256,7 +255,6 @@ export function SessionDetailsButton({
 
                 <DetailTile
                   icon={<UserRound className="h-6 w-6" />}
-                  iconClassName="bg-[#fdf3dc] text-[#b7822c]"
                   label="School contact"
                 >
                   {session.contactName ? (
@@ -269,7 +267,7 @@ export function SessionDetailsButton({
                         {session.contactEmail ? (
                           <a
                             href={`mailto:${session.contactEmail}`}
-                            className="font-semibold text-[color:var(--green)]"
+                            className="text-[color:var(--navy)] underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
                           >
                             {session.contactEmail}
                           </a>
@@ -286,16 +284,20 @@ export function SessionDetailsButton({
                 </DetailTile>
               </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              </section>
+
+              <section aria-labelledby="session-ambassadors-heading" className="mt-6">
+                <h3 id="session-ambassadors-heading" className="text-base font-semibold text-[color:var(--navy)]">Ambassadors</h3>
+              <div className="mt-3 grid gap-5 md:grid-cols-2">
               {session.assignedAmbassadorName ? (
-                <div className="rounded-[18px] border border-[rgba(24,168,59,0.24)] bg-[#f2faf4] p-5">
+                <div className="min-w-0">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#117a2e] shadow-[0_8px_20px_rgba(24,168,59,0.16)]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
                       <UserRound className="h-5 w-5" />
                     </span>
                     Assigned ambassador
                   </p>
-                  <div className="mt-4 rounded-[16px] border border-[rgba(24,168,59,0.18)] bg-white px-4 py-3">
+                  <div className="mt-2 pl-8">
                     <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                       {session.assignedAmbassadorName}
                     </p>
@@ -304,7 +306,7 @@ export function SessionDetailsButton({
                         {session.assignedAmbassadorEmail ? (
                           <a
                             href={`mailto:${session.assignedAmbassadorEmail}`}
-                            className="font-semibold text-[color:var(--green)]"
+                            className="text-[color:var(--navy)] underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
                           >
                             {session.assignedAmbassadorEmail}
                           </a>
@@ -318,23 +320,23 @@ export function SessionDetailsButton({
                   </div>
                 </div>
               ) : canReview ? (
-                <div className="rounded-[18px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
                       <UserRound className="h-5 w-5" />
                     </span>
                     No ambassador assigned yet
                   </p>
-                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                  <p className="mt-2 pl-8 text-sm leading-6 text-[color:var(--text-soft)]">
                     Assign an active applicant or search approved ambassadors from the booking row.
                   </p>
                 </div>
               ) : null}
 
               {canReview ? (
-                <div className="rounded-[18px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">
+                <div className="min-w-0">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#1e4fae] shadow-[0_8px_20px_rgba(37,99,235,0.16)]">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
                       <UsersRound className="h-5 w-5" />
                     </span>
                     Ambassador applications
@@ -344,7 +346,7 @@ export function SessionDetailsButton({
                       {session.applicants.map((applicant) => (
                         <span
                           key={applicant.id}
-                          className="inline-flex min-h-[36px] items-center gap-2 rounded-[12px] border border-[#c4dbfb] bg-white px-3 text-sm font-semibold text-[color:var(--navy)]"
+                          className="inline-flex min-h-[36px] items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold text-[color:var(--navy)]"
                         >
                           <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
                           {applicant.name}
@@ -352,14 +354,16 @@ export function SessionDetailsButton({
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm leading-6 text-[color:var(--text-soft)]">
-                      No active ambassador applications are waiting for this session.
+                    <p className="mt-2 pl-8 text-sm leading-6 text-[color:var(--text-soft)]">
+                      No active applications.
                     </p>
                   )}
                 </div>
               ) : null}
 
               </div>
+
+              </section>
 
               {session.status === "reschedule_requested" && resolveRescheduleAction ? (
                 <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
@@ -491,9 +495,10 @@ export function SessionDetailsButton({
               ) : null}
 
               {canReview ? (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-[#d7e5f6] bg-[#f7faff] p-5">
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-5">
                   <div>
-                    <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                    <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                      <MessageSquare className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
                       Share school feedback form
                     </p>
                     <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
@@ -504,7 +509,7 @@ export function SessionDetailsButton({
                     type="button"
                     variant="secondary"
                     onClick={copyFeedbackLink}
-                    className="min-h-[40px] rounded-[13px] px-4"
+                    className="h-9 min-h-[36px] rounded-lg px-3 text-xs! font-semibold! leading-4! shadow-none"
                   >
                     {feedbackLinkCopied ? (
                       <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
@@ -516,9 +521,9 @@ export function SessionDetailsButton({
                 </div>
               ) : null}
 
-              <div className="mt-4 rounded-[22px] border border-[rgba(24,168,59,0.22)] bg-[#f2faf4] p-5">
+              <div className="mt-5 border-t border-slate-200/70 pt-5">
                 <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#117a2e] shadow-[0_8px_20px_rgba(24,168,59,0.16)]">
+                  <span className="flex h-5 w-5 items-center justify-center text-slate-500">
                     <CalendarDays className="h-5 w-5" />
                   </span>
                   Add to your calendar
@@ -531,7 +536,7 @@ export function SessionDetailsButton({
                       {...(provider.download
                         ? { download: provider.download }
                         : { target: "_blank", rel: "noreferrer" })}
-                      className="inline-flex min-h-[46px] items-center justify-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 py-2 text-sm font-semibold text-[color:var(--navy)] shadow-[0_8px_20px_rgba(11,24,77,0.06)] transition hover:border-[rgba(4,15,75,0.2)]"
+                      className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-[color:var(--border-soft)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
                     >
                       {provider.icon}
                       {provider.label}
@@ -539,7 +544,7 @@ export function SessionDetailsButton({
                   ))}
                 </div>
               </div>
-              {canReview ? <details className="mt-4 rounded-xl border border-slate-200 p-4">
+              {canReview ? <details className="mt-5 border-t border-slate-200/70 pt-4">
                 <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
                 <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
                 <form action={revokeBookingGuestAccessAction} className="mt-3">
@@ -559,13 +564,11 @@ export function SessionDetailsButton({
 
 function DetailTile({
   icon,
-  iconClassName,
   label,
   children,
   className
 }: {
   icon: ReactNode;
-  iconClassName: string;
   label: string;
   children: ReactNode;
   className?: string;
@@ -573,24 +576,21 @@ function DetailTile({
   return (
     <div
       className={cn(
-        "flex items-start gap-3.5 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-3",
+        "flex items-start gap-3",
         className
       )}
     >
       <span
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full [&>svg]:h-5 [&>svg]:w-5",
-          iconClassName
-        )}
+        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-slate-400 [&>svg]:h-5 [&>svg]:w-5"
       >
         {icon}
       </span>
-      <span className="min-w-0 break-words pt-0.5">
+      <div className="min-w-0 break-words">
         <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
           {label}
         </span>
-        <span className="mt-1 block">{children}</span>
-      </span>
+        <div className="mt-1">{children}</div>
+      </div>
     </div>
   );
 }
