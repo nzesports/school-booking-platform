@@ -215,7 +215,8 @@ export function TrainingWorkspace({
   const selectedPack =
     presentationPacks.find((pack) => pack.presentation.id === selectedPackId) ?? recommendedPack;
   const generalResources = useMemo(
-    () => resources.filter((resource) => !resource.trainingPackIds?.length && resource.category === "training" && resource.isCurrent),
+    // General resources remain available here when also shared with a pack.
+    () => resources.filter((resource) => !resource.trainingPackId && resource.category === "training" && resource.isCurrent),
     [resources]
   );
   const [activeArea, setActiveArea] = useState<TrainingArea>(() =>

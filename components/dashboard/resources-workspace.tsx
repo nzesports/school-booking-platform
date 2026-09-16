@@ -347,7 +347,8 @@ export function ResourcesWorkspace({
 
   const scopedResources = useMemo(() => {
     if (!isTraining) return resources;
-    if (trainingView === "general") return resources.filter((resource) => resource.category === "training" && !resource.trainingPackIds?.length);
+    // Shared pack links do not change the resource's original library placement.
+    if (trainingView === "general") return resources.filter((resource) => resource.category === "training" && !resource.trainingPackId);
     return resources.filter((resource) => selectedPackId && resource.trainingPackIds?.includes(selectedPackId));
   }, [isTraining, resources, selectedPackId, trainingView]);
 
@@ -437,7 +438,7 @@ export function ResourcesWorkspace({
   const generalTrainingCount = resources.filter(
     (resource) =>
       resource.category === "training" &&
-      !resource.trainingPackIds?.length
+      !resource.trainingPackId
   ).length;
   const showLibrary = !isTraining || trainingView === "general" || Boolean(selectedPack);
   const editorPackId =
