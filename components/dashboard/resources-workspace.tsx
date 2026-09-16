@@ -260,6 +260,7 @@ function formatUpdatedDate(iso?: string) {
   }
 
   return new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
     day: "numeric",
     month: "short",
     year: "numeric"

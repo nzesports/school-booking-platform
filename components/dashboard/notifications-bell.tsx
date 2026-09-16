@@ -1,7 +1,7 @@
 "use client";
 
-import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
-import { Bell, CircleCheck, ExternalLink, X } from "lucide-react";
+import { updateNotificationAction } from "@/app/portal/notification-actions";
+import { Bell, CircleCheck, LoaderCircle, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -31,9 +31,7 @@ function notificationPanelStyle(button: HTMLButtonElement): CSSProperties {
   };
 }
 
-// Bell button that opens an in-place notification panel instead of navigating
-// away. Mark-as-read submits the existing server action and returns to the
-// current page, so the list refreshes without losing your place.
+// Update notifications in place without closing the panel or redirecting.
 export function NotificationsBell({
   notifications,
   markReadAction,
@@ -50,7 +48,39 @@ export function NotificationsBell({
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>();
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const unread = notifications.filter((notification) => !notification.readAt);
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [readIds, setReadIds] = useState<string[]>([]);
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+  const busyRef = useRef(new Set<string>());
+  const [error, setError] = useState<string | null>(null);
+  const visibleNotifications = notifications
+    .filter((notification) => !dismissedIds.includes(notification.id))
+    .map((notification) => readIds.includes(notification.id)
+      ? { ...notification, readAt: notification.readAt ?? "read" }
+      : notification);
+  const unread = visibleNotifications.filter((notification) => !notification.readAt);
+
+  const updateNotification = async (id: string, intent: "read" | "dismiss") => {
+    if (busyRef.current.has(id)) return;
+    busyRef.current.add(id);
+    setBusyIds((ids) => [...ids, id]);
+    setError(null);
+    try {
+      const result = await updateNotificationAction(id, intent);
+      if (result.error) {
+        setError(result.error);
+      } else if (intent === "dismiss") {
+        setDismissedIds((ids) => [...ids, id]);
+      } else {
+        setReadIds((ids) => [...ids, id]);
+      }
+    } catch {
+      setError("Could not update this notification. Please retry.");
+    } finally {
+      busyRef.current.delete(id);
+      setBusyIds((ids) => ids.filter((value) => value !== id));
+    }
+  };
 
   useEffect(() => {
     if (!open) {
@@ -144,7 +174,8 @@ export function NotificationsBell({
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  {notifications.length === 0 ? (
+                  {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</p> : null}
+                  {visibleNotifications.length === 0 ? (
                     <div className="grid justify-items-center gap-2 px-4 py-10 text-center">
                       <CircleCheck className="h-10 w-10 text-[#95d2ab]" />
                       <p className="text-sm font-semibold text-[color:var(--navy)]">
@@ -156,17 +187,38 @@ export function NotificationsBell({
                     </div>
                   ) : (
                     <div className="grid gap-2">
-                      {notifications.map((notification) => (
+                      {visibleNotifications.map((notification) => (
                         <div
                           key={notification.id}
                           className={cn(
-                            "rounded-[16px] border px-4 py-3.5",
+                            "relative rounded-[16px] border px-4 py-3.5 transition hover:border-slate-300",
                             notification.readAt
                               ? "border-[color:var(--border-soft)] bg-white/70"
                               : "border-[rgba(24,168,59,0.25)] bg-[#f7fdf9]"
                           )}
                         >
-                          <div className="flex items-start gap-2.5">
+                          {notification.relatedUrl ? (
+                            <Link
+                              href={resolveUrl(notification.relatedUrl)}
+                              onClick={() => {
+                                if (!notification.readAt) void updateNotification(notification.id, "read");
+                                setOpen(false);
+                              }}
+                              aria-label={"Open " + notification.title}
+                              className="absolute inset-0 rounded-[16px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#117a2e]"
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            aria-label={"Dismiss " + notification.title}
+                            title="Dismiss notification"
+                            disabled={busyIds.includes(notification.id)}
+                            onClick={() => void updateNotification(notification.id, "dismiss")}
+                            className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                          >
+                            {busyIds.includes(notification.id) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                          </button>
+                          <div className="pointer-events-none flex items-start gap-2.5 pr-6">
                             {!notification.readAt ? (
                               <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[color:var(--green)]" />
                             ) : null}
@@ -184,36 +236,17 @@ export function NotificationsBell({
                               </p>
                             </div>
                           </div>
-                          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                            {notification.relatedUrl ? (
-                              <Link
-                                href={resolveUrl(notification.relatedUrl)}
-                                onClick={() => setOpen(false)}
-                                className="inline-flex min-h-[34px] w-[124px] items-center justify-center gap-1.5 rounded-[10px] border border-[#c4dbfb] bg-white px-2.5 text-xs font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Open
-                              </Link>
-                            ) : null}
-                            {!notification.readAt && markReadAction ? (
-                              <form action={markReadAction}>
-                                <input
-                                  type="hidden"
-                                  name="notificationId"
-                                  value={notification.id}
-                                />
-                                <input type="hidden" name="redirectTo" value={currentPath} />
-                                <PendingSubmitButton unstyled
-                                  type="submit"
-                                  style={{ fontSize: "10px", lineHeight: "14px" }}
-                                  className="inline-flex min-h-[30px] items-center justify-center gap-1 whitespace-nowrap rounded-[9px] border border-[color:var(--border-soft)] bg-white px-2.5 text-[10px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f6f9fd]"
-                                >
-                                  <CircleCheck className="h-2.5 w-2.5" />
-                                  Mark as read
-                                </PendingSubmitButton>
-                              </form>
-                            ) : null}
-                          </div>
+                          {!notification.readAt && markReadAction ? (
+                            <button
+                              type="button"
+                              disabled={busyIds.includes(notification.id)}
+                              onClick={() => void updateNotification(notification.id, "read")}
+                              className="relative z-10 mt-2 inline-flex min-h-[28px] items-center gap-1 rounded-md px-1 text-xs! font-medium! text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                            >
+                              <CircleCheck className="h-3 w-3" />
+                              Mark as read
+                            </button>
+                          ) : null}
                         </div>
                       ))}
                     </div>
