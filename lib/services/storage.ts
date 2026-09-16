@@ -114,7 +114,7 @@ export async function prepareResourceUpload(userId: string, name: string, size: 
   const path = buildStoragePath(`resource-library/${userId}`, name);
   const { data, error } = await admin.storage.from("resources").createSignedUploadUrl(path);
   if (error) throw error;
-  return { path: data.path, token: data.token, contentType };
+  return { path: data.path, signedUrl: data.signedUrl, contentType };
 }
 
 export async function validateUploadedResource(userId: string, path: string) {

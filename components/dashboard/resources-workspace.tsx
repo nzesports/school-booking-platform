@@ -43,7 +43,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { RESOURCE_UPLOAD_MAX_MB, RESOURCE_VIDEO_UPLOAD_MAX_MB, resourceUploadLimitMb } from "@/lib/resource-upload";
 import { prepareResourceUploadAction } from "@/app/portal/actions";
-import { createClient } from "@/lib/supabase/browser";
+import { uploadResourceWithProgress } from "@/lib/resource-upload-client";
 
 const PAGE_SIZE = 8;
 
@@ -1250,6 +1250,7 @@ function ResourceEditorDialog({
   const uploadedFile = useRef<{ file: File; path: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [removeAttachment, setRemoveAttachment] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [progressLabel, setProgressLabel] = useState("Saving resource…");
   const category = lockedCategory;
   const selectableInitialAudiences = (resource?.audiences ?? ["ambassador"]).filter(
@@ -1316,6 +1317,7 @@ function ResourceEditorDialog({
             return;
           }
           setSaveError(null);
+          setUploadPercent(null);
           setProgressLabel(deleting ? "Deleting resource…" : file instanceof File && file.size > 0 ? "Uploading and saving…" : "Saving resource…");
           submitting.current = true;
           startTransition(async () => {
@@ -1327,11 +1329,16 @@ function ResourceEditorDialog({
                     setSaveError(prepared.error || "Could not start the upload. Please try again.");
                     return;
                   }
-                  const { path, token, contentType } = prepared.upload;
-                  const { error } = await createClient().storage.from("resources")
-                    .uploadToSignedUrl(path, token, file, { contentType });
-                  if (error) {
-                    setSaveError(`Upload failed: ${error.message}. Your entries are still here; you can retry.`);
+                  const { path, signedUrl, contentType } = prepared.upload;
+                  setUploadPercent(0);
+                  setProgressLabel("Uploading file…");
+                  try {
+                    await uploadResourceWithProgress(signedUrl, file, contentType, (percent) => {
+                      setUploadPercent(percent);
+                      if (percent === 100) setProgressLabel("Upload transferred, waiting for storage…");
+                    });
+                  } catch (error) {
+                    setSaveError(`Upload failed: ${error instanceof Error ? error.message : "Please retry."} Your entries are still here.`);
                     return;
                   }
                   uploadedFile.current = { file, path };
@@ -1690,10 +1697,30 @@ function ResourceEditorDialog({
           </p>
         ) : null}
         {pending ? (
-          <p role="status" className="flex items-center gap-2 text-sm font-semibold text-[#117a2e]">
-            <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-            {progressLabel} Please keep this window open.
-          </p>
+          <div className="space-y-2">
+            <p role="status" className="flex items-center gap-2 text-sm font-semibold text-[#117a2e]">
+              <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+              {progressLabel} Please keep this window open.
+            </p>
+            {uploadPercent !== null ? (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span>File transfer</span>
+                  <span>{uploadPercent}%</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-label="Resource file upload"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={uploadPercent}
+                  className="h-2 overflow-hidden rounded-full bg-slate-200"
+                >
+                  <div className="h-full rounded-full bg-[#117a2e] transition-[width]" style={{ width: `${uploadPercent}%` }} />
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
         <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--border-soft)] pt-4">
           <div>
