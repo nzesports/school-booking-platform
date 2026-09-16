@@ -308,7 +308,8 @@ export function BookingsExplorer({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   initialQuery,
-  initialBookingId
+  initialBookingId,
+  metric = "all"
 }: {
   bookings: BookingRequestView[];
   allBookings: BookingRequestView[];
@@ -326,6 +327,7 @@ export function BookingsExplorer({
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   initialQuery?: string;
   initialBookingId?: string;
+  metric?: string;
 }) {
   const bookings = useMemo(() => inputBookings.map(booking => ({
     ...booking,
@@ -377,7 +379,7 @@ export function BookingsExplorer({
   );
 
   const bookingQuery = (status: string) => {
-    const searchParams = new URLSearchParams({ status, range });
+    const searchParams = new URLSearchParams({ status, range, metric });
 
     if (customRange) {
       searchParams.set("from", customRange.from);
@@ -493,8 +495,8 @@ export function BookingsExplorer({
 
         </div>
 
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,190px))_auto] xl:items-end">
-          <label className="flex min-h-[44px] min-w-0 items-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(130px,160px))_auto] xl:items-end">
+          <label className="flex min-h-[36px] min-w-0 items-center gap-2.5 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
             <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
             <input
               value={query}
@@ -503,7 +505,7 @@ export function BookingsExplorer({
                 setPage(1);
               }}
               placeholder="Search bookings, schools, or contacts..."
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+              className="text-xs! leading-5! min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
             />
           </label>
 
@@ -553,7 +555,7 @@ export function BookingsExplorer({
               setStatusFilter("all");
               setPage(1);
             }}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition disabled:opacity-40"
+            className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! font-semibold! text-[color:var(--navy)] transition disabled:opacity-40"
           >
             Clear
           </button>
@@ -1656,13 +1658,13 @@ function ToolbarSelect({
 }) {
   return (
     <label className="grid min-w-0 gap-1">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
         {label}
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-[44px] w-full min-w-0 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
+        className="min-h-[36px] w-full min-w-0 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! font-medium! leading-5! text-[color:var(--navy)] outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

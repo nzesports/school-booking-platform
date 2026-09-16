@@ -408,6 +408,7 @@ export default async function StaffPortalPage({
               bookings={portal.bookings}
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
+              metric={readSearchParam(resolvedSearchParams, "metric") ?? "all"}
               activeView={activeBookingView}
               range={dashboardRange}
               customRange={customRange}

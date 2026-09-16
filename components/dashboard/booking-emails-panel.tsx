@@ -21,7 +21,7 @@ export function BookingEmailsPanel({ sessionId }: { sessionId: string }) {
       .catch(() => { if (active) setError("Email history could not be loaded. Close and reopen the Emails tab to retry."); });
     return () => { active = false; };
   }, [sessionId]);
-  async function run(send: boolean) {
+  async function run(send: boolean, kind: "status" | "feedback" = "status") {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError(""); setMessage("");
     try {
@@ -29,7 +29,7 @@ export function BookingEmailsPanel({ sessionId }: { sessionId: string }) {
         const result = await confirmBookingEmailAction(preview.id);
         setMessage(result.message); setPreview(undefined);
         setData(await loadBookingEmailsAction(sessionId));
-      } else setPreview(await previewBookingEmailAction(sessionId));
+      } else setPreview(await previewBookingEmailAction(sessionId, kind));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The email action failed.");
       if (send) {
@@ -54,9 +54,14 @@ export function BookingEmailsPanel({ sessionId }: { sessionId: string }) {
       >
         Preview email
       </Button>}
+      {data?.feedbackAvailable && !preview && <Button
+        type="button" variant="secondary" loading={busy} pendingLabel="Preparing…"
+        onClick={() => void run(false, "feedback")}
+        className="ml-auto min-h-[32px] rounded-lg px-3 py-1 text-xs shadow-none"
+      >Preview school feedback email</Button>}
     </div>
     {data?.booking.manual_email_only && <p className="text-xs text-slate-500">{data.booking.import_batch_id ? "Status emails are sent when you update this booking." : "Emails for this booking are sent manually."}</p>}
-    {data && !data.available && <p className="text-sm">No status email is available for this session’s current status.</p>}
+    {data && !data.available && !data.feedbackAvailable && <p className="text-sm">No status email is available for this session’s current status.</p>}
     {preview && <section className="space-y-3 rounded-xl border p-3">
       <p className="text-sm"><strong>To:</strong> {preview.recipient}</p>
       <p className="text-sm"><strong>Booking ref:</strong> {preview.reference}</p>

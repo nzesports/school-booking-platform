@@ -1,5 +1,6 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
-import { CalendarCheck2, FileText, UserRound, UsersRound } from "lucide-react";
+import { CalendarCheck2, CalendarX2, Clock3, CheckCircle2, UsersRound } from "lucide-react";
 
 import {
   assignAmbassadorAction,
@@ -39,7 +40,8 @@ export function BookingLifecyclePanel({
   range,
   customRange,
   initialQuery,
-  initialBookingId
+  initialBookingId,
+  metric = "all"
 }: {
   basePath: string;
   bookings: BookingRequestView[];
@@ -50,54 +52,100 @@ export function BookingLifecyclePanel({
   customRange?: DashboardCustomRange | null;
   initialQuery?: string;
   initialBookingId?: string;
+  metric?: string;
 }) {
   const now = new Date();
   const periodBookings = range === "all" ? bookings : bookings.map(booking => ({
     ...booking,
     sessions: booking.sessions.filter(session => sessionInRange(session, range, now, customRange))
   })).filter(booking => booking.sessions.length > 0);
-  const filteredBookings = filterBookingsByLifecycle(periodBookings, activeView);
+  const isCompleted = (status: string) => ["completed_pending_report", "report_submitted", "payment_pending", "paid", "closed"].includes(status);
+  const isCancelled = (status: string) => ["cancelled", "declined"].includes(status);
+  const isConfirmed = (status: string) => status === "confirmed";
+  const isPending = (status: string) => !isCompleted(status) && !isCancelled(status) && !isConfirmed(status);
+  const hasReport = (status: string) => ["submitted", "reviewed"].includes(status);
+  const metricBookings = metric === "all" ? periodBookings : periodBookings.map(booking => ({
+    ...booking,
+    sessions: booking.sessions.filter(session => {
+      if (metric === "completed") return isCompleted(session.status);
+      if (metric === "cancelled") return isCancelled(session.status);
+      if (metric === "pending") return isPending(session.status);
+      if (metric === "confirmed") return isConfirmed(session.status);
+      if (metric === "reports") return hasReport(session.reportStatus);
+      if (metric === "missing-reports") return isCompleted(session.status) && !hasReport(session.reportStatus);
+      return true;
+    })
+  })).filter(booking => booking.sessions.length);
+  const filteredBookings = filterBookingsByLifecycle(metricBookings, activeView);
+  const metricHref = (value: string) => {
+    const query = new URLSearchParams({ range, status: "all", metric: value });
+    if (customRange) { query.set("from", customRange.from); query.set("to", customRange.to); }
+    return `${basePath}/bookings?${query}`;
+  };
   const sessions = periodBookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
-  const assignedCount = sessions.filter((session) => session.assignedAmbassadorName).length;
-  const reportsCount = sessions.filter(
-    (session) => session.reportStatus === "submitted" || session.reportStatus === "reviewed"
-  ).length;
+  const completedCount = sessions.filter(session => isCompleted(session.status)).length;
+  const cancelledCount = sessions.filter(session => isCancelled(session.status)).length;
+  const confirmedCount = sessions.filter(session => isConfirmed(session.status)).length;
+  const pendingCount = sessions.filter(session => isPending(session.status)).length;
 
   return (
     <div className="grid gap-5">
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#2563eb]"
+          icon={<UsersRound className="h-5 w-5" />}
+          iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
+          href={metricHref("all")}
+          active={metric === "all"}
+          activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
+          label="Sessions"
+          value={String(sessions.length)}
+          hint="Total in selected period"
+        />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#18a83b]"
           icon={<CalendarCheck2 className="h-5 w-5" />}
           iconClassName="bg-[#eaf8ee] text-[#117a2e]"
-          label="Booking requests"
-          value={String(periodBookings.length)}
-          hint="Total requests received"
-        />
-        <LifecycleStatTile
-          accentClassName="border-l-[3px] border-l-[#18a83b]"
-          icon={<UsersRound className="h-5 w-5" />}
-          iconClassName="bg-[#eaf8ee] text-[#117a2e]"
-          label="Sessions"
-          value={String(sessions.length)}
-          hint="Total sessions requested"
-        />
-        <LifecycleStatTile
-          accentClassName="border-l-[3px] border-l-[#2563eb]"
-          icon={<UserRound className="h-5 w-5" />}
-          iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
-          label="Assigned sessions"
-          value={String(assignedCount)}
-          hint="Sessions with ambassadors"
+          href={metricHref("completed")}
+          active={metric === "completed"}
+          activeClassName="bg-[#eef8f1] hover:bg-[#eaf8ee]"
+          label="Completed"
+          value={String(completedCount)}
+          hint="Marked as completed"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#7c3aed]"
-          icon={<FileText className="h-5 w-5" />}
+          icon={<CheckCircle2 className="h-5 w-5" />}
           iconClassName="bg-[#f1edfd] text-[#7c3aed]"
-          label="Reports submitted"
-          value={String(reportsCount)}
-          hint="Reports submitted this period"
+          href={metricHref("confirmed")}
+          active={metric === "confirmed"}
+          activeClassName="bg-[#f5f1fd] hover:bg-[#f1edfd]"
+          label="Confirmed"
+          value={String(confirmedCount)}
+          hint="Confirmed, not yet completed"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#d97706]"
+          icon={<Clock3 className="h-5 w-5" />}
+          iconClassName="bg-[#fff5df] text-[#9a5a00]"
+          href={metricHref("pending")}
+          active={metric === "pending"}
+          activeClassName="bg-[#fff9eb] hover:bg-[#fff5df]"
+          label="Pending"
+          value={String(pendingCount)}
+          hint="Awaiting confirmation or resolution"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#dc2626]"
+          icon={<CalendarX2 className="h-5 w-5" />}
+          iconClassName="bg-[#fef2f2] text-[#b91c1c]"
+          href={metricHref("cancelled")}
+          active={metric === "cancelled"}
+          activeClassName="bg-[#fef2f2] hover:bg-[#feecec]"
+          label="Cancelled"
+          value={String(cancelledCount)}
+          hint="Cancelled or declined"
         />
       </div>
 
@@ -110,7 +158,8 @@ export function BookingLifecyclePanel({
         </div>
       ) : null}
       <BookingsExplorer
-        key={`${activeView}:${range}:${customRange?.from ?? ""}:${customRange?.to ?? ""}:${initialBookingId || ""}`}
+        key={`${metric}:${activeView}:${range}:${customRange?.from ?? ""}:${customRange?.to ?? ""}:${initialBookingId || ""}`}
+        metric={metric}
         bookings={filteredBookings}
         allBookings={periodBookings}
         basePath={basePath}
@@ -141,7 +190,10 @@ function LifecycleStatTile({
   iconClassName,
   label,
   value,
-  hint
+  hint,
+  href,
+  active,
+  activeClassName
 }: {
   accentClassName: string;
   icon: ReactNode;
@@ -149,11 +201,18 @@ function LifecycleStatTile({
   label: string;
   value: string;
   hint: string;
+  href: string;
+  active: boolean;
+  activeClassName: string;
 }) {
   return (
-    <div
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] bg-white/92 p-5",
+        "flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] p-5",
+        "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+        active ? activeClassName : "bg-white/92 hover:bg-slate-50",
         accentClassName
       )}
     >
@@ -167,7 +226,7 @@ function LifecycleStatTile({
         </span>
         <span className="block text-xs text-[color:var(--text-soft)]">{hint}</span>
       </span>
-    </div>
+    </Link>
   );
 }
 

@@ -19,14 +19,17 @@ function eventFor(status: string) {
   if (["cancelled", "declined"].includes(status)) return "cancelled" as const;
   throw new Error("No booking status email is available for this session status.");
 }
-async function capture(sessionId: string) {
+async function capture(sessionId: string, kind: "status" | "feedback" = "status") {
   const admin = adminClient();
   const { data: session, error } = await admin.from("booking_sessions")
-    .select("booking_request_id, status").eq("id", sessionId).single();
+    .select("booking_request_id, status, ends_at").eq("id", sessionId).single();
   if (error) throw new Error("Booking session could not be loaded.");
+  if (kind === "feedback" && (!["completed_pending_report", "report_submitted", "payment_pending", "paid", "closed"].includes(session.status) || Date.parse(session.ends_at) > Date.now())) {
+    throw new Error("Feedback emails are available after a session is completed.");
+  }
   const messages: EmailEventInput[] = [];
   await emailDeliveryContext.run({ preview: messages }, () =>
-    sendSchoolSessionEmails(session.booking_request_id, [sessionId], eventFor(session.status)));
+    sendSchoolSessionEmails(session.booking_request_id, [sessionId], kind === "feedback" ? "feedback" : eventFor(session.status)));
   if (messages.length !== 1) throw new Error("A single email preview could not be prepared.");
   return { session, message: messages[0] };
 }
@@ -39,7 +42,7 @@ export async function loadBookingEmailsAction(sessionId: string) {
   const admin = adminClient();
   z.uuid().parse(sessionId);
   const { data: session, error } = await admin.from("booking_sessions")
-    .select("booking_request_id, status").eq("id", sessionId).single();
+    .select("booking_request_id, status, ends_at").eq("id", sessionId).single();
   if (error) throw new Error("Booking session could not be loaded.");
   const [{ data: booking, error: bookingError }, { data: logs, error: logError }, { data: attempts, error: attemptError }] = await Promise.all([
     admin.from("booking_requests").select("reference_code, manual_email_only, import_batch_id, contact_position, school_contacts!booking_requests_primary_contact_id_fkey(full_name,email,position)").eq("id", session.booking_request_id).single(),
@@ -51,7 +54,7 @@ export async function loadBookingEmailsAction(sessionId: string) {
   if (bookingError || logError || attemptError) throw new Error("Email history could not be loaded.");
   let available = true;
   try { eventFor(session.status); } catch { available = false; }
-  return { booking, available, history: [
+  return { booking, available, feedbackAvailable: ["completed_pending_report", "report_submitted", "payment_pending", "paid", "closed"].includes(session.status) && Date.parse(session.ends_at) <= Date.now(), history: [
     ...(logs ?? []).filter(log => !log.related_booking_session_id || log.related_booking_session_id === sessionId),
     ...(attempts ?? []).map(attempt => {
       const payload = attempt.payload as EmailEventInput;
@@ -60,10 +63,11 @@ export async function loadBookingEmailsAction(sessionId: string) {
   ].sort((a,b) => b.created_at.localeCompare(a.created_at)) };
 }
 
-export async function previewBookingEmailAction(sessionId: string) {
+export async function previewBookingEmailAction(sessionId: string, kind: "status" | "feedback" = "status") {
   const actor = await requirePortalAccess("staff");
   z.uuid().parse(sessionId);
-  const { session, message } = await capture(sessionId);
+  z.enum(["status", "feedback"]).parse(kind);
+  const { session, message } = await capture(sessionId, kind);
   const { data, error } = await adminClient().from("booking_email_sends").insert({
     actor_id: actor.id, booking_request_id: session.booking_request_id,
     booking_session_id: sessionId, session_status: session.status, payload: message
@@ -82,8 +86,8 @@ export async function confirmBookingEmailAction(previewId: string) {
   if (error) throw new Error("Email preview was not found.");
   if (draft.status !== "preview") throw new Error("This send has already been submitted. Check its outcome in email history.");
   if (Date.parse(draft.expires_at) < Date.now()) throw new Error("Preview expired. Please create a new preview.");
-  const current = await capture(draft.booking_session_id);
   const payload = draft.payload as EmailEventInput;
+  const current = await capture(draft.booking_session_id, payload.templateKey === "school_feedback_request" ? "feedback" : "status");
   if (current.session.status !== draft.session_status || fingerprint(current.message) !== fingerprint(payload)) {
     throw new Error("Booking details or email template changed. Please preview the updated email before sending.");
   }
