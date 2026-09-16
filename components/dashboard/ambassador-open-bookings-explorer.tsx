@@ -385,7 +385,7 @@ function BookingCard({
       <div className="mt-4 grid gap-2.5 text-sm text-[color:var(--text-soft)]">
         <span className="inline-flex items-center gap-2">
           <CalendarCheck2 className={cn("h-4 w-4", detailIconClassName)} />
-          {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}
+          {formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)}
         </span>
         <span className="inline-flex items-center gap-2">
           <MapPin className={cn("h-4 w-4", detailIconClassName)} />

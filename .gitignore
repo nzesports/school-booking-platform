@@ -13,3 +13,7 @@ dist
 supabase/.branches
 supabase/.temp
 *.tsbuildinfo
+
+# Private booking exports and reconciliation files
+artifacts/booking-import/
+.env*

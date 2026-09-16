@@ -103,9 +103,9 @@ Copy `.env.example` to `.env.local` and fill the values you use:
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` enable live Supabase auth/data/storage.
 - `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` enable transactional email;
   `BREVO_CONTACT_EMAIL` selects the inbox that receives website contact messages.
-- `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, `MICROSOFT_GRAPH_CLIENT_SECRET`, `MICROSOFT_GRAPH_CALENDAR_ID`, and `MICROSOFT_GRAPH_USER_ID` enable Outlook calendar sync.
+- `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, `MICROSOFT_GRAPH_CLIENT_SECRET`, and `MICROSOFT_GRAPH_USER_ID` enable Outlook calendar sync. `MICROSOFT_GRAPH_CALENDAR_ID` is optional; leave it blank for the mailbox default calendar.
 
-The Microsoft app registration needs `Calendars.ReadWrite` application permission with admin consent. `MICROSOFT_GRAPH_USER_ID` should be the UPN or object id of the shared mailbox/user that owns the configured calendar.
+The Microsoft application needs calendar write access approved by your Microsoft administrator, scoped to the shared mailbox. `MICROSOFT_GRAPH_USER_ID` should be the UPN or object ID of that mailbox. See [schools@esf.nz calendar setup](docs/microsoft-calendar-setup.md) for the administrator handoff.
 
 Uploads are capped at 25MB. Public assets accept PNG, JPG/JPEG, and WebP; private resource files additionally accept PDF, PowerPoint, Word, and TXT.
 

@@ -13,6 +13,8 @@ import type {
 import { formatShortDate } from "@/lib/utils";
 
 export type DashboardRange =
+  | `year:${number}`
+  | "90days"
   | "week"
   | "month"
   | "term"
@@ -26,6 +28,7 @@ export type BookingLifecycleView = "current" | "future" | "past" | "cancelled" |
 export const dashboardRangeOptions: Array<{ value: DashboardRange; label: string }> = [
   { value: "week", label: "This week" },
   { value: "month", label: "This month" },
+  { value: "90days", label: "Last 90 days" },
   { value: "term", label: "This term" },
   { value: "biannual", label: "Bi-annual" },
   { value: "year", label: "This year" },
@@ -82,6 +85,7 @@ const nzDatePartsFormatter = new Intl.DateTimeFormat("en-CA", {
 
 export function readDashboardRange(value?: string | string[] | null): DashboardRange {
   const range = Array.isArray(value) ? value[0] : value;
+  if (range && /^year:\d{4}$/.test(range)) return range as DashboardRange;
   return dashboardRangeOptions.some((option) => option.value === range)
     ? (range as DashboardRange)
     : "month";
@@ -134,6 +138,7 @@ export function dashboardRangeLabel(
   range: DashboardRange,
   customRange?: DashboardCustomRange | null
 ) {
+  if (range.startsWith("year:")) return range.slice(5);
   if (range === "custom" && customRange) {
     return `${formatCustomRangeDate(customRange.from)} – ${formatCustomRangeDate(customRange.to)}`;
   }
@@ -185,6 +190,19 @@ export function dashboardRangeWindow(
           end: customDateBoundary(customRange.to, true)
         }
       : { start: null, end: null };
+  }
+
+  if (range.startsWith("year:")) {
+    const year = Number(range.slice(5));
+    return { start: customDateBoundary(`${year}-01-01`), end: customDateBoundary(`${year + 1}-01-01`) };
+  }
+  if (range === "90days") {
+    const parts = Object.fromEntries(nzDatePartsFormatter.formatToParts(now)
+      .filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+    const day = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+    const endDay = day.toISOString().slice(0, 10);
+    day.setUTCDate(day.getUTCDate() - 89);
+    return { start: customDateBoundary(day.toISOString().slice(0, 10)), end: customDateBoundary(endDay, true) };
   }
 
   const start = new Date(now);

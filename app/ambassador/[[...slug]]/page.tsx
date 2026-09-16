@@ -105,7 +105,7 @@ export default async function AmbassadorPortalPage({
       : null;
   const trainingResources = portal.resources.filter(
     (resource) =>
-      resource.category === "training" && resource.audiences.includes("ambassador")
+      (resource.category === "training" || Boolean(resource.trainingPackIds?.length)) && resource.audiences.includes("ambassador")
   );
   const presentationMaterials = portal.resources.filter(
     (resource) =>
@@ -302,7 +302,7 @@ export default async function AmbassadorPortalPage({
                   <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
                 </div>
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatShortDate(selectedOpenSession.startsAt)} · ${new Intl.DateTimeFormat("en-NZ", { hour: "numeric", minute: "2-digit", timeZone: "Pacific/Auckland" }).format(new Date(selectedOpenSession.startsAt))}`} />
+                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatShortDate(selectedOpenSession.startsAt, true)} · ${new Intl.DateTimeFormat("en-NZ", { hour: "numeric", minute: "2-digit", timeZone: "Pacific/Auckland" }).format(new Date(selectedOpenSession.startsAt))}`} />
                   <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
                   <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSession.expectedStudentCount} students · ${selectedOpenSession.yearLevels}`} />
                 </div>
@@ -420,6 +420,7 @@ export default async function AmbassadorPortalPage({
             modules={portal.trainingModules}
             presentations={portal.presentations}
             resources={trainingResources}
+            packs={portal.trainingPacks}
           />
         ) : null}
 

@@ -58,7 +58,7 @@ export function PaymentsWorkspace({
   const sessionLabel = (payment: PaymentRecord) => {
     const session = sessionsById.get(payment.bookingSessionId);
     return session
-      ? `${session.presentationTitle} · ${session.schoolName} · ${formatShortDate(session.startsAt)}`
+      ? `${session.presentationTitle} · ${session.schoolName} · ${formatShortDate(session.startsAt, true)}`
       : payment.bookingSessionId;
   };
   const returnTo = `${basePath}/payments#payments-queue`;

@@ -299,7 +299,7 @@ export default async function SchoolPortalPage({
                     <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--navy)]">
                       <span className="inline-flex items-center gap-2">
                         <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
-                        {formatShortDate(whatsNext.session.startsAt)} ·{" "}
+                        {formatShortDate(whatsNext.session.startsAt, true)} ·{" "}
                         {formatTime(whatsNext.session.startsAt)}
                       </span>
                       <span className="inline-flex items-center gap-2">
@@ -419,7 +419,7 @@ export default async function SchoolPortalPage({
                               {row.session.presentationTitle}
                             </td>
                             <td className="border-b border-[color:rgba(4,15,75,0.05)] px-3 py-3.5 text-sm text-[color:var(--navy)]">
-                              {formatShortDate(row.session.startsAt)} ·{" "}
+                              {formatShortDate(row.session.startsAt, true)} ·{" "}
                               {formatTime(row.session.startsAt)}
                             </td>
                             <td className="border-b border-[color:rgba(4,15,75,0.05)] px-3 py-3.5 text-sm text-[color:var(--navy)]">
@@ -594,7 +594,7 @@ export default async function SchoolPortalPage({
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[color:var(--navy)]">
                         <span className="inline-flex items-center gap-2">
                           <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
-                          {formatWeekdayDate(whatsNext.session.startsAt)} ·{" "}
+                          {formatWeekdayDate(whatsNext.session.startsAt, true)} ·{" "}
                           {formatTime(whatsNext.session.startsAt)}
                         </span>
                         <span aria-hidden className="h-4 w-px bg-[rgba(4,15,75,0.14)]" />
@@ -713,7 +713,7 @@ export default async function SchoolPortalPage({
                             {session.presentationTitle}
                           </h3>
                           <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                            {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}
+                            {formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)}
                           </p>
                         </div>
                       </div>
@@ -790,7 +790,7 @@ export default async function SchoolPortalPage({
             </h2>
             <p className="mt-2 text-sm leading-7 text-[color:var(--text-soft)]">
               {rescheduleSession.presentationTitle} is currently scheduled for{" "}
-              {formatWeekdayDate(rescheduleSession.startsAt)} at{" "}
+              {formatWeekdayDate(rescheduleSession.startsAt, true)} at{" "}
               {formatTime(rescheduleSession.startsAt)}. Choose a preferred new date at least seven
               days away.
             </p>
@@ -898,7 +898,7 @@ export default async function SchoolPortalPage({
                           {row.session.presentationTitle}
                         </p>
                         <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                          {formatShortDate(row.session.startsAt)} ·{" "}
+                          {formatShortDate(row.session.startsAt, true)} ·{" "}
                           {formatTime(row.session.startsAt)}
                           {row.session.assignedAmbassadorName
                             ? ` · ${row.session.assignedAmbassadorName}`
@@ -977,7 +977,7 @@ export default async function SchoolPortalPage({
                         </div>
                         <p className="mt-1 text-sm text-[color:var(--text-soft)]">
                           {row
-                            ? `${formatShortDate(row.session.startsAt)} · ${formatTime(row.session.startsAt)}`
+                            ? `${formatShortDate(row.session.startsAt, true)} · ${formatTime(row.session.startsAt)}`
                             : formatShortDate(review.createdAt)}
                           {row?.session.assignedAmbassadorName
                             ? ` · ${row.session.assignedAmbassadorName}`
@@ -1040,7 +1040,7 @@ export default async function SchoolPortalPage({
                     <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[color:var(--text-soft)]">
                       <span>
                         {selectedReviewSessionRow
-                          ? `${formatShortDate(selectedReviewSessionRow.session.startsAt)} - ${formatTime(selectedReviewSessionRow.session.startsAt)}`
+                          ? `${formatShortDate(selectedReviewSessionRow.session.startsAt, true)} - ${formatTime(selectedReviewSessionRow.session.startsAt)}`
                           : formatShortDate(selectedReview.createdAt)}
                       </span>
                       {selectedReviewSessionRow?.session.assignedAmbassadorName ? (
@@ -1097,7 +1097,7 @@ export default async function SchoolPortalPage({
                         {row.session.presentationTitle}
                       </p>
                       <p className="mt-0.5 text-sm text-[color:var(--text-soft)]">
-                        {formatShortDate(row.session.startsAt)} ·{" "}
+                        {formatShortDate(row.session.startsAt, true)} ·{" "}
                         {formatTime(row.session.startsAt)}
                         {row.session.assignedAmbassadorName
                           ? ` · ${row.session.assignedAmbassadorName}`

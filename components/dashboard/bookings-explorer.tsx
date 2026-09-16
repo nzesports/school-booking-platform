@@ -293,7 +293,7 @@ function BulkStatusSubmitButton({ count }: { count: number }) {
 }
 
 export function BookingsExplorer({
-  bookings,
+  bookings: inputBookings,
   allBookings,
   basePath,
   activeView,
@@ -327,6 +327,27 @@ export function BookingsExplorer({
   initialQuery?: string;
   initialBookingId?: string;
 }) {
+  const bookings = useMemo(() => inputBookings.map(booking => ({
+    ...booking,
+    sessions: booking.sessions.map(session => ({
+      ...session,
+      contactName: booking.primaryContactName,
+      contactEmail: booking.primaryContactEmail,
+      contactPosition: booking.primaryContactPosition
+    })).sort((left, right) =>
+      new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime()
+      || left.id.localeCompare(right.id)
+    )
+  })).sort((left, right) => {
+    // Match the date displayed in each row, across all pages and years.
+    // Bookings without sessions belong at the end.
+    const leftDate = left.sessions[0]?.startsAt;
+    const rightDate = right.sessions[0]?.startsAt;
+    if (!leftDate) return rightDate ? 1 : left.id.localeCompare(right.id);
+    if (!rightDate) return -1;
+    return new Date(rightDate).getTime() - new Date(leftDate).getTime()
+      || left.id.localeCompare(right.id);
+  }), [inputBookings]);
   // Deep links like /bookings?q=School+Name (e.g. "View bookings" on the
   // schools page) land pre-filtered on the list view. Deep links with
   // ?booking=<id> (notifications, post-update redirects) land on the list
@@ -378,6 +399,7 @@ export function BookingsExplorer({
       booking.schoolName,
       booking.referenceCode ?? "",
       booking.primaryContactName,
+      booking.primaryContactPosition,
       booking.primaryContactEmail,
       booking.sessions.map((session) => session.presentationTitle).join(" ")
     ]
@@ -732,7 +754,7 @@ export function BookingsExplorer({
                     </p>
                     {primarySession ? (
                       <p className="text-[13px] font-semibold text-[color:var(--navy)]">
-                        {formatShortDate(primarySession.startsAt)}
+                        {formatShortDate(primarySession.startsAt, true)}
                         <span className="mt-1 block whitespace-nowrap text-[11px] font-medium text-[color:var(--text-soft)]">
                           {formatTime(primarySession.startsAt)} – {formatTime(primarySession.endsAt)}
                         </span>
@@ -778,6 +800,7 @@ export function BookingsExplorer({
                     <p className="truncate text-[13px] font-medium text-[color:var(--navy)]">
                       {booking.primaryContactName}
                     </p>
+                    {booking.primaryContactPosition && <p className="text-xs text-slate-500">{booking.primaryContactPosition}</p>}
                     <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-[color:var(--text-soft)]">
                       <Mail className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{booking.primaryContactEmail}</span>
@@ -892,7 +915,7 @@ export function BookingsExplorer({
                                     <CalendarDays className="h-4 w-4" />
                                   </span>
                                   <span>
-                                    {formatShortDate(session.startsAt)}
+                                    {formatShortDate(session.startsAt, true)}
                                     <span className="block text-sm font-medium text-[color:var(--text-soft)]">
                                       {formatTime(session.startsAt)}
                                     </span>
@@ -1070,7 +1093,7 @@ function CompactSessionCard({
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[color:var(--navy)]">
-              {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}
+              {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}
             </p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold" style={{ color: session.presentationAccentColor ?? "#117a2e" }}>
               <Leaf className="h-4 w-4 shrink-0" />
@@ -1175,7 +1198,7 @@ function WithdrawalReviewPanel({
           </p>
           {session.withdrawalRequestedAt ? (
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
-              Requested {formatShortDate(session.withdrawalRequestedAt)}
+              Requested {formatShortDate(session.withdrawalRequestedAt, true)}
             </p>
           ) : null}
         </div>
@@ -1230,7 +1253,11 @@ function BookingsCalendar({
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   returnTo: string;
 }) {
-  const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
+  const [viewMonth, setViewMonth] = useState(() => {
+    const now = new Date();
+    const hasCurrentMonth = entries.some(entry => isSameMonth(new Date(entry.session.startsAt), now));
+    return startOfMonth(hasCurrentMonth || !entries.length ? now : new Date(entries[0].session.startsAt));
+  });
   const today = new Date();
   const gridStart = startOfWeek(viewMonth, { weekStartsOn: 1 });
   const days = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));

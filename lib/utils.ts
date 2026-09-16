@@ -41,11 +41,12 @@ export function formatDateTime(value: string | Date) {
   }).format(new Date(value));
 }
 
-export function formatShortDate(value: string | Date) {
+export function formatShortDate(value: string | Date, includeYear = false) {
   return new Intl.DateTimeFormat("en-NZ", {
     timeZone: "Pacific/Auckland",
     day: "numeric",
-    month: "short"
+    month: "short",
+    ...(includeYear ? { year: "numeric" as const } : {})
   }).format(new Date(value));
 }
 
@@ -57,12 +58,13 @@ export function formatTime(value: string | Date) {
   }).format(new Date(value));
 }
 
-export function formatWeekdayDate(value: string | Date) {
+export function formatWeekdayDate(value: string | Date, includeYear = false) {
   return new Intl.DateTimeFormat("en-NZ", {
     timeZone: "Pacific/Auckland",
     weekday: "short",
     day: "numeric",
-    month: "short"
+    month: "short",
+    ...(includeYear ? { year: "numeric" as const } : {})
   }).format(new Date(value));
 }
 

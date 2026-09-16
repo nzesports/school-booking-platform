@@ -55,6 +55,7 @@ export type ResourceRecord = {
   sharingScope: ResourceSharingScope;
   tags: string[];
   trainingPackId?: string;
+  trainingPackIds?: string[];
   presentationTypeId?: string;
   presentationSlug?: string;
   presentationTitle?: string;
@@ -167,6 +168,7 @@ export type AmbassadorPortalData = {
   resources: ResourceRecord[];
   payments: PaymentRecord[];
   trainingModules: TrainingModule[];
+  trainingPacks: TrainingPackRecord[];
   regions: Region[];
 };
 
@@ -224,6 +226,7 @@ async function loadPlatformDataUncached() {
     trainingModulesResult,
     trainingLessonsResult,
     trainingPacksResult,
+    packResourcesResult,
     sessionRescheduleHistory
   ] = await Promise.all([
     admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
@@ -234,12 +237,12 @@ async function loadPlatformDataUncached() {
     // Select * so environments missing the 0013 columns (logo_url,
     // profile_notes) still load schools.
     admin.from("schools").select("*"),
-    admin.from("school_contacts").select("id, school_id, full_name, email, phone, is_primary"),
+    admin.from("school_contacts").select("id, school_id, full_name, email, phone, position, is_primary"),
     admin.from("school_contact_users").select("school_contact_id, user_id"),
     admin
       .from("booking_requests")
       .select(
-        "id, reference_code, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id, ambassador_outreach_by"
+        "id, reference_code, manual_email_only, import_batch_id, contact_position, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id, ambassador_outreach_by"
       )
       .order("created_at", { ascending: false }),
     admin
@@ -302,6 +305,7 @@ async function loadPlatformDataUncached() {
       .from("training_resource_packs")
       .select("id, title, presentation_type_id, created_at")
       .order("created_at", { ascending: true }),
+    admin.from("training_pack_resources").select("training_pack_id, resource_id"),
     loadSessionRescheduleHistory()
   ]);
   const shouldRetrySessionsWithoutWithdrawals =
@@ -342,7 +346,8 @@ async function loadPlatformDataUncached() {
     bookingActivityLogs: bookingActivityLogsResult.data ?? [],
     trainingModules: trainingModulesResult.data ?? [],
     trainingLessons: trainingLessonsResult.data ?? [],
-    trainingPacks: trainingPacksResult.data ?? []
+    trainingPacks: trainingPacksResult.data ?? [],
+    packResources: packResourcesResult.error ? null : packResourcesResult.data ?? []
   };
 }
 
@@ -405,6 +410,8 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
         sharingScope,
         tags: Array.isArray(resource.tags) ? (resource.tags as string[]) : [],
         trainingPackId: (resource.training_pack_id as string | null) ?? undefined,
+        trainingPackIds: data.packResources?.filter((link) => link.resource_id === resource.id).map((link) => link.training_pack_id as string)
+          ?? (resource.training_pack_id ? [resource.training_pack_id as string] : []),
         presentationTypeId: (resource.presentation_type_id as string | null) ?? undefined,
         presentationSlug: (presentation?.slug as string | undefined) ?? undefined,
         presentationTitle: (presentation?.title as string | undefined) ?? undefined,
@@ -475,6 +482,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     ]);
   }
 
+  const importedBookingIds = new Set(data.bookingRequests.filter(row => row.import_batch_id).map(row => row.id));
   const requestStatusById = new Map(
     data.bookingRequests.map((request) => [request.id as string, request.status as string])
   );
@@ -515,7 +523,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     const rawStatus = session.status as BookingSessionView["status"];
     const sessionEnded = new Date(session.ends_at as string).getTime() < nowMs;
     const effectiveStatus =
-      sessionEnded && (rawStatus === "confirmed" || rawStatus === "ambassador_assigned")
+      !importedBookingIds.has(bookingId) && sessionEnded && (rawStatus === "confirmed" || rawStatus === "ambassador_assigned")
         ? ("completed_pending_report" as BookingSessionView["status"])
         : rawStatus;
     const withdrawalFields = session as Record<string, unknown>;
@@ -538,6 +546,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       locationAddress: (session.location_address as string | null) ?? undefined,
       contactName: (sharedContact?.full_name as string | undefined) ?? undefined,
       contactEmail: (sharedContact?.email as string | undefined) ?? undefined,
+      contactPosition: (sharedContact?.position as string | undefined) ?? undefined,
       contactPhone: (sharedContact?.phone as string | undefined) ?? undefined,
       startsAt: session.starts_at as string,
       endsAt: session.ends_at as string,
@@ -600,6 +609,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       referenceCode: (request.reference_code as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
       primaryContactName: (contact?.full_name as string | undefined) ?? "Primary contact",
+      primaryContactPosition: (request.contact_position || contact?.position || undefined) as string | undefined,
       primaryContactEmail: (contact?.email as string | undefined) ?? "",
       regionSlug: (region?.slug as string | undefined) ?? "unassigned",
       status: request.status as BookingRequestView["status"],
@@ -1424,6 +1434,7 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
         isActive: true
       })),
       payments: demoPayments,
+      trainingPacks: demoTrainingPacks,
       trainingModules: demoTrainingModules,
       regions: demoRegions.filter((region) => region.isActive)
     };
@@ -1498,6 +1509,7 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
 
       return rawAmbassador?.user_id === userId;
     }),
+    trainingPacks: mapTrainingPacks(data),
     trainingModules: mapTrainingModules(data),
     regions: data.regions
       .filter((region) => region.is_active !== false)

@@ -249,6 +249,9 @@ export function HeroBookingModal({
                     required
                   />
                 </Field>
+                <Field label="Position (optional)">
+                  <Input name="contactPosition" maxLength={200} />
+                </Field>
                 <Field label="Primary contact phone">
                   <Input name="contactPhone" placeholder="+64 21 555 123" required />
                 </Field>

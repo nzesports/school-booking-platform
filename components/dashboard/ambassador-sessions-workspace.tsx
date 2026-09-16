@@ -105,7 +105,7 @@ function SessionCard({ session, mode, withdrawalAction }: { session: BookingSess
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[#6941c6]"><Presentation className="h-3.5 w-3.5" />{session.presentationTitle}</span>
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]">
-            <span>{formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)}</span>
+            <span>{formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)}</span>
             <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-[#1e4fae]" />{session.regionName ?? titleCase(session.regionSlug)}</span>
             <span className="inline-flex items-center gap-1.5"><UsersRound className="h-3.5 w-3.5 text-[#1e4fae]" />{session.actualStudentCount ?? session.expectedStudentCount} students · {session.yearLevels}</span>
           </div>

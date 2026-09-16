@@ -587,7 +587,7 @@ export function OperationsAnalytics({
                       {session.presentationTitle}
                     </p>
                     <p className="mt-0.5 text-xs text-[color:var(--text-soft)]">
-                      {formatWeekdayDate(session.startsAt)} · {formatTime(session.startsAt)} ·{" "}
+                      {formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)} ·{" "}
                       {session.schoolName}
                     </p>
                   </div>

@@ -29,7 +29,7 @@ import Link from "next/link";
 import type { PresentationType, TrainingModule } from "@/lib/domain/types";
 import { ButtonLink } from "@/components/ui/button";
 import { SecondaryTabs, type SecondaryTabItem } from "@/components/ui/secondary-tabs";
-import type { ResourceRecord } from "@/lib/services/portal";
+import type { ResourceRecord, TrainingPackRecord } from "@/lib/services/portal";
 import { colourWithAlpha, presentationPalette } from "@/lib/presentation-colors";
 import { cn } from "@/lib/utils";
 
@@ -181,32 +181,31 @@ function guidanceTypeForResource(type: string): GuidanceType {
 export function TrainingWorkspace({
   modules,
   presentations,
-  resources
+  resources,
+  packs = []
 }: {
   modules: TrainingModule[];
   presentations: PresentationType[];
   resources: ResourceRecord[];
+  packs?: TrainingPackRecord[];
 }) {
-  const presentationPacks = useMemo(
-    () =>
-      presentations
-        .filter((presentation) => presentation.active)
-        .map((presentation) => {
-          const packModules = modules.filter(
-            (module) => module.presentationTypeId === presentation.id
-          );
-          const packResources = resources.filter(
-            (resource) =>
-              resource.presentationTypeId === presentation.id && resource.isCurrent
-          );
-          return {
-            presentation,
-            modules: packModules,
-            resources: packResources
-          };
-        }),
-    [modules, presentations, resources]
-  );
+  const presentationPacks = useMemo(() => {
+    const sources = packs.length ? packs : presentations.filter((presentation) => presentation.active).map((presentation) => ({ id: presentation.id, title: presentation.title, presentationTypeId: presentation.id }));
+    return sources.map((pack) => {
+      const linkedPresentation = presentations.find((presentation) => presentation.id === pack.presentationTypeId);
+      const presentation: PresentationType = {
+        slug: pack.id, shortSummary: "", fullDescription: "", durationMinutes: 0, yearLevels: "",
+        deliveryFormats: [], learningOutcomes: [], requiredEquipment: [], active: true, public: false,
+        ...linkedPresentation, id: pack.id, title: pack.title
+      };
+      return {
+        presentation,
+        modules: modules.filter((module) => pack.presentationTypeId && module.presentationTypeId === pack.presentationTypeId),
+        resources: resources.filter((resource) => resource.isCurrent && resource.isActive &&
+          (resource.trainingPackIds?.includes(pack.id) || (!packs.length && resource.presentationTypeId === pack.presentationTypeId)))
+      };
+    });
+  }, [modules, presentations, resources, packs]);
   const recommendedPack =
     presentationPacks.find((pack) => pack.modules.length > 0 || pack.resources.length > 0) ??
     presentationPacks[0];
@@ -216,7 +215,7 @@ export function TrainingWorkspace({
   const selectedPack =
     presentationPacks.find((pack) => pack.presentation.id === selectedPackId) ?? recommendedPack;
   const generalResources = useMemo(
-    () => resources.filter((resource) => !resource.presentationTypeId && resource.isCurrent),
+    () => resources.filter((resource) => !resource.trainingPackIds?.length && resource.category === "training" && resource.isCurrent),
     [resources]
   );
   const [activeArea, setActiveArea] = useState<TrainingArea>(() =>

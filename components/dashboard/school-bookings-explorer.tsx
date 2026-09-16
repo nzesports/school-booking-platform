@@ -135,7 +135,7 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                   </span>
                 </td>
                 <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
-                  {formatShortDate(row.session.startsAt)} · {formatTime(row.session.startsAt)}
+                  {formatShortDate(row.session.startsAt, true)} · {formatTime(row.session.startsAt)}
                 </td>
                 <td className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
                   <StatusBadge

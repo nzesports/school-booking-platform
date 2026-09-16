@@ -29,7 +29,7 @@ const templates = [
     body_html:
       "<p>Kia ora {{contactName}},</p>" +
       "<p>Thanks for hosting the <strong>{{presentationTitle}}</strong> session at <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong>.</p>" +
-      "<p>We'd love your feedback — it takes about two minutes and helps us keep improving for schools across Aotearoa.</p>" +
+      "<p>We'd love your feedback, it takes about two minutes and helps us keep improving for schools across Aotearoa.</p>" +
       button("{{reviewUrl}}", "Leave your feedback") +
       "<p>No login needed. If your school has a portal account you can also leave it under Bookings → Leave review.</p>",
     body_text:

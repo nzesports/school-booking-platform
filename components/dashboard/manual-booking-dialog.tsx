@@ -87,12 +87,15 @@ export function ManualBookingDialog({
                   </Field>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3">
+                <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="Teacher name">
                     <input name="contactName" autoComplete="name" required minLength={2} className={fieldClassName} />
                   </Field>
                   <Field label="Teacher email">
                     <input type="email" name="contactEmail" autoComplete="email" required className={fieldClassName} />
+                  </Field>
+                  <Field label="Position (optional)">
+                    <input name="contactPosition" maxLength={200} className={fieldClassName} />
                   </Field>
                   <Field label="Phone (optional)">
                     <input type="tel" name="contactPhone" autoComplete="tel" className={fieldClassName} />

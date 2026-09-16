@@ -158,8 +158,8 @@ export default async function AdminPortalPage({
     resolvedSearchParams.to
   );
   const requestedDashboardRange =
-    route === "bookings"
-      ? "all"
+    route === "bookings" && !resolvedSearchParams.range
+      ? "year"
       : !resolvedSearchParams.range && route === "feedback"
         ? "all"
         : !resolvedSearchParams.range && route === ""
@@ -410,23 +410,25 @@ export default async function AdminPortalPage({
         currentPath={`/admin${route ? `/${route}` : ""}`}
         headline={headline}
         dateLabel={
-          route === "" || route === "feedback"
+          route === "" || route === "feedback" || route === "bookings"
             ? dashboardRangeLabel(dashboardRange, customRange)
             : undefined
         }
         rangeOptions={
-          route === "" || route === "feedback"
+          route === "" || route === "feedback" || route === "bookings"
             ? dashboardRangeOptions.map((option) => ({
                 ...option,
                 href:
-                  route === "feedback"
+                  route === "bookings"
+                    ? `/admin/bookings?range=${option.value}&status=${activeBookingView}`
+                    : route === "feedback"
                     ? `/admin/feedback?range=${option.value}${presentationFilterId ? `&presentation=${presentationFilterId}` : ""}`
                     : `/admin?range=${option.value}${analyticsYear ? `&analyticsYear=${analyticsYear}` : ""}`
               }))
             : undefined
         }
-        activeRange={route === "" || route === "feedback" ? dashboardRange : undefined}
-        customRange={route === "" || route === "feedback" ? customRange : undefined}
+        activeRange={route === "" || route === "feedback" || route === "bookings" ? dashboardRange : undefined}
+        customRange={route === "" || route === "feedback" || route === "bookings" ? customRange : undefined}
         headerAction={
           route === "bookings" ? (
             <ManualBookingDialog
@@ -541,8 +543,8 @@ export default async function AdminPortalPage({
               presentations={portal.presentations}
               ambassadors={portal.ambassadors}
               activeView={activeBookingView}
-              range="all"
-              customRange={null}
+              range={dashboardRange}
+              customRange={customRange}
               initialQuery={readSearchParam(resolvedSearchParams, "q")}
               initialBookingId={readSearchParam(resolvedSearchParams, "booking")}
             />
@@ -1651,7 +1653,7 @@ export default async function AdminPortalPage({
             ) : null}
             <ResourcesWorkspace
               key={readSearchParam(resolvedSearchParams, "add") === "1" ? "training-editor-open" : "training-editor-closed"}
-              resources={portal.resources.filter((resource) => resource.category === "training")}
+              resources={portal.resources}
               presentations={portal.presentations.map((presentation) => ({
                 id: presentation.id,
                 title: presentation.title
@@ -2422,7 +2424,9 @@ function getContentNotice(searchParams: Record<string, string | string[] | undef
     return {
       scope: "booking" as const,
       tone: "error" as const,
-      message: "The bookings could not be deleted. Select up to 100 bookings and try again."
+      message: readSearchParam(searchParams, "error") === "invalid-booking-deletion"
+        ? "Select one or more bookings to delete (up to 100 at a time)."
+        : "Deletion failed. Your selected booking or bookings have not been removed. Please try again."
     };
   }
 

@@ -1,3 +1,5 @@
+import { bookingEmailPolicy } from "./booking-email-policy";
+import { emailDeliveryContext } from "./email-delivery-context";
 import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
@@ -19,6 +21,12 @@ export async function sendSchoolSessionEmails(
   requestedDate?: string
 ) {
   if (!sessionIds.length) return;
+  const context = emailDeliveryContext.getStore();
+  if (!context?.preview) {
+    const policy = await bookingEmailPolicy(bookingId);
+    if (policy?.manualOnly && context?.manualBookingId !== policy.id
+      && !(policy.imported && context?.statusChangeBookingId === policy.id)) return;
+  }
   const admin = createAdminClient();
   if (!admin) throw new Error("Email database is not configured.");
   const { data: booking, error } = await admin.from("booking_requests")
@@ -93,4 +101,16 @@ export async function sendSchoolSessionEmails(
   if (results.some((result) => result.status === "rejected" || result.value.status !== "sent")) {
     throw new Error("One or more session notifications could not be completed.");
   }
+}
+
+// Called only after normal booking mutations, never by the data-only importer
+// or scheduled reminders. Keep the persisted import guard for background mail.
+export async function sendSchoolStatusChangeEmails(
+  ...args: Parameters<typeof sendSchoolSessionEmails>
+) {
+  if (args[2] === "feedback") return sendSchoolSessionEmails(...args);
+  return emailDeliveryContext.run(
+    { ...emailDeliveryContext.getStore(), statusChangeBookingId: args[0] },
+    () => sendSchoolSessionEmails(...args)
+  );
 }

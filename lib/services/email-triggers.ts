@@ -1,3 +1,4 @@
+import { emailDeliveryContext } from "./email-delivery-context";
 import { config } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -24,6 +25,7 @@ async function logEmail(result: EmailResult, related?: {
   bookingSessionId?: string;
   recipientType?: string;
 }) {
+  if (emailDeliveryContext.getStore()?.preview || result.status === "suppressed_manual_only") return;
   const admin = createAdminClient();
 
   if (!admin) {
@@ -135,7 +137,6 @@ export async function sendBookingRequestReceivedEmail(opts: {
 }) {
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
-  const referenceCode = escapeHtml(opts.referenceCode ?? opts.bookingId);
   const bookingSummary = buildBookingReceipt({
     ...opts,
     referenceCode: opts.referenceCode ?? opts.bookingId
@@ -164,7 +165,6 @@ export async function sendBookingRequestReceivedEmail(opts: {
       `
       <p>Hi ${contactName},</p>
       <p>Thank you for your booking request for <strong>${schoolName}</strong>.</p>
-      <p>Your booking reference is <strong>${referenceCode}</strong>.</p>
       <p>Our team will be in touch within 2 business days to confirm your session.</p>
       <p>If you want to access the school portal, sign up with this same email address after
       verification and your school contact record will be linked automatically.</p>
@@ -253,7 +253,6 @@ export async function sendBookingConfirmedEmail(opts: SchoolEmailDetails & {
       <p>Hi ${contactName},</p>
       <p>Great news: your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> is now confirmed.</p>
-      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>We'll send you a reminder closer to the date.</p>
     `
@@ -306,9 +305,9 @@ export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
       <p>Hi ${contactName},</p>
       <p>Thanks for hosting the <strong>${presentationTitle}</strong> session at
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
-      <p>We'd love your feedback — it takes about two minutes and helps us keep
+      <p>We'd love your feedback, it takes about two minutes and helps us keep
       improving for schools across Aotearoa.</p>
-      <p><a href="${escapeHtml(reviewUrl)}">Leave your feedback here</a> — no login needed.</p>
+      <p><a href="${escapeHtml(reviewUrl)}">Leave your feedback here</a>, no login needed.</p>
       <p>If your school has a portal account you can also leave it under
       Bookings &rarr; Leave review.</p>
     `
@@ -367,7 +366,6 @@ export async function sendBookingRescheduledEmail(opts: SchoolEmailDetails & {
       <p>Your reschedule request has been sorted — the <strong>${presentationTitle}</strong>
       session for <strong>${schoolName}</strong> is now scheduled for
       <strong>${sessionDate}</strong>.</p>
-      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
       <p>${opts.isConfirmed === false ? "Your requested date has been updated; final booking confirmation is still pending." : "Your session is confirmed. We will send a reminder closer to the day."}</p>
     `
@@ -416,7 +414,6 @@ export async function sendSessionReminderEmail(opts: SchoolEmailDetails & {
       <p>Hi ${contactName},</p>
       <p>A quick reminder that the <strong>${presentationTitle}</strong> session at
       <strong>${schoolName}</strong> is coming up on <strong>${sessionDate}</strong>.</p>
-      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       <p>Handy checklist: projector or screen ready, microphone if the space needs one,
       and let the office know our ambassador is visiting.</p>
     `
@@ -557,7 +554,6 @@ export async function sendBookingCancelledEmail(opts: SchoolEmailDetails & {
       <p>Hi ${contactName},</p>
       <p>Your <strong>${presentationTitle}</strong> session for
       <strong>${schoolName}</strong> on <strong>${sessionDate}</strong> has been cancelled.</p>
-      ${opts.referenceCode ? `<p>Support reference: <strong>${escapeHtml(opts.referenceCode)}</strong>.</p>` : ""}
       <p>If this was unexpected, reply to this email and our team will help.</p>
     `
   }, details);
@@ -597,7 +593,7 @@ export async function sendSchoolRescheduleNoticeEmail(
       <p>Current session: ${escapeHtml(opts.sessionDate)}.</p>
       ${opts.requestedDate ? `<p>Requested date: ${escapeHtml(opts.requestedDate)}.</p>` : ""}
       <p>${requested ? "Your new date is not confirmed yet. We will email you after reviewing the request." : "The original session date and time are unchanged. Please contact our team to discuss another date."}</p>
-      ${opts.referenceCode ? `<p>Reference: ${escapeHtml(opts.referenceCode)}</p>` : ""}`
+      `
   }, details);
   await logEmail(result, { bookingRequestId: opts.bookingId, bookingSessionId: opts.bookingSessionId, recipientType: "school" });
   return result;

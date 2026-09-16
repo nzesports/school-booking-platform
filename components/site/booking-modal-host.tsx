@@ -724,6 +724,9 @@ function BookingModalFlow({
               <ContactField label="Primary contact email" required>
                 <Input name="contactEmail" type="email" placeholder="jordan@school.nz" required disabled={contactDefaultsLoading} value={contactDetails.contactEmail} onChange={(event) => setContactDetails((current) => ({ ...current, contactEmail: event.target.value }))} />
               </ContactField>
+              <ContactField label="Position (optional)">
+                <Input name="contactPosition" maxLength={200} placeholder="Teacher, principal, sports coordinator…" />
+              </ContactField>
               <ContactField label="Primary contact phone" required>
                 <Input name="contactPhone" placeholder="+64 21 555 123" required disabled={contactDefaultsLoading} value={contactDetails.contactPhone} onChange={(event) => setContactDetails((current) => ({ ...current, contactPhone: event.target.value }))} />
               </ContactField>

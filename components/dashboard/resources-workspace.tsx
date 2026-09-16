@@ -30,6 +30,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { TrainingPackResourcePicker, RemoveFromTrainingPackButton } from "@/components/dashboard/training-pack-resource-picker";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
@@ -330,6 +331,7 @@ export function ResourcesWorkspace({
     initialTrainingPackId ?? null
   );
   const [packEditorOpen, setPackEditorOpen] = useState(false);
+  const [resourcePickerPack, setResourcePickerPack] = useState<TrainingPackRecord | null>(null);
   const [packPendingDeletion, setPackPendingDeletion] =
     useState<TrainingPackRecord | null>(null);
   const router = useRouter();
@@ -343,30 +345,10 @@ export function ResourcesWorkspace({
   };
 
   const scopedResources = useMemo(() => {
-    if (!isTraining) {
-      return resources;
-    }
-
-    if (trainingView === "general") {
-      return resources.filter(
-        (resource) => !resource.trainingPackId && !resource.presentationTypeId
-      );
-    }
-
-    if (!selectedPackId) {
-      return [];
-    }
-
-    const selectedPack = packs.find((pack) => pack.id === selectedPackId);
-
-    return resources.filter(
-      (resource) =>
-        resource.trainingPackId === selectedPackId ||
-        (!resource.trainingPackId &&
-          Boolean(selectedPack?.presentationTypeId) &&
-          resource.presentationTypeId === selectedPack?.presentationTypeId)
-    );
-  }, [isTraining, packs, resources, selectedPackId, trainingView]);
+    if (!isTraining) return resources;
+    if (trainingView === "general") return resources.filter((resource) => resource.category === "training" && !resource.trainingPackIds?.length);
+    return resources.filter((resource) => selectedPackId && resource.trainingPackIds?.includes(selectedPackId));
+  }, [isTraining, resources, selectedPackId, trainingView]);
 
   const stats = useMemo(() => {
     const total = scopedResources.length;
@@ -383,45 +365,10 @@ export function ResourcesWorkspace({
     [scopedResources]
   );
 
-  const trainingPacks = useMemo(() => {
-    const packResources = new Map<string, ResourceRecord[]>();
-    const packIdByPresentationId = new Map(
-      packs.flatMap((pack) =>
-        pack.presentationTypeId ? [[pack.presentationTypeId, pack.id] as const] : []
-      )
-    );
-
-    for (const resource of resources) {
-      if (resource.category !== "training") {
-        continue;
-      }
-
-      const packId =
-        resource.trainingPackId ??
-        (resource.presentationTypeId
-          ? packIdByPresentationId.get(resource.presentationTypeId)
-          : undefined);
-
-      if (!packId) {
-        continue;
-      }
-
-      const existingItems = packResources.get(packId);
-
-      if (existingItems) {
-        existingItems.push(resource);
-      } else {
-        packResources.set(packId, [resource]);
-      }
-    }
-
-    return packs.map((pack) => {
-      const items = packResources.get(pack.id) ?? [];
-      const published = items.filter((resource) => statusOf(resource) === "published").length;
-
-      return { pack, items, published };
-    });
-  }, [packs, resources]);
+  const trainingPacks = useMemo(() => packs.map((pack) => {
+    const items = resources.filter((resource) => resource.trainingPackIds?.includes(pack.id));
+    return { pack, items, published: items.filter((resource) => statusOf(resource) === "published").length };
+  }), [packs, resources]);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -438,7 +385,7 @@ export function ResourcesWorkspace({
       return (
         (!normalizedQuery || haystack.includes(normalizedQuery)) &&
         (typeFilter === "all" || resource.type === typeFilter) &&
-        (presentationFilter === "all" || resource.presentationTypeId === presentationFilter) &&
+        (isTraining || presentationFilter === "all" || resource.presentationTypeId === presentationFilter) &&
         (statusFilter === "all" || statusOf(resource) === statusFilter)
       );
     });
@@ -452,6 +399,7 @@ export function ResourcesWorkspace({
     );
   }, [
     scopedResources,
+    isTraining,
     query,
     typeFilter,
     presentationFilter,
@@ -467,14 +415,14 @@ export function ResourcesWorkspace({
     setNewResourceDefaults(defaults);
     setEditorResource("new");
   };
-  const viewTrainingPack = (presentationTypeId: string) => {
-    const isClosing = selectedPackId === presentationTypeId;
+  const viewTrainingPack = (packId: string) => {
+    const isClosing = selectedPackId === packId;
     setTrainingView("packs");
-    setSelectedPackId(isClosing ? null : presentationTypeId);
+    setSelectedPackId(isClosing ? null : packId);
     setQuery("");
     setTypeFilter("all");
     setStatusFilter("all");
-    setPresentationFilter(isClosing ? "all" : presentationTypeId);
+    setPresentationFilter("all");
     setPage(1);
     if (!isClosing) {
       window.requestAnimationFrame(() => {
@@ -488,14 +436,13 @@ export function ResourcesWorkspace({
   const generalTrainingCount = resources.filter(
     (resource) =>
       resource.category === "training" &&
-      !resource.trainingPackId &&
-      !resource.presentationTypeId
+      !resource.trainingPackIds?.length
   ).length;
   const showLibrary = !isTraining || trainingView === "general" || Boolean(selectedPack);
   const editorPackId =
     editorResource === "new"
       ? newResourceDefaults.trainingPackId
-      : editorResource?.trainingPackId;
+      : selectedPackId ?? editorResource?.trainingPackId;
   const editorReturnTo = isTraining
     ? `${returnTo}?view=${editorPackId ? "packs" : trainingView}${
         editorPackId ? `&pack=${encodeURIComponent(editorPackId)}` : ""
@@ -613,13 +560,7 @@ export function ResourcesWorkspace({
               <div className="mt-auto flex flex-wrap gap-2 pt-4">
                 <Button
                   type="button"
-                  onClick={() =>
-                    openNewResource({
-                      category: "training",
-                      trainingPackId: pack.id,
-                      presentationTypeId: pack.presentationTypeId
-                    })
-                  }
+                  onClick={() => setResourcePickerPack(pack)}
                   className="min-h-[38px] rounded-[11px] px-3 py-1.5 shadow-none"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add to pack
@@ -670,13 +611,7 @@ export function ResourcesWorkspace({
           <Button
             type="button"
             variant="secondary"
-            onClick={() =>
-              openNewResource({
-                category: "training",
-                trainingPackId: selectedPack?.pack.id,
-                presentationTypeId: selectedPack?.pack.presentationTypeId
-              })
-            }
+            onClick={() => selectedPack ? setResourcePickerPack(selectedPack.pack) : openNewResource({ category: "training" })}
             className="rounded-[14px] border-[#bfe6d2] bg-white text-[#117a2e] hover:bg-[#eaf8ee]"
           >
             <Plus className="h-4 w-4" />
@@ -924,6 +859,7 @@ export function ResourcesWorkspace({
                 <ResourceActions
                   resource={resource}
                   onEdit={() => setEditorResource(resource)}
+                  packId={isTraining && trainingView === "packs" ? selectedPackId ?? undefined : undefined}
                 />
               </div>
             );
@@ -1039,6 +975,7 @@ export function ResourcesWorkspace({
                   <ResourceActions
                     resource={resource}
                     onEdit={() => setEditorResource(resource)}
+                  packId={isTraining && trainingView === "packs" ? selectedPackId ?? undefined : undefined}
                   />
                 </div>
               </article>
@@ -1065,8 +1002,28 @@ export function ResourcesWorkspace({
           presentations={presentations}
           action={action}
           returnTo={editorReturnTo}
-          lockedCategory={lockedCategory}
+          lockedCategory={editorResource !== "new" && editorResource ? editorResource.category : lockedCategory}
           onClose={closeEditor}
+        />
+      ) : null}
+      {resourcePickerPack ? (
+        <TrainingPackResourcePicker
+          pack={resourcePickerPack}
+          resources={resources}
+          onClose={() => setResourcePickerPack(null)}
+          onAdded={() => {
+            setTrainingView("packs");
+            setSelectedPackId(resourcePickerPack.id);
+            setQuery("");
+            setTypeFilter("all");
+            setStatusFilter("all");
+            setPresentationFilter("all");
+            setPage(1);
+          }}
+          onUpload={() => {
+            openNewResource({ category: "training", trainingPackId: resourcePickerPack.id, presentationTypeId: resourcePickerPack.presentationTypeId });
+            setResourcePickerPack(null);
+          }}
         />
       ) : null}
       {packEditorOpen && createPackAction ? (
@@ -1216,10 +1173,12 @@ function TrainingPackEditorDialog({
 
 function ResourceActions({
   resource,
-  onEdit
+  onEdit,
+  packId
 }: {
   resource: ResourceRecord;
   onEdit: () => void;
+  packId?: string;
 }) {
   const previewUrl = previewUrlFor(resource);
   const downloadUrl = downloadUrlFor(resource);
@@ -1228,6 +1187,7 @@ function ResourceActions({
 
   return (
     <div className="flex items-center gap-1.5">
+      {packId ? <RemoveFromTrainingPackButton packId={packId} resource={resource} /> : null}
       <button
         type="button"
         title="Edit resource"
@@ -1289,6 +1249,7 @@ function ResourceEditorDialog({
   const submitting = useRef(false);
   const uploadedFile = useRef<{ file: File; path: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [removeAttachment, setRemoveAttachment] = useState(false);
   const [progressLabel, setProgressLabel] = useState("Saving resource…");
   const category = lockedCategory;
   const selectableInitialAudiences = (resource?.audiences ?? ["ambassador"]).filter(
@@ -1399,6 +1360,7 @@ function ResourceEditorDialog({
         {resource?.id ? <input type="hidden" name="id" value={resource.id} /> : null}
         <input type="hidden" name="returnTo" value={returnTo} />
         <input type="hidden" name="category" value={category} />
+        <input type="hidden" name="removeAttachment" value={removeAttachment ? "on" : ""} />
         <input type="hidden" name="sharingScope" value={sharingScope} />
         <input type="hidden" name="isCurrent" value={resourceStatus === "archived" ? "" : "on"} />
         <input type="hidden" name="isActive" value={resourceStatus === "draft" ? "" : "on"} />
@@ -1416,6 +1378,7 @@ function ResourceEditorDialog({
           </span>
         </div>
 
+        {resource?.trainingPackIds?.length ? <p className="text-sm text-[color:var(--text-soft)]">This resource is shared across {resource.trainingPackIds.length} training pack(s). Edits and draft status apply everywhere it is used.</p> : null}
         <EditorSection icon={FileText} title="Resource details" subtitle="Name the resource clearly so it is easy to find later.">
           <div className="grid gap-4">
             <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
@@ -1664,7 +1627,13 @@ function ResourceEditorDialog({
                   PDF, Office documents, images, videos, text, or archive files up to {RESOURCE_UPLOAD_MAX_MB} MB.
                 </span>
               </label>
-              {resource?.storagePath ? (
+              {removeAttachment ? (
+                <p className="text-sm text-[color:var(--text-soft)]">
+                  Attachment will be removed when you save. You can choose a replacement above.
+                  <button type="button" onClick={() => setRemoveAttachment(false)} className="ml-2 underline">Undo</button>
+                </p>
+              ) : null}
+              {resource?.storagePath && !removeAttachment ? (
                 <div className="flex w-full max-w-full items-center justify-between gap-3 overflow-hidden rounded-[14px] border border-[#cce8d3] bg-[#f3faf5] px-3 py-2.5">
                   <div className="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden">
                     <FileText className="h-4 w-4 shrink-0 text-[#117a2e]" />
@@ -1681,6 +1650,9 @@ function ResourceEditorDialog({
                   >
                     <Eye className="h-3.5 w-3.5" /> View
                   </a>
+                  <Button type="button" variant="danger" onClick={() => setRemoveAttachment(true)}>
+                    <Trash2 className="h-4 w-4" /> Remove attachment
+                  </Button>
                 </div>
               ) : null}
             </div>

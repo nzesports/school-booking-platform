@@ -146,7 +146,7 @@ function OutstandingReportRow({ session }: { session: BookingSessionView }) {
           <h3 className="mt-0.5 font-semibold text-[color:var(--navy)]">{session.schoolName}</h3>
           <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[color:var(--text-soft)]">
             <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}
+            {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}
           </p>
         </div>
         <ButtonLink href={`/ambassador/report/${session.id}`} className="min-h-9 shrink-0 px-3 py-1.5">

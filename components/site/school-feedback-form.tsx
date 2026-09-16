@@ -58,7 +58,7 @@ export function SchoolFeedbackForm({
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-[color:var(--text-soft)]">
                 <span className="inline-flex items-center gap-2">
                   <CalendarDays className="h-4 w-4 text-[color:var(--navy)]/70" />
-                  Delivered {formatShortDate(startsAt)}
+                  Delivered {formatShortDate(startsAt, true)}
                 </span>
                 <span className="inline-flex items-center gap-2">
                   <CalendarClock className="h-4 w-4 text-[color:var(--navy)]/70" />

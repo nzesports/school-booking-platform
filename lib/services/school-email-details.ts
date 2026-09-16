@@ -36,7 +36,7 @@ export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
     yearLevels: details.yearLevels || "Not recorded"
   };
   const rows = [
-    ["Ambassador", vars.ambassadorName], ["Booking reference", vars.referenceCode],
+    ["Ambassador", vars.ambassadorName],
     ["Presentation", vars.presentationTitle], ["School / location", vars.schoolName],
     ["Date", vars.sessionDate], ["Time", vars.sessionTime],
     ["Expected students", vars.expectedStudentCount], ["Year groups", vars.yearLevels]

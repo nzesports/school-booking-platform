@@ -30,7 +30,6 @@ export const config = {
     env.microsoftTenantId &&
       env.microsoftClientId &&
       env.microsoftClientSecret &&
-      env.microsoftCalendarId &&
       env.microsoftUserId
   )
 };

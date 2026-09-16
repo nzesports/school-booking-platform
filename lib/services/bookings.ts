@@ -111,6 +111,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
           full_name: input.contactName,
           email: input.contactEmail,
           phone: input.contactPhone,
+          position: input.contactPosition || null,
           is_primary: !usesLinkedSchool,
           can_access_portal: !usesLinkedSchool,
           marketing_consent: input.marketingConsent
@@ -123,11 +124,19 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     throw contactError;
   }
 
+  if (usesLinkedContact && input.contactPosition) {
+    const { error } = await admin.from("school_contacts")
+      .update({ position: input.contactPosition }).eq("id", contact.id)
+      .or("position.is.null,position.eq.");
+    if (error) throw error;
+  }
+
   const { data: bookingRequest, error: bookingError } = await admin
     .from("booking_requests")
     .insert({
       school_id: schoolId,
       primary_contact_id: contact.id,
+      contact_position: input.contactPosition || null,
       region_id: resolvedRegionId,
       status: "tentative",
       source: "public",

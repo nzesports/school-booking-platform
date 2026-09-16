@@ -1,3 +1,6 @@
+import { bookingEmailPolicy } from "./booking-email-policy";
+import { emailDeliveryContext } from "./email-delivery-context";
+
 import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -5,7 +8,7 @@ import { relationOne } from "@/lib/supabase/relation";
 import { config } from "@/lib/env";
 import { renderBrandedEmail } from "@/lib/services/email-layout";
 
-type EmailEventInput = {
+export type EmailEventInput = {
   bookingReference?: string;
   bookingRequestId?: string;
   bookingSessionId?: string;
@@ -19,10 +22,33 @@ type EmailEventInput = {
   attachments?: Array<{ name: string; contentBase64: string }>;
 };
 
+export function renderEmailEventHtml(event: Pick<EmailEventInput, "html" | "bookingReference" | "includeUnsubscribe">) {
+  const reference = event.bookingReference;
+  const escapedReference = reference?.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[character]!);
+  const referenceMarker = escapedReference
+    ? `<p style="margin:0 0 20px;"><span style="display:inline-block;border:1px solid #d8e4ee;border-radius:8px;background:#f3f7fb;padding:6px 10px;color:#344663;font-size:12px;letter-spacing:0.04em;">Booking ref: <strong style="font-family:monospace;font-size:13px;">${escapedReference}</strong></span></p>`
+    : "";
+
+  return renderBrandedEmail(referenceMarker + event.html, { includeUnsubscribe: event.includeUnsubscribe });
+}
+
 export async function sendTransactionalEmail(event: EmailEventInput) {
   // Keep attachment payloads out of the returned event so callers/logs
   // don't hold large base64 blobs.
   const { attachments, cc, replyTo, includeUnsubscribe, ...loggableEvent } = event;
+
+  const context = emailDeliveryContext.getStore();
+  if (context?.preview) {
+    context.preview.push(event);
+    return { id: "preview", status: "sent" as const, ...loggableEvent };
+  }
+  const policy = await bookingEmailPolicy(event.bookingRequestId, event.bookingSessionId);
+  if (policy?.manualOnly && context?.manualBookingId !== policy.id
+      && !(policy.imported && context?.statusChangeBookingId === policy.id)) {
+    return { id: `email-${randomUUID()}`, status: "suppressed_manual_only" as const, ...loggableEvent };
+  }
 
   if (!config.isBrevoConfigured) {
     console.error("[email] BREVO_API_KEY is missing; notification skipped.", {
@@ -52,12 +78,6 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
       reference = relationOne(data.booking_requests)?.reference_code;
     }
   }
-  const escapedReference = reference?.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[character]!);
-  const referenceMarker = escapedReference
-    ? `<p style="margin:0 0 20px;"><span style="display:inline-block;border:1px solid #d8e4ee;border-radius:8px;background:#f3f7fb;padding:6px 10px;color:#344663;font-size:12px;letter-spacing:0.04em;">Booking ref: <strong style="font-family:monospace;font-size:13px;">${escapedReference}</strong></span></p>`
-    : "";
 
   let response: Response;
   try {
@@ -77,7 +97,7 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
         subject: event.subject,
         // Every email ships inside the branded shell. Inbound contact notices
         // omit newsletter-only unsubscribe controls.
-        htmlContent: renderBrandedEmail(referenceMarker + event.html, { includeUnsubscribe }),
+        htmlContent: renderEmailEventHtml({ ...event, bookingReference: reference, includeUnsubscribe }),
         ...(includeUnsubscribe === false
           ? {}
           : {

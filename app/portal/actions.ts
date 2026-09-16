@@ -43,7 +43,7 @@ import {
   validateUploadedResource,
   uploadPublicAsset
 } from "@/lib/services/storage";
-import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
+import { sendSchoolStatusChangeEmails } from "@/lib/services/school-session-email";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -136,6 +136,7 @@ const manualBookingSchema = z.object({
   contactName: z.string().trim().min(2).max(200),
   contactEmail: z.string().trim().email().toLowerCase(),
   contactPhone: z.string().trim().max(100).optional(),
+  contactPosition: z.string().trim().max(200).optional(),
   assignedAmbassadorId: z.string().optional(),
   outreachAmbassadorId: z.string().optional(),
   status: z.enum([
@@ -1800,6 +1801,7 @@ export async function saveManualBookingAction(formData: FormData) {
     schoolName: String(formData.get("schoolName") || "") || undefined,
     newSchoolRegionId: String(formData.get("newSchoolRegionId") || "") || undefined,
     presentationTypeId: String(formData.get("presentationTypeId") || ""),
+    contactPosition: String(formData.get("contactPosition") || "") || undefined,
     contactName: String(formData.get("contactName") || ""),
     contactEmail: String(formData.get("contactEmail") || ""),
     contactPhone: String(formData.get("contactPhone") || "") || undefined,
@@ -1858,6 +1860,7 @@ export async function saveManualBookingAction(formData: FormData) {
       full_name: parsed.data.contactName,
       email: parsed.data.contactEmail,
       phone: parsed.data.contactPhone || null,
+      position: parsed.data.contactPosition || null,
       is_primary: false,
       marketing_consent: false
     })
@@ -1884,6 +1887,7 @@ export async function saveManualBookingAction(formData: FormData) {
       id: parsed.data.submissionId,
       school_id: school.id,
       primary_contact_id: contact.id,
+      contact_position: parsed.data.contactPosition || null,
       region_id: school.region_id ?? null,
       status: effectiveStatus,
       source: parsed.data.outreachAmbassadorId ? "ambassador" : "staff",
@@ -1936,12 +1940,12 @@ export async function saveManualBookingAction(formData: FormData) {
   });
 
   if (effectiveStatus === "confirmed") {
-    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "confirmed"));
+    scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "confirmed"));
   } else if (
     (effectiveStatus === "tentative" || effectiveStatus === "applied") &&
     !parsed.data.assignedAmbassadorId
   ) {
-    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "tentative"));
+    scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "tentative"));
   }
   await logAuditEvent(actor.id, "booking.manually_created", "booking_request", booking.id);
   revalidatePath("/staff");
@@ -2104,7 +2108,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
   }).catch(() => {});
 
   if (status === "confirmed") {
-    scheduleEmail(() => sendSchoolSessionEmails(booking.id as string, [session.id as string], "confirmed"));
+    scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "confirmed"));
   }
   await logAuditEvent(actor.id, "booking.ambassador_created", "booking_request", booking.id);
   revalidatePath("/ambassador");
@@ -3726,7 +3730,7 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     relatedUrl: "/staff/bookings"
   }).catch(() => {});
 
-  scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+  scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
     (activeSessions ?? []).map((session) => session.id as string), "cancelled"));
 
   const ambassadorIds = [
@@ -3894,7 +3898,7 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
     relatedUrl: `/staff/bookings?booking=${parsed.data.bookingRequestId}`
   }).catch(() => {});
 
-  scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+  scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
     [parsed.data.bookingSessionId], "reschedule_requested", parsed.data.preferredDate));
 
   await logAuditEvent(
@@ -4069,7 +4073,7 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     }
   }
 
-  scheduleEmail(() => sendSchoolSessionEmails(session.booking_request_id as string,
+  scheduleEmail(() => sendSchoolStatusChangeEmails(session.booking_request_id as string,
     [session.id as string], parsed.data.decision === "approve" ? "rescheduled" : "reschedule_declined"));
 
   if (parsed.data.decision === "approve") {
@@ -4734,13 +4738,13 @@ export async function updateBookingStatusAction(formData: FormData) {
   if (parsed.data.status === "confirmed" || parsed.data.status === "cancelled") {
     const event = parsed.data.status === "cancelled" ? "cancelled"
       : existingBooking.status === "reschedule_requested" ? "rescheduled" : "confirmed";
-    scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId, affectedSessionIds, event));
+    scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId, affectedSessionIds, event));
   }
   if (parsed.data.status === "completed_pending_report" && existingBooking.status !== parsed.data.status) {
     const { data: sessions } = await admin.from("booking_sessions").select("id")
       .eq("booking_request_id", parsed.data.bookingRequestId)
       .not("status", "in", "(cancelled,declined)");
-    scheduleEmail(() => sendSchoolSessionEmails(parsed.data.bookingRequestId,
+    scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
       (sessions ?? []).map((session) => session.id as string), "feedback"));
   }
 
@@ -4771,7 +4775,7 @@ export async function bulkDeleteBookingsAction(formData: FormData) {
   const { data, error } = await admin.from("booking_requests")
     .delete().in("id", parsed.data).select("id, reference_code");
   if (error) {
-    console.error("[booking-delete] Could not delete selected bookings", { code: error.code });
+    console.error("[booking-delete] Could not delete selected bookings", { code: error.code, message: error.message, details: error.details });
     redirect(appendSearchParam(returnTo, "error", "booking-delete-failed"));
   }
   for (const booking of data ?? []) {
@@ -4860,7 +4864,7 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
       for (const bookingId of parsed.data.bookingRequestIds) {
         const ids = (changedSessions ?? []).filter((session) => session.booking_request_id === bookingId)
           .map((session) => session.id as string);
-        if (ids.length) scheduleEmail(() => sendSchoolSessionEmails(bookingId, ids, event));
+        if (ids.length) scheduleEmail(() => sendSchoolStatusChangeEmails(bookingId, ids, event));
       }
     }
   }
@@ -5122,7 +5126,7 @@ export async function saveResourceEditorAction(formData: FormData) {
     is_active: parsed.data.isActive ?? false
   };
 
-  if (storagePath || !parsed.data.id) {
+  if (storagePath || !parsed.data.id || formData.get("removeAttachment") === "on") {
     payload.storage_path = storagePath;
   }
 
@@ -5184,6 +5188,44 @@ export async function saveResourceEditorAction(formData: FormData) {
   }
 
   return { redirectTo: appendSearchParam(parsed.data.returnTo, "saved", "resource") };
+}
+
+export async function updateTrainingPackResourcesAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const parsed = z.object({
+    packId: z.uuid(), resourceIds: z.array(z.uuid()).min(1).max(100),
+    intent: z.enum(["add", "remove", "draft"])
+  }).safeParse({ packId: formData.get("packId"), resourceIds: formData.getAll("resourceId"), intent: formData.get("intent") });
+  if (!parsed.success) return { error: "Choose at least one resource (up to 100)." };
+  const admin = getAdminClientOrThrow();
+  const { packId, resourceIds, intent } = parsed.data;
+  const { data: pack } = await admin.from("training_resource_packs").select("id").eq("id", packId).maybeSingle();
+  if (!pack) return { error: "This training pack could not be found." };
+  if (intent === "add") {
+    const { data: resources, error } = await admin.from("presentation_resources").select("id, audiences").in("id", resourceIds);
+    if (error || resources?.length !== new Set(resourceIds).size || resources.some((resource) => !resource.audiences?.includes("ambassador"))) {
+      return { error: "Select resources that are available to ambassadors. Edit their audience first if needed." };
+    }
+    const { error: linkError } = await admin.from("training_pack_resources").upsert(
+      [...new Set(resourceIds)].map((resourceId) => ({ training_pack_id: packId, resource_id: resourceId })),
+      { onConflict: "training_pack_id,resource_id", ignoreDuplicates: true }
+    );
+    if (linkError) return { error: "Resources could not be added. Check that the shared-pack database update has been applied." };
+  } else if (intent === "remove") {
+    const { error: legacyError } = await admin.from("presentation_resources").update({ training_pack_id: null }).eq("training_pack_id", packId).in("id", resourceIds);
+    if (legacyError) return { error: "Resources could not be removed from the pack." };
+    const { error } = await admin.from("training_pack_resources").delete().eq("training_pack_id", packId).in("resource_id", resourceIds);
+    if (error) return { error: "Resources could not be removed from the pack." };
+  } else {
+    const { data: links, error: linkError } = await admin.from("training_pack_resources").select("resource_id").eq("training_pack_id", packId).in("resource_id", resourceIds);
+    if (linkError || links?.length !== new Set(resourceIds).size) return { error: "These resources are no longer in this pack." };
+    const { error } = await admin.from("presentation_resources").update({ is_active: false }).in("id", resourceIds);
+    if (error) return { error: "The resources could not be saved as drafts." };
+  }
+  await logAuditEvent(actor.id, `training_pack.resources_${intent}`, "training_resource_pack", packId);
+  updateTag(PUBLIC_CONTENT_TAG);
+  revalidatePath("/admin"); revalidatePath("/staff"); revalidatePath("/ambassador");
+  return { success: true };
 }
 
 export async function createTrainingPackAction(formData: FormData) {
@@ -5286,8 +5328,8 @@ export async function deleteTrainingPackAction(formData: FormData) {
   }
 
   const { count, error: resourceError } = await admin
-    .from("presentation_resources")
-    .select("id", { count: "exact", head: true })
+    .from("training_pack_resources")
+    .select("resource_id", { count: "exact", head: true })
     .eq("training_pack_id", parsed.data.packId);
 
   if (resourceError) {

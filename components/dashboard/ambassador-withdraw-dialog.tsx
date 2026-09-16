@@ -59,7 +59,7 @@ export function AmbassadorWithdrawDialog({
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[#8f680f]">
                   {session.presentationTitle} at {session.schoolName} on{" "}
-                  {formatWeekdayDate(session.startsAt)} at {formatTime(session.startsAt)}.
+                  {formatWeekdayDate(session.startsAt, true)} at {formatTime(session.startsAt)}.
                 </p>
               </div>
 

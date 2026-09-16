@@ -74,7 +74,7 @@ export function AmbassadorOpenSessionDialog({
                 <DetailTile
                   icon={<CalendarDays className="h-4 w-4" />}
                   label="Schedule"
-                  value={`${formatWeekdayDate(session.startsAt)} at ${formatTime(session.startsAt)}`}
+                  value={`${formatWeekdayDate(session.startsAt, true)} at ${formatTime(session.startsAt)}`}
                 />
                 <DetailTile
                   icon={<MapPin className="h-4 w-4" />}

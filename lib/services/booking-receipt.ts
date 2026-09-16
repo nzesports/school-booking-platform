@@ -46,7 +46,6 @@ export function buildBookingReceipt(details: BookingReceiptDetails) {
     <h2 style="margin:24px 0 8px;">Your booking request</h2>
     <p>Pending approval — these are your requested details. We will confirm availability with you.</p>
     <table role="table" style="width:100%;border-collapse:collapse;">
-      ${row("Reference", details.referenceCode)}
       ${row("School", details.schoolName)}
       ${row("Contact", details.contactName)}
       ${row("Email", details.contactEmail)}

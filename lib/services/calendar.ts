@@ -63,13 +63,15 @@ export async function syncOutlookCalendarEvent(
 
   const token = await getGraphToken();
   const userId = encodeURIComponent(config.microsoftUserId as string);
-  const calendarId = encodeURIComponent(config.microsoftCalendarId as string);
+  const calendarPath = config.microsoftCalendarId
+    ? `calendars/${encodeURIComponent(config.microsoftCalendarId)}`
+    : "calendar";
 
   const eventPath = externalEventId
     ? `/events/${encodeURIComponent(externalEventId)}`
     : "/events";
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${userId}/calendars/${calendarId}${eventPath}`,
+    `https://graph.microsoft.com/v1.0/users/${userId}/${calendarPath}${eventPath}`,
     {
       method: externalEventId ? "PATCH" : "POST",
       headers: {

@@ -6,6 +6,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+// Override the global form-control font reset so button and link rows match.
+const rangeOptionClassName = "flex min-h-[36px] w-full items-center rounded-[14px] px-3 py-2 text-left text-sm! font-semibold! leading-5! text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]";
+
 export function DashboardRangePicker({
   label,
   options,
@@ -58,10 +61,10 @@ export function DashboardRangePicker({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex min-h-[56px] cursor-pointer items-center gap-3 rounded-2xl border border-[color:var(--border-soft)] bg-white/94 px-5 py-4 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)]"
+        className="inline-flex min-h-[46px] cursor-pointer items-center gap-2 rounded-[14px] border border-[color:var(--border-soft)] bg-white/94 px-4 py-1.5 text-[13px] font-semibold text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)]"
         aria-expanded={open}
       >
-        <CalendarRange className="h-5 w-5 text-[color:var(--green)]" />
+        <CalendarRange className="h-4 w-4 text-[color:var(--green)]" />
         {label}
         <ChevronDown
           className={cn(
@@ -84,7 +87,7 @@ export function DashboardRangePicker({
               href={option.href}
               onClick={() => setOpen(false)}
               className={cn(
-                "flex rounded-[14px] px-3 py-2 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]",
+                rangeOptionClassName,
                 option.value === activeRange
                   ? "bg-[color:var(--green-soft)] text-[color:var(--green)]"
                   : ""
@@ -100,7 +103,8 @@ export function DashboardRangePicker({
                 onClick={() => setCustomOpen((current) => !current)}
                 aria-expanded={customOpen}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-[14px] px-3 py-2 text-left text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]",
+                  rangeOptionClassName,
+                  "justify-between",
                   activeRange === "custom"
                     ? "bg-[color:var(--green-soft)] text-[color:var(--green)]"
                     : ""

@@ -797,7 +797,7 @@ function SchoolBookingsDialog({
                         {session.presentationTitle}
                       </p>
                       <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {formatShortDate(session.startsAt)} · {formatTime(session.startsAt)}–{formatTime(session.endsAt)}
+                        {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}–{formatTime(session.endsAt)}
                       </p>
                     </div>
                     <StatusPill value={session.status} />

@@ -57,6 +57,11 @@ export async function GET(request: NextRequest) {
   const { error: pruneError } = await admin.rpc("prune_booking_access_records");
   if (pruneError) console.error("[booking-access] Access cleanup failed", { code: pruneError.code });
 
+  const { data: policies, error: policyError } = await admin.from("booking_requests")
+    .select("id, manual_email_only, import_batch_id");
+  if (policyError) return NextResponse.json({ error: "Booking policies are unavailable." }, { status: 503 });
+  const imported = new Set((policies ?? []).filter(row => row.import_batch_id).map(row => row.id));
+  const manualOnly = new Set((policies ?? []).filter(row => row.manual_email_only).map(row => row.id));
   const now = new Date().toISOString();
   const { data: dueSessions, error } = await admin
     .from("booking_sessions")
@@ -73,6 +78,7 @@ export async function GET(request: NextRequest) {
   const touchedBookingIds = new Set<string>();
 
   for (const session of dueSessions ?? []) {
+    if (imported.has(session.booking_request_id)) continue;
     const { error: updateError } = await admin
       .from("booking_sessions")
       .update({ status: "completed_pending_report" })
@@ -100,6 +106,8 @@ export async function GET(request: NextRequest) {
       actor_type: "system",
       details: { ends_at: session.ends_at }
     });
+
+    if (manualOnly.has(session.booking_request_id)) continue;
 
     // Second idempotency guard: never email the same session twice.
     const { data: alreadyEmailed } = await admin
@@ -190,6 +198,7 @@ export async function GET(request: NextRequest) {
     .lte("starts_at", reminderWindowEnd);
 
   for (const session of upcomingSessions ?? []) {
+    if (manualOnly.has(session.booking_request_id)) continue;
     const { data: alreadyReminded } = await admin
       .from("email_logs")
       .select("id")

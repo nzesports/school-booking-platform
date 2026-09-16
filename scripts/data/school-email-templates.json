@@ -52,7 +52,7 @@
     "template_key": "school_feedback_request",
     "name": "School feedback request",
     "subject": "How was your {{presentationTitle}} session?",
-    "body_html": "<p>Hi {{contactName}},</p><p>Thank you for hosting our presentation. Please share your feedback about this session:</p>{{sessionSummary}}<p><a href=\"{{reviewUrl}}\">Leave your feedback</a> \u2014 no login needed.</p>",
+    "body_html": "<p>Hi {{contactName}},</p><p>Thank you for hosting our presentation. Please share your feedback about this session:</p>{{sessionSummary}}<p><a href=\"{{reviewUrl}}\">Leave your feedback</a>, no login needed.</p>",
     "body_text": "Hi {{contactName}}, Thank you for hosting. Presentation: {{presentationTitle}}. School: {{schoolName}}. Date: {{sessionDate}}. Time: {{sessionTime}}. Expected students: {{expectedStudentCount}}. Year groups: {{yearLevels}}. Feedback: {{reviewUrl}}"
   }
 ]

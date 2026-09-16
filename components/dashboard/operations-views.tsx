@@ -23,6 +23,7 @@ import type {
 import {
   buildSchoolDeliverySummaries,
   filterBookingsByLifecycle,
+  sessionInRange,
   type BookingLifecycleView,
   type DashboardCustomRange,
   type DashboardRange
@@ -50,8 +51,13 @@ export function BookingLifecyclePanel({
   initialQuery?: string;
   initialBookingId?: string;
 }) {
-  const filteredBookings = filterBookingsByLifecycle(bookings, activeView);
-  const sessions = bookings.flatMap((booking) => booking.sessions);
+  const now = new Date();
+  const periodBookings = range === "all" ? bookings : bookings.map(booking => ({
+    ...booking,
+    sessions: booking.sessions.filter(session => sessionInRange(session, range, now, customRange))
+  })).filter(booking => booking.sessions.length > 0);
+  const filteredBookings = filterBookingsByLifecycle(periodBookings, activeView);
+  const sessions = periodBookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
   const assignedCount = sessions.filter((session) => session.assignedAmbassadorName).length;
   const reportsCount = sessions.filter(
@@ -66,7 +72,7 @@ export function BookingLifecyclePanel({
           icon={<CalendarCheck2 className="h-5 w-5" />}
           iconClassName="bg-[#eaf8ee] text-[#117a2e]"
           label="Booking requests"
-          value={String(bookings.length)}
+          value={String(periodBookings.length)}
           hint="Total requests received"
         />
         <LifecycleStatTile
@@ -98,15 +104,15 @@ export function BookingLifecyclePanel({
       {activeView !== "all" ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--text-soft)]">
           <p>Showing {activeView === "current" ? "bookings needing attention" : `${activeView} bookings`} in both views.</p>
-          <ButtonLink href={`${basePath}/bookings?status=all&range=${range}`} variant="secondary">
+          <ButtonLink href={`${basePath}/bookings?status=all&range=${range}${customRange ? `&from=${customRange.from}&to=${customRange.to}` : ""}`} variant="secondary">
             Show all bookings
           </ButtonLink>
         </div>
       ) : null}
       <BookingsExplorer
-        key={`${activeView}:${initialBookingId || ""}`}
+        key={`${activeView}:${range}:${customRange?.from ?? ""}:${customRange?.to ?? ""}:${initialBookingId || ""}`}
         bookings={filteredBookings}
-        allBookings={bookings}
+        allBookings={periodBookings}
         basePath={basePath}
         activeView={activeView}
         range={range}

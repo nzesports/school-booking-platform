@@ -4,17 +4,20 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
-  Clock3,
   Copy,
   GraduationCap,
   Eye,
   MapPin,
+  Mail,
   School2,
   UserRound,
   UsersRound
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { BookingEmailsPanel } from "@/components/dashboard/booking-emails-panel";
+import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 
 import { revokeBookingGuestAccessAction } from "@/app/portal/actions";
 import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
@@ -87,6 +90,7 @@ export function SessionDetailsButton({
   resolveRescheduleAction?: (formData: FormData) => void | Promise<void>;
   returnTo?: string;
 }) {
+  const [tab, setTab] = useState<"details" | "emails">("details");
   const [open, setOpen] = useState(false);
   const [feedbackLinkCopied, setFeedbackLinkCopied] = useState(false);
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
@@ -174,20 +178,16 @@ export function SessionDetailsButton({
             <BookingDialogShell
               title={session.presentationTitle}
               onClose={() => setOpen(false)}
-              maxWidthClassName="max-w-[700px]"
+              maxWidthClassName="max-w-[1120px]"
               overlayClassName="z-[80]"
               compact
             >
+              {canReview && <SecondaryTabs ariaLabel="Booking details" value={tab} onChange={setTab} items={[
+                { value: "details", label: "Details", icon: CalendarDays },
+                { value: "emails", label: "Emails", icon: Mail }
+              ]} />}
+              {canReview && tab === "emails" ? <BookingEmailsPanel sessionId={session.id} /> : <>
               <SessionChangeSummary session={session} />
-              {canReview ? <details className="mt-4 rounded-xl border border-slate-200 p-4">
-                <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
-                <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
-                <form action={revokeBookingGuestAccessAction} className="mt-3">
-                  <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
-                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                  <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Ending access...">End guest access</PendingSubmitButton>
-                </form>
-              </details> : null}
               <p className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-[14px] bg-[color:var(--green-soft)] px-3.5 py-2 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)] md:text-lg">
                 <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
                 {formatNzDate(session.startsAt)}
@@ -195,7 +195,7 @@ export function SessionDetailsButton({
                 {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
               </p>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <DetailTile
                   icon={<School2 className="h-6 w-6" />}
                   iconClassName="bg-[#e6f5ec] text-[#117a2e]"
@@ -217,17 +217,6 @@ export function SessionDetailsButton({
                 </DetailTile>
 
                 <DetailTile
-                  icon={<Clock3 className="h-6 w-6" />}
-                  iconClassName="bg-[#e6f5ec] text-[#117a2e]"
-                  label="Time"
-                >
-                  <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
-                  </p>
-                  <p className="text-sm text-[color:var(--text-soft)]">(NZ time)</p>
-                </DetailTile>
-
-                <DetailTile
                   icon={<GraduationCap className="h-6 w-6" />}
                   iconClassName="bg-[#e3f2fd] text-[#1565c0]"
                   label="Students"
@@ -243,7 +232,7 @@ export function SessionDetailsButton({
                 </DetailTile>
               </div>
 
-              <div className="mt-4 grid gap-4">
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <DetailTile
                   icon={<MapPin className="h-6 w-6" />}
                   iconClassName="bg-[#eceafb] text-[#6a5cd0]"
@@ -275,6 +264,7 @@ export function SessionDetailsButton({
                       <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                         {session.contactName}
                       </p>
+                      {session.contactPosition && <p className="text-sm text-slate-500">{session.contactPosition}</p>}
                       <p className="text-sm leading-6 text-[color:var(--text-soft)]">
                         {session.contactEmail ? (
                           <a
@@ -296,8 +286,9 @@ export function SessionDetailsButton({
                 </DetailTile>
               </div>
 
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
               {session.assignedAmbassadorName ? (
-                <div className="mt-4 rounded-[22px] border border-[rgba(24,168,59,0.24)] bg-[#f2faf4] p-5">
+                <div className="rounded-[18px] border border-[rgba(24,168,59,0.24)] bg-[#f2faf4] p-5">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                     <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#117a2e] shadow-[0_8px_20px_rgba(24,168,59,0.16)]">
                       <UserRound className="h-5 w-5" />
@@ -327,7 +318,7 @@ export function SessionDetailsButton({
                   </div>
                 </div>
               ) : canReview ? (
-                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                <div className="rounded-[18px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
                     <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
                       <UserRound className="h-5 w-5" />
@@ -341,7 +332,7 @@ export function SessionDetailsButton({
               ) : null}
 
               {canReview ? (
-                <div className="mt-4 rounded-[22px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">
+                <div className="rounded-[18px] border border-[#c4dbfb] bg-[#f4f8ff] p-5">
                   <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                     <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#1e4fae] shadow-[0_8px_20px_rgba(37,99,235,0.16)]">
                       <UsersRound className="h-5 w-5" />
@@ -367,6 +358,8 @@ export function SessionDetailsButton({
                   )}
                 </div>
               ) : null}
+
+              </div>
 
               {session.status === "reschedule_requested" && resolveRescheduleAction ? (
                 <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
@@ -546,6 +539,16 @@ export function SessionDetailsButton({
                   ))}
                 </div>
               </div>
+              {canReview ? <details className="mt-4 rounded-xl border border-slate-200 p-4">
+                <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
+                <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
+                <form action={revokeBookingGuestAccessAction} className="mt-3">
+                  <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
+                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                  <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Ending access...">End guest access</PendingSubmitButton>
+                </form>
+              </details> : null}
+              </>}
             </BookingDialogShell>,
             document.body
           )
@@ -570,7 +573,7 @@ function DetailTile({
   return (
     <div
       className={cn(
-        "flex items-start gap-3.5 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4",
+        "flex items-start gap-3.5 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-3",
         className
       )}
     >
@@ -582,7 +585,7 @@ function DetailTile({
       >
         {icon}
       </span>
-      <span className="min-w-0 pt-0.5">
+      <span className="min-w-0 break-words pt-0.5">
         <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
           {label}
         </span>

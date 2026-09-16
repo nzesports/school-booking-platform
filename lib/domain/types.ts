@@ -214,6 +214,7 @@ export interface BookingSessionView {
   locationAddress?: string;
   contactName?: string;
   contactEmail?: string;
+  contactPosition?: string;
   contactPhone?: string;
   startsAt: string;
   endsAt: string;
@@ -248,6 +249,7 @@ export interface BookingRequestView {
   id: string;
   referenceCode?: string;
   schoolName: string;
+  primaryContactPosition?: string;
   primaryContactName: string;
   primaryContactEmail: string;
   regionSlug: string;
@@ -272,6 +274,7 @@ export interface BookingSessionDraft {
 }
 
 export interface BookingRequestInput {
+  contactPosition?: string;
   schoolName: string;
   contactName: string;
   contactEmail: string;
