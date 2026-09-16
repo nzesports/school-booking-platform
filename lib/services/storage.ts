@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { slugify } from "@/lib/utils";
-import { RESOURCE_UPLOAD_MAX_BYTES, RESOURCE_UPLOAD_MAX_MB } from "@/lib/resource-upload";
+import { resourceUploadLimitMb } from "@/lib/resource-upload";
 
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
@@ -100,8 +100,9 @@ export function validatePublicAvatarFile(file: File) {
 export function validateResourceUpload(name: string, size: number) {
   const contentType = PRIVATE_ALLOWED.get(fileExtension(name));
   if (!contentType) throw new Error("This file type is not supported.");
-  if (!Number.isSafeInteger(size) || size <= 0 || size > RESOURCE_UPLOAD_MAX_BYTES) {
-    throw new Error(`Choose a file up to ${RESOURCE_UPLOAD_MAX_MB} MB.`);
+  const limitMb = resourceUploadLimitMb(name);
+  if (!Number.isSafeInteger(size) || size <= 0 || size > limitMb * 1024 * 1024) {
+    throw new Error(`Choose a file up to ${limitMb} MB.`);
   }
   return contentType;
 }

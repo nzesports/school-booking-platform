@@ -41,7 +41,7 @@ import type {
   TrainingPackRecord
 } from "@/lib/services/portal";
 import { cn } from "@/lib/utils";
-import { RESOURCE_UPLOAD_MAX_BYTES, RESOURCE_UPLOAD_MAX_MB } from "@/lib/resource-upload";
+import { RESOURCE_UPLOAD_MAX_MB, RESOURCE_VIDEO_UPLOAD_MAX_MB, resourceUploadLimitMb } from "@/lib/resource-upload";
 import { prepareResourceUploadAction } from "@/app/portal/actions";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -1311,8 +1311,8 @@ function ResourceEditorDialog({
           }
           const deleting = formData.get("intent") === "delete";
           const file = formData.get("file");
-          if (!deleting && file instanceof File && file.size > RESOURCE_UPLOAD_MAX_BYTES) {
-            setSaveError(`This file is larger than ${RESOURCE_UPLOAD_MAX_MB} MB. Choose a smaller file and try again.`);
+          if (!deleting && file instanceof File && file.size > resourceUploadLimitMb(file.name) * 1024 * 1024) {
+            setSaveError(`This file is larger than ${resourceUploadLimitMb(file.name)} MB. Choose a smaller file and try again.`);
             return;
           }
           setSaveError(null);
@@ -1624,7 +1624,7 @@ function ResourceEditorDialog({
                   className={cn(inputClassName, "min-w-0 max-w-full cursor-pointer overflow-hidden border-dashed bg-[#f8fbf9] py-3 file:mr-3 file:rounded-[10px] file:border-0 file:bg-[#eaf8ee] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#117a2e]")}
                 />
                 <span className="text-xs font-normal leading-5 text-[color:var(--text-muted)]">
-                  PDF, Office documents, images, videos, text, or archive files up to {RESOURCE_UPLOAD_MAX_MB} MB.
+                  Videos (MP4, MOV, WebM) up to {RESOURCE_VIDEO_UPLOAD_MAX_MB} MB. PDF, Office documents, images, text, or archive files up to {RESOURCE_UPLOAD_MAX_MB} MB.
                 </span>
               </label>
               {removeAttachment ? (
