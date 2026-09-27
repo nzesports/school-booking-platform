@@ -311,7 +311,10 @@ const sessionWithdrawalResolveSchema = z.object({
 
 const schoolReviewSchema = z.object({
   bookingSessionId: z.uuid(),
-  attribution: z.string().trim().min(2),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  role: z.string().trim().min(1).max(150),
+  studentsAttended: z.string().trim().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)),
   studentsCompeted: z.enum(["yes", "no"]),
   attendeeFeedback: z.string().trim().min(1),
   attendanceRating: z.coerce.number().int().min(1).max(5),
@@ -3124,7 +3127,10 @@ export async function requestSessionWithdrawalAction(formData: FormData) {
 function parseSchoolReviewForm(formData: FormData, fallbackReturnTo: string) {
   return schoolReviewSchema.safeParse({
     bookingSessionId: String(formData.get("bookingSessionId") || ""),
-    attribution: String(formData.get("attribution") || ""),
+    firstName: String(formData.get("firstName") || ""),
+    lastName: String(formData.get("lastName") || ""),
+    role: String(formData.get("role") || ""),
+    studentsAttended: String(formData.get("studentsAttended") ?? ""),
     studentsCompeted: String(formData.get("studentsCompeted") || ""),
     attendeeFeedback: String(formData.get("attendeeFeedback") || ""),
     attendanceRating: formData.get("attendanceRating"),
@@ -3143,8 +3149,7 @@ function parseSchoolReviewForm(formData: FormData, fallbackReturnTo: string) {
 }
 
 // Shared by the portal and public feedback actions: computes the overall
-// rating, inserts the review, and retries without the details column for
-// environments that haven't run migration 0012 yet.
+// rating and saves the review together with all structured answers.
 async function insertSchoolReview(
   admin: ReturnType<typeof getAdminClientOrThrow>,
   parsedData: z.infer<typeof schoolReviewSchema>,
@@ -3165,12 +3170,16 @@ async function insertSchoolReview(
     presentation_type_id: session.presentation_type_id,
     school_id: session.school_id,
     quote: parsedData.quote,
-    attribution: parsedData.attribution,
+    attribution: `${parsedData.firstName} ${parsedData.lastName}, ${parsedData.role}`,
     rating: overallRating,
     is_public: parsedData.isPublic,
     is_approved: false
   };
   const details = {
+    firstName: parsedData.firstName,
+    lastName: parsedData.lastName,
+    role: parsedData.role,
+    studentsAttended: parsedData.studentsAttended,
     studentsCompeted: parsedData.studentsCompeted,
     attendeeFeedback: parsedData.attendeeFeedback,
     attendanceRating: parsedData.attendanceRating,
@@ -3182,19 +3191,11 @@ async function insertSchoolReview(
     mailingListOptIn: parsedData.mailingListOptIn
   };
 
-  let insertResult = await admin
+  const insertResult = await admin
     .from("presentation_reviews")
     .insert({ ...basePayload, details })
     .select("id")
     .single();
-
-  if (insertResult.error?.message?.includes("details")) {
-    insertResult = await admin
-      .from("presentation_reviews")
-      .insert(basePayload)
-      .select("id")
-      .single();
-  }
 
   return insertResult;
 }
@@ -3366,7 +3367,7 @@ export async function submitPublicFeedbackAction(formData: FormData) {
 
   void notifyStaff({
     title: "New school review",
-    body: `${parsed.data.attribution} submitted feedback via the public form.`,
+    body: `${parsed.data.firstName} ${parsed.data.lastName}, ${parsed.data.role} submitted feedback via the public form.`,
     type: "school_review_submitted",
     relatedUrl: "/staff/feedback"
   }).catch(() => {});

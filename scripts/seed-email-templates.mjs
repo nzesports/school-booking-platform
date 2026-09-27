@@ -26,14 +26,8 @@ const templates = [
     template_key: "school_feedback_request",
     name: "School feedback request",
     subject: "How was your {{presentationTitle}} session?",
-    body_html:
-      "<p>Kia ora {{contactName}},</p>" +
-      "<p>Thanks for hosting the <strong>{{presentationTitle}}</strong> session at <strong>{{schoolName}}</strong> on <strong>{{sessionDate}}</strong>.</p>" +
-      "<p>We'd love your feedback, it takes about two minutes and helps us keep improving for schools across Aotearoa.</p>" +
-      button("{{reviewUrl}}", "Leave your feedback") +
-      "<p>No login needed. If your school has a portal account you can also leave it under Bookings → Leave review.</p>",
-    body_text:
-      "Kia ora {{contactName}}, thanks for hosting {{presentationTitle}} at {{schoolName}} on {{sessionDate}}. Leave your feedback here (no login needed): {{reviewUrl}}"
+    body_html: "<p>Kia ora {{contactName}},</p><p>Thank you for welcoming us to <strong>{{schoolName}}</strong> for your <strong>{{presentationTitle}}</strong> session!</p><p><a href=\"{{reviewUrl}}\" style=\"display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;\">Share your feedback</a></p><p>We’d love to hear how it went and what your students took away. Your feedback helps us make future presentations even better for schools across Aotearoa. No login is needed.</p><p>Thanks again,<br>The NZ Esports team</p>",
+    body_text: "Kia ora {{contactName}},\n\nThank you for welcoming us to {{schoolName}} for your {{presentationTitle}} session!\n\nShare your feedback: {{reviewUrl}}\n\nWe’d love to hear how it went and what your students took away. Your feedback helps us make future presentations even better for schools across Aotearoa. No login is needed.\n\nThanks again,\nThe NZ Esports team"
   },
   {
     template_key: "school_welcome",

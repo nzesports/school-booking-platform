@@ -105,11 +105,11 @@ export function SchoolReviewSubmissionButton({
                 <p className="mt-3 text-base italic leading-8 text-[color:var(--navy)]">
                   &ldquo;{review.quote}&rdquo;
                 </p>
-                {review.attribution ? (
-                  <p className="mt-3 text-sm text-[color:var(--text-soft)]">
-                    Submitted by {review.attribution}
-                  </p>
-                ) : null}
+                <div className="mt-3 grid gap-2">
+                  <ReadOnlyRow label="Submitted by"
+                    value={details?.firstName && details?.lastName ? `${details.firstName} ${details.lastName}` : review.attribution ?? "School contact"} />
+                  <ReadOnlyRow label="Role at school" value={details?.role ?? "Not recorded"} />
+                </div>
               </section>
 
               <section className="mt-5 grid gap-4 md:grid-cols-2">
@@ -118,6 +118,10 @@ export function SchoolReviewSubmissionButton({
                     Quick questions
                   </h3>
                   <div className="mt-4 grid gap-3">
+                    <ReadOnlyRow
+                      label="Students attended (school-reported)"
+                      value={details?.studentsAttended == null ? "Not recorded" : String(details.studentsAttended)}
+                    />
                     <ReadOnlyRow
                       label="Students competed in an esports event"
                       value={displayAnswer(details?.studentsCompeted)}
@@ -202,7 +206,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-[color:var(--text-soft)]">{label}</span>
       <span
         className={cn(
-          "shrink-0 text-sm font-semibold",
+          "min-w-0 break-words text-right text-sm font-semibold",
           value === "Not recorded" ? "text-[color:var(--text-soft)]" : "text-[color:var(--navy)]"
         )}
       >

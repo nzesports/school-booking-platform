@@ -146,6 +146,10 @@ export interface SchoolFeedbackSummary {
   bookingSessionId?: string;
   // Structured answers from the post-session feedback form.
   details?: {
+    firstName?: string;
+    lastName?: string;
+    role?: string;
+    studentsAttended?: number;
     studentsCompeted?: string;
     attendeeFeedback?: string;
     attendanceRating?: number;

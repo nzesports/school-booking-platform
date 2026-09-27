@@ -87,15 +87,19 @@ export function SchoolFeedbackForm({
           <FeedbackSection step={1} title="About you">
             <div className="grid gap-4 md:grid-cols-2">
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[color:var(--navy)]">
-                  Your name and role
-                </span>
-                <Input
-                  name="attribution"
-                  defaultValue={defaultName}
-                  placeholder="e.g. Jordan Smith, Deputy Principal"
-                  required
-                />
+                <span className="text-sm font-semibold text-[color:var(--navy)]">First name</span>
+                <Input name="firstName" autoComplete="given-name" maxLength={100}
+                  defaultValue={defaultName?.trim().split(/\s+/)[0]} required />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[color:var(--navy)]">Last name</span>
+                <Input name="lastName" autoComplete="family-name" maxLength={100}
+                  defaultValue={defaultName?.trim().split(/\s+/).slice(1).join(" ")} required />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-[color:var(--navy)]">Role at school</span>
+                <Input name="role" autoComplete="organization-title" maxLength={150}
+                  placeholder="e.g. Deputy Principal" required />
               </label>
               <div className="grid gap-2">
                 <span className="text-sm font-semibold text-[color:var(--navy)]">School</span>
@@ -107,14 +111,19 @@ export function SchoolFeedbackForm({
           </FeedbackSection>
 
           <FeedbackSection step={2} title="Quick questions">
-            <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-[color:var(--border-soft)]">
-              <div className="grid gap-3 lg:pr-7">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <label className="grid content-start gap-3">
+                <span className="text-sm font-semibold text-[color:var(--navy)]">How many students attended?</span>
+                <Input name="studentsAttended" type="number" min={0} step={1}
+                  max={Number.MAX_SAFE_INTEGER} required />
+              </label>
+              <div className="grid content-start gap-3">
                 <p className="text-sm font-semibold text-[color:var(--navy)]">
                   Did the students compete in an esports event?
                 </p>
                 <YesNoField name="studentsCompeted" />
               </div>
-              <label className="grid gap-3 lg:pl-7">
+              <label className="grid gap-3 lg:col-span-2">
                 <span className="text-sm font-semibold text-[color:var(--navy)]">
                   Did you hear any feedback from attendees?
                 </span>

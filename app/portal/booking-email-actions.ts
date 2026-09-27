@@ -34,7 +34,8 @@ async function capture(sessionId: string, kind: "status" | "feedback" = "status"
   return { session, message: messages[0] };
 }
 function fingerprint(message: EmailEventInput) {
-  return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(message).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
+  // Personal notes are saved with the preview, independently of booking/template data.
+  return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(message).filter(([key]) => key !== "notes").sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
 }
 
 export async function loadBookingEmailsAction(sessionId: string) {
@@ -63,18 +64,20 @@ export async function loadBookingEmailsAction(sessionId: string) {
   ].sort((a,b) => b.created_at.localeCompare(a.created_at)) };
 }
 
-export async function previewBookingEmailAction(sessionId: string, kind: "status" | "feedback" = "status") {
+export async function previewBookingEmailAction(sessionId: string, kind: "status" | "feedback" = "status", notes = "") {
   const actor = await requirePortalAccess("staff");
   z.uuid().parse(sessionId);
   z.enum(["status", "feedback"]).parse(kind);
+  const validatedNotes = z.string().max(2000, "Notes must be 2,000 characters or fewer.").parse(notes);
   const { session, message } = await capture(sessionId, kind);
+  if (validatedNotes.trim()) message.notes = validatedNotes.trim();
   const { data, error } = await adminClient().from("booking_email_sends").insert({
     actor_id: actor.id, booking_request_id: session.booking_request_id,
     booking_session_id: sessionId, session_status: session.status, payload: message
   }).select("id").single();
   if (error) throw new Error("Email preview could not be saved. Nothing was sent.");
   return { id: data.id as string, recipient: message.recipientEmail, subject: message.subject,
-    reference: message.bookingReference, html: renderEmailEventHtml(message) };
+    reference: message.bookingReference, html: renderEmailEventHtml(message), kind, notes: validatedNotes };
 }
 
 export async function confirmBookingEmailAction(previewId: string) {

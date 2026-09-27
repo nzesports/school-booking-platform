@@ -106,7 +106,7 @@ async function renderSchoolTemplate(
   vars: Record<string, string>,
   htmlVars: Record<string, string> = {}
 ) {
-  return renderTemplate(key, { ...vars, ...details.vars }, { ...htmlVars, sessionSummary: details.html });
+  return renderTemplate(key, { ...vars, ...details.vars }, { ...htmlVars, sessionSummary: key === "school_feedback_request" ? "" : details.html });
 }
 
 async function sendSchoolSessionEmail(
@@ -121,7 +121,7 @@ async function sendSchoolSessionEmail(
   return sendTransactionalEmail({
     ...event,
     bookingReference: details.vars.referenceCode === "Not recorded" ? undefined : details.vars.referenceCode,
-    html: (event.html.includes(details.html) ? event.html : `${event.html}${details.html}`) + calendarNote
+    html: (event.templateKey === "school_feedback_request" || event.html.includes(details.html) ? event.html : `${event.html}${details.html}`) + calendarNote
   });
 }
 
@@ -280,7 +280,6 @@ export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
   const details = buildSchoolEmailDetails(opts);
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
-  const sessionDate = escapeHtml(opts.sessionDate);
   const presentationTitle = escapeHtml(opts.presentationTitle);
   // Absolute public link — works whether or not the school has a portal login.
   const reviewUrl = opts.bookingSessionId
@@ -302,14 +301,11 @@ export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
     html:
       template?.html ??
       `
-      <p>Hi ${contactName},</p>
-      <p>Thanks for hosting the <strong>${presentationTitle}</strong> session at
-      <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
-      <p>We'd love your feedback, it takes about two minutes and helps us keep
-      improving for schools across Aotearoa.</p>
-      <p><a href="${escapeHtml(reviewUrl)}">Leave your feedback here</a>, no login needed.</p>
-      <p>If your school has a portal account you can also leave it under
-      Bookings &rarr; Leave review.</p>
+      <p>Kia ora ${contactName},</p>
+      <p>Thank you for welcoming us to <strong>${schoolName}</strong> for your <strong>${presentationTitle}</strong> session!</p>
+      <p><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Share your feedback</a></p>
+      <p>We’d love to hear how it went and what your students took away. Your feedback helps us make future presentations even better for schools across Aotearoa. No login is needed.</p>
+      <p>Thanks again,<br>The NZ Esports team</p>
     `
   }, details);
 

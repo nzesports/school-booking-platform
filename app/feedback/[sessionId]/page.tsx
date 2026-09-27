@@ -31,6 +31,8 @@ export default async function PublicFeedbackPage({
   const resolvedSearchParams = await searchParams;
   const submittedParam = resolvedSearchParams.submitted;
   const submitted = (Array.isArray(submittedParam) ? submittedParam[0] : submittedParam) === "1";
+  const errorParam = resolvedSearchParams.error;
+  const error = Array.isArray(errorParam) ? errorParam[0] : errorParam;
   const now = new Date();
   const admin = createAdminClient();
 
@@ -138,6 +140,11 @@ export default async function PublicFeedbackPage({
 
   return (
     <FeedbackShell>
+      {error && <p role="alert" className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        {error === "invalid-review"
+          ? "Please complete all required fields, including your first name, last name, role and a whole number of students attended."
+          : "Your feedback could not be saved. Please try again, or contact schools@esf.nz if this continues."}
+      </p>}
       <SchoolFeedbackForm
         action={submitPublicFeedbackAction}
         sessionId={sessionId}

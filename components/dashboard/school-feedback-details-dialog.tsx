@@ -122,7 +122,17 @@ export function SchoolFeedbackDetailsButton({
                   <InfoTile
                     icon={<UserRound className="h-4 w-4" />}
                     label="Submitted by"
-                    value={review.attribution ?? "School contact"}
+                    value={details?.firstName && details?.lastName ? `${details.firstName} ${details.lastName}` : review.attribution ?? "School contact"}
+                  />
+                  <InfoTile
+                    icon={<UserRound className="h-4 w-4" />}
+                    label="Role at school"
+                    value={details?.role ?? "Not recorded"}
+                  />
+                  <InfoTile
+                    icon={<UserRound className="h-4 w-4" />}
+                    label="Students attended (school-reported)"
+                    value={details?.studentsAttended == null ? "Not recorded" : String(details.studentsAttended)}
                   />
                   <InfoTile
                     icon={<CalendarDays className="h-4 w-4" />}

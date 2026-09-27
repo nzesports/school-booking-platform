@@ -16,13 +16,14 @@ export type EmailEventInput = {
   recipientEmail: string;
   subject: string;
   html: string;
+  notes?: string;
   cc?: string[];
   replyTo?: { email: string; name?: string };
   includeUnsubscribe?: boolean;
   attachments?: Array<{ name: string; contentBase64: string }>;
 };
 
-export function renderEmailEventHtml(event: Pick<EmailEventInput, "html" | "bookingReference" | "includeUnsubscribe">) {
+export function renderEmailEventHtml(event: Pick<EmailEventInput, "html" | "bookingReference" | "includeUnsubscribe" | "notes">) {
   const reference = event.bookingReference;
   const escapedReference = reference?.replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -31,7 +32,20 @@ export function renderEmailEventHtml(event: Pick<EmailEventInput, "html" | "book
     ? `<p style="margin:0 0 20px;"><span style="display:inline-block;border:1px solid #d8e4ee;border-radius:8px;background:#f3f7fb;padding:6px 10px;color:#344663;font-size:12px;letter-spacing:0.04em;">Booking ref: <strong style="font-family:monospace;font-size:13px;">${escapedReference}</strong></span></p>`
     : "";
 
-  return renderBrandedEmail(referenceMarker + event.html, { includeUnsubscribe: event.includeUnsubscribe });
+  const escapedNotes = event.notes?.trim().replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[character]!).replace(/\r\n|\r|\n/g, "<br>");
+  const notesSection = escapedNotes
+    ? `<div style="margin-top:24px;padding:20px 24px;border:1px solid #c9e7d1;border-radius:14px;background-color:#eef9f1;color:#040F4B;overflow-wrap:anywhere;"><h2 style="margin:0 0 8px;font-size:16px;">Notes</h2><p style="margin:0;">${escapedNotes}</p></div>`
+    : "";
+
+  // Keep the closing paragraph last, including for stored email templates.
+  const signoff = /<p\b[^>]*>\s*Thanks again,\s*<br\s*\/?>(?:\s|&nbsp;)*(?:The\s+)?NZ Esports team\s*<\/p>/i;
+  const body = notesSection && signoff.test(event.html)
+    ? event.html.replace(signoff, (closing) => notesSection + closing)
+    : event.html + notesSection;
+
+  return renderBrandedEmail(referenceMarker + body, { includeUnsubscribe: event.includeUnsubscribe });
 }
 
 export async function sendTransactionalEmail(event: EmailEventInput) {
