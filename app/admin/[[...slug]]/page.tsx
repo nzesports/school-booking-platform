@@ -48,7 +48,9 @@ import {
   saveResourceEditorAction,
   saveResourceAction,
   savePlatformSettingsAction,
-  updateUserAccessAction
+  updateUserAccessAction,
+  addAmbassadorNoteAction,
+  deleteAmbassadorNoteAction
 } from "@/app/portal/actions";
 import {
   AmbassadorProfileWorkspace,
@@ -83,6 +85,7 @@ import { Card } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { loadAmbassadorNotes } from "@/lib/services/ambassador-notes";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
   buildFilteredDashboardData,
@@ -189,7 +192,8 @@ export default async function AdminPortalPage({
     "reports",
     "sourced",
     "feedback",
-    "payments"
+    "payments",
+    "notes"
   ].includes(requestedAmbassadorSection ?? "")
     ? (requestedAmbassadorSection as AmbassadorProfileSection)
     : "overview";
@@ -311,6 +315,7 @@ export default async function AdminPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
+  const ambassadorNotes = selectedAmbassador ? await loadAmbassadorNotes(selectedAmbassador.id) : [];
   const ambassadorListHref = `/admin/ambassadors?status=${
     selectedAmbassador ? ambassadorListStatusFor(selectedAmbassador) : ambassadorListStatus
   }`;
@@ -601,6 +606,12 @@ export default async function AdminPortalPage({
               reviewAction={reviewAmbassadorAction}
               connectAction={connectAmbassadorPortalAccountAction}
               deleteAction={deleteAmbassadorRecordAction}
+              notes={ambassadorNotes}
+              noteError={readSearchParam(resolvedSearchParams, "error")}
+              currentUserId={actor.id}
+              canDeleteAnyNote={actor.role === "super_admin"}
+              addNoteAction={addAmbassadorNoteAction}
+              deleteNoteAction={deleteAmbassadorNoteAction}
             />
           </div>
         ) : null}

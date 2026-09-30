@@ -5,9 +5,7 @@ import {
   ArrowRight,
   Banknote,
   HeartPulse,
-  Home,
   KeyRound,
-  Quote,
   Signature,
   CalendarCheck,
   CheckCircle2,
@@ -27,7 +25,9 @@ import {
 } from "lucide-react";
 
 import { AmbassadorDeleteDialog } from "@/components/dashboard/ambassador-delete-dialog";
+import { AmbassadorNotesPanel } from "@/components/dashboard/ambassador-notes-panel";
 import { AmbassadorProfileTabs } from "@/components/dashboard/ambassador-profile-tabs";
+import type { AmbassadorNote } from "@/lib/services/ambassador-notes";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
@@ -61,7 +61,8 @@ export type AmbassadorProfileSection =
   | "reports"
   | "sourced"
   | "feedback"
-  | "payments";
+  | "payments"
+  | "notes";
 
 type WorkspaceProps = {
   ambassadors: AmbassadorProfile[];
@@ -81,6 +82,13 @@ type ProfileProps = Omit<WorkspaceProps, "ambassadors" | "status" | "query" | "s
   reviewAction: (formData: FormData) => void | Promise<void>;
   connectAction: (formData: FormData) => void | Promise<void>;
   deleteAction: (formData: FormData) => void | Promise<void>;
+  // Staff-only discussion notes (see ambassador-notes-panel).
+  notes: AmbassadorNote[];
+  noteError?: string;
+  currentUserId: string;
+  canDeleteAnyNote: boolean;
+  addNoteAction: (formData: FormData) => void | Promise<void>;
+  deleteNoteAction: (formData: FormData) => void | Promise<void>;
 };
 
 const deliveredStatuses = new Set(["completed_pending_report", "closed"]);
@@ -463,6 +471,8 @@ function RosterCard({
   health: VolunteerHealth;
 }) {
   const inactive = ambassador.status === "inactive";
+  // Only flag cards that need action; "Healthy" and "No data" show nothing.
+  const needsFollowUp = health.label === "Needs attention" || health.label === "Monitor";
 
   return (
     <article
@@ -509,15 +519,31 @@ function RosterCard({
         />
       </dl>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <HealthBadge health={health} />
-        {ambassador.pendingPaymentsCents > 0 ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff3e2] px-3 py-1.5 text-xs font-semibold text-[#a85a00]">
-            <Banknote className="h-3.5 w-3.5" aria-hidden="true" />
-            {formatCurrency(ambassador.pendingPaymentsCents)} pending payout
-          </span>
-        ) : null}
-      </div>
+      {needsFollowUp || ambassador.pendingPaymentsCents > 0 ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {needsFollowUp ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
+                health.label === "Needs attention"
+                  ? "bg-[#ffecec] text-[#b42318]"
+                  : "bg-[#fff3e2] text-[#a85a00]"
+              )}
+            >
+              {health.label === "Needs attention" ? "Needs follow-up" : "Keep an eye on"}
+              <InfoTooltip label={health.label === "Needs attention" ? "Needs follow-up" : "Keep an eye on"}>
+                {health.detail}
+              </InfoTooltip>
+            </span>
+          ) : null}
+          {ambassador.pendingPaymentsCents > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff3e2] px-3 py-1.5 text-xs font-semibold text-[#a85a00]">
+              <Banknote className="h-3.5 w-3.5" aria-hidden="true" />
+              {formatCurrency(ambassador.pendingPaymentsCents)} pending payout
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-auto pt-5">
         <ButtonLink href={href} variant="secondary" className="w-full rounded-[14px]">
@@ -644,7 +670,13 @@ export function AmbassadorProfileWorkspace({
   activeSection,
   reviewAction,
   connectAction,
-  deleteAction
+  deleteAction,
+  notes,
+  noteError,
+  currentUserId,
+  canDeleteAnyNote,
+  addNoteAction,
+  deleteNoteAction
 }: ProfileProps) {
   const isApplication = ambassador.status === "applied" || ambassador.status === "declined";
   const allSessions = bookings.flatMap((booking) => booking.sessions);
@@ -745,9 +777,11 @@ export function AmbassadorProfileWorkspace({
                       <MetaChip icon={KeyRound} tone={ambassador.userId ? "good" : "warn"}>
                         {ambassador.userId ? "Portal connected" : "No portal account"}
                       </MetaChip>
-                      <MetaChip icon={Signature} tone={materialsSignedAt ? "good" : "warn"}>
-                        {materialsSignedAt ? "Materials agreement signed" : "Agreement not signed"}
-                      </MetaChip>
+                      {ambassador.userId ? (
+                        <MetaChip icon={Signature} tone={materialsSignedAt ? "good" : "warn"}>
+                          {materialsSignedAt ? "Materials agreement signed" : "Agreement not signed"}
+                        </MetaChip>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -809,7 +843,8 @@ export function AmbassadorProfileWorkspace({
             reports: ambassadorReports.length,
             sourced: sourcedBookings.length,
             feedback: linkedSchoolReviews.length,
-            payments: ambassadorPayments.length
+            payments: ambassadorPayments.length,
+            notes: notes.reduce((total, note) => total + 1 + note.replies.length, 0)
           }}
         />
       ) : null}
@@ -831,37 +866,59 @@ export function AmbassadorProfileWorkspace({
                 kicker={isApplication ? "Application details" : "Contact & profile"}
                 title="Information on file"
               />
-              <dl className="mt-4 grid gap-x-8 sm:grid-cols-2">
-                <DetailRow icon={Mail} label="Email" value={ambassador.email || "Not provided"} />
-                <DetailRow icon={Phone} label="Phone" value={ambassador.phone ?? "Not provided"} />
-                <DetailRow
-                  icon={MapPin}
-                  label="Primary region"
-                  value={ambassador.regionName ?? titleCase(ambassador.regionSlug)}
-                />
-                <DetailRow icon={Plane} label="Travel" value={travelLabel(ambassador)} />
-                <DetailRow icon={UserPlus} label="Referred by" value={ambassador.referredBy ?? "Not provided"} />
-                <DetailRow
-                  icon={KeyRound}
-                  label="Portal account"
-                  value={ambassador.userId ? "Connected" : "Not connected yet"}
-                />
-                <DetailRow
-                  icon={Signature}
-                  label="Materials agreement"
-                  value={materialsSignedAt ? `Signed ${formatDateTime(materialsSignedAt)}` : "Not signed"}
-                />
-                {ambassador.details?.mailingAddress ? (
-                  <DetailRow icon={Home} label="Mailing address" value={ambassador.details.mailingAddress} />
+              <div className={cn("mt-5 grid gap-3", isApplication ? "md:grid-cols-2" : "md:grid-cols-3")}>
+                <InfoGroup icon={Mail} title="Contact">
+                  <InfoLine label="Email" value={ambassador.email} />
+                  <InfoLine label="Phone" value={ambassador.phone} />
+                  {ambassador.details?.mailingAddress ? (
+                    <InfoLine label="Mailing address" value={ambassador.details.mailingAddress} />
+                  ) : null}
+                </InfoGroup>
+                <InfoGroup icon={MapPin} title="Coverage">
+                  <InfoLine
+                    label="Primary region"
+                    value={ambassador.regionName ?? titleCase(ambassador.regionSlug)}
+                  />
+                  <InfoLine label="Travel" value={travelLabel(ambassador)} />
+                  <InfoLine label="Referred by" value={ambassador.referredBy} />
+                </InfoGroup>
+                {!isApplication ? (
+                  <InfoGroup icon={KeyRound} title="Account">
+                    <InfoLine label="Portal login">
+                      <StatusChip tone={ambassador.userId ? "good" : "neutral"}>
+                        {ambassador.userId ? "Connected" : "Not connected"}
+                      </StatusChip>
+                    </InfoLine>
+                    <InfoLine
+                      label="Materials agreement"
+                      info="Ambassadors sign the NZ Esports materials agreement themselves the first time they open the Materials library in their portal. It confirms materials stay NZ Esports property and only items marked Public may be shared."
+                    >
+                      {materialsSignedAt ? (
+                        <span className="grid gap-0.5">
+                          <StatusChip tone="good">Signed {formatDate(materialsSignedAt)}</StatusChip>
+                          {ambassador.details?.materialsConsentSignedName ? (
+                            <span className="text-xs text-[color:var(--text-soft)]">
+                              as {ambassador.details.materialsConsentSignedName}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : ambassador.userId ? (
+                        <StatusChip tone="warn">Not signed yet</StatusChip>
+                      ) : (
+                        <span className="text-sm text-[color:var(--text-soft)]">Signed once they have a portal login</span>
+                      )}
+                    </InfoLine>
+                  </InfoGroup>
                 ) : null}
-              </dl>
-              <div className="mt-6">
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
-                  <Quote className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <div className="mt-3 rounded-[18px] bg-[#f6f8fb] px-4 py-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
                   Presentation experience
                 </p>
-                <p className="mt-2 whitespace-pre-wrap rounded-[18px] border-l-4 border-[#9fd9b0] bg-[#f6f8fb] px-5 py-4 text-sm leading-7 text-[color:var(--text-dark)]">
-                  {ambassador.experience ?? ambassador.bio ?? "No experience information was provided."}
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[color:var(--text-dark)]">
+                  {ambassador.experience ?? ambassador.bio ?? (
+                    <span className="text-[color:var(--text-soft)]">None provided</span>
+                  )}
                 </p>
               </div>
             </Card>
@@ -1268,6 +1325,19 @@ export function AmbassadorProfileWorkspace({
         </Card>
       ) : null}
 
+      {!isApplication && activeSection === "notes" ? (
+        <AmbassadorNotesPanel
+          ambassadorProfileId={ambassador.id}
+          notes={notes}
+          returnTo={`${profileHref}?section=notes`}
+          currentUserId={currentUserId}
+          canDeleteAny={canDeleteAnyNote}
+          error={noteError?.startsWith("note-") ? noteError : undefined}
+          addAction={addNoteAction}
+          deleteAction={deleteNoteAction}
+        />
+      ) : null}
+
       {!isApplication && activeSection === "payments" ? (
         <div className="grid gap-5">
           <div className="grid gap-4 sm:grid-cols-3">
@@ -1480,8 +1550,11 @@ function HealthPanel({
           <HeartPulse className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
             Volunteer health
+            <InfoTooltip label="Volunteer health">
+              A quick signal worked out from school feedback ratings and how many delivered sessions have an ambassador report. Healthy: rating 4+ and every report in. Monitor: rating 3.5–4 or a report missing. Needs attention: rating under 3.5 or fewer than 75% of reports in.
+            </InfoTooltip>
           </p>
           <p className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[color:var(--navy)]">{health.label}</p>
           <p className="mt-1 text-sm text-[color:var(--text-soft)]">{health.detail}</p>
@@ -1532,25 +1605,73 @@ function ProgressMeter({
   );
 }
 
-function DetailRow({
+function InfoGroup({
   icon: Icon,
-  label,
-  value
+  title,
+  children
 }: {
   icon: LucideIcon;
-  label: string;
-  value: string;
+  title: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 border-b border-[color:var(--border-soft)] py-3.5">
-      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#f1f5fa] text-[color:var(--text-soft)]">
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </span>
-      <div className="min-w-0">
-        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">{label}</dt>
-        <dd className="mt-0.5 break-words text-sm text-[color:var(--navy)]">{value}</dd>
-      </div>
+    <section className="rounded-[18px] border border-[color:var(--border-soft)] p-4">
+      <h4 className="flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+        <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#f1f5fa] text-[color:var(--text-soft)]">
+          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        {title}
+      </h4>
+      <dl className="mt-3 grid gap-3">{children}</dl>
+    </section>
+  );
+}
+
+// A missing value shows a quiet dash instead of repeating "Not provided".
+function InfoLine({
+  label,
+  value,
+  info,
+  children
+}: {
+  label: string;
+  value?: string | null;
+  info?: string;
+  children?: ReactNode;
+}) {
+  const content = children ?? (value?.trim() ? value : null);
+
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+        {label}
+        {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
+      </dt>
+      <dd className="mt-0.5 break-words text-sm text-[color:var(--navy)]">
+        {content ?? (
+          <span className="text-[color:var(--text-soft)]">
+            —<span className="sr-only">Not provided</span>
+          </span>
+        )}
+      </dd>
     </div>
+  );
+}
+
+function StatusChip({ tone, children }: { tone: "good" | "warn" | "neutral"; children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex w-fit rounded-full px-2.5 py-0.5 text-xs font-semibold",
+        tone === "good"
+          ? "bg-[#eaf8ee] text-[#117a2e]"
+          : tone === "warn"
+            ? "bg-[#fff3e2] text-[#a85a00]"
+            : "bg-[#f1f3f6] text-[#667085]"
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -1676,25 +1797,6 @@ function volunteerHealth(
   }
 
   return { label: "Healthy", detail: "Strong school feedback and report completion" };
-}
-
-function HealthBadge({ health }: { health: VolunteerHealth }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex rounded-full px-3 py-1.5 text-xs font-semibold",
-        health.label === "Healthy"
-          ? "bg-[#eaf8ee] text-[#117a2e]"
-          : health.label === "Monitor"
-            ? "bg-[#fff3e2] text-[#a85a00]"
-            : health.label === "Needs attention"
-              ? "bg-[#ffecec] text-[#b42318]"
-              : "bg-[#f1f3f6] text-[#667085]"
-      )}
-    >
-      {health.label}
-    </span>
-  );
 }
 
 function travelLabel(ambassador: AmbassadorProfile) {

@@ -33,7 +33,9 @@ import {
   savePlatformSettingsAction,
   savePortalProfileAction,
   saveResourceEditorAction,
-  saveResourceAction
+  saveResourceAction,
+  addAmbassadorNoteAction,
+  deleteAmbassadorNoteAction
 } from "@/app/portal/actions";
 import { OperationsAnalytics } from "@/components/dashboard/operations-analytics";
 import { FeedbackHub } from "@/components/dashboard/feedback-hub";
@@ -65,6 +67,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { loadAmbassadorNotes } from "@/lib/services/ambassador-notes";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
   buildFilteredDashboardData,
@@ -184,6 +187,7 @@ export default async function StaffPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
+  const ambassadorNotes = selectedAmbassador ? await loadAmbassadorNotes(selectedAmbassador.id) : [];
   const ambassadorListStatus = readAmbassadorListStatus({
     status: readSearchParam(resolvedSearchParams, "status"),
     tab: readSearchParam(resolvedSearchParams, "tab"),
@@ -200,7 +204,8 @@ export default async function StaffPortalPage({
     "reports",
     "sourced",
     "feedback",
-    "payments"
+    "payments",
+    "notes"
   ].includes(requestedAmbassadorSection ?? "")
     ? (requestedAmbassadorSection as AmbassadorProfileSection)
     : "overview";
@@ -488,6 +493,12 @@ export default async function StaffPortalPage({
               reviewAction={reviewAmbassadorAction}
               connectAction={connectAmbassadorPortalAccountAction}
               deleteAction={deleteAmbassadorRecordAction}
+              notes={ambassadorNotes}
+              noteError={readSearchParam(resolvedSearchParams, "error")}
+              currentUserId={actor.id}
+              canDeleteAnyNote={actor.role === "super_admin"}
+              addNoteAction={addAmbassadorNoteAction}
+              deleteNoteAction={deleteAmbassadorNoteAction}
             />
           </div>
         ) : null}

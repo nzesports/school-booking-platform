@@ -1682,6 +1682,92 @@ export async function deleteAmbassadorRecordAction(formData: FormData) {
   );
 }
 
+const ambassadorNoteSchema = z.object({
+  ambassadorProfileId: z.uuid(),
+  parentId: z.uuid().optional(),
+  body: z.string().trim().min(1).max(4000),
+  returnTo: z.string().min(1)
+});
+
+// Staff-only discussion notes on an ambassador profile. Ambassadors never see
+// these; the table is service-role only.
+export async function addAmbassadorNoteAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/ambassadors"),
+    "/staff/ambassadors"
+  );
+  const parsed = ambassadorNoteSchema.safeParse({
+    ambassadorProfileId: String(formData.get("ambassadorProfileId") || ""),
+    parentId: String(formData.get("parentId") || "") || undefined,
+    body: String(formData.get("body") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "note-invalid"));
+  }
+
+  const admin = getAdminClientOrThrow();
+
+  // Replies attach to a top-level note on the same ambassador only.
+  if (parsed.data.parentId) {
+    const { data: parent } = await admin
+      .from("ambassador_notes")
+      .select("id")
+      .eq("id", parsed.data.parentId)
+      .eq("ambassador_profile_id", parsed.data.ambassadorProfileId)
+      .is("parent_id", null)
+      .maybeSingle();
+
+    if (!parent) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "note-invalid"));
+    }
+  }
+
+  const { error } = await admin.from("ambassador_notes").insert({
+    ambassador_profile_id: parsed.data.ambassadorProfileId,
+    parent_id: parsed.data.parentId ?? null,
+    author_id: actor.id,
+    body: parsed.data.body
+  });
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "note-save-failed"));
+  }
+
+  redirect(appendSearchParam(parsed.data.returnTo, "note", "saved"));
+}
+
+// Authors can remove their own notes; super admins can remove any.
+export async function deleteAmbassadorNoteAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/ambassadors"),
+    "/staff/ambassadors"
+  );
+  const noteId = String(formData.get("noteId") || "");
+
+  if (!z.uuid().safeParse(noteId).success) {
+    redirect(appendSearchParam(returnTo, "error", "note-invalid"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  let deletion = admin.from("ambassador_notes").delete().eq("id", noteId);
+
+  if (actor.role !== "super_admin") {
+    deletion = deletion.eq("author_id", actor.id);
+  }
+
+  const { data: deleted, error } = await deletion.select("id");
+
+  if (error || !deleted?.length) {
+    redirect(appendSearchParam(returnTo, "error", "note-delete-failed"));
+  }
+
+  redirect(appendSearchParam(returnTo, "note", "deleted"));
+}
+
 export async function markNotificationReadAction(formData: FormData) {
   const fallbackRedirectTo = sanitizeReturnTo(
     String(formData.get("redirectTo") || "/staff/activity"),

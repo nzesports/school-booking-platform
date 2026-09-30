@@ -2,6 +2,7 @@
 
 import {
   Banknote,
+  MessageSquare,
   CalendarCheck,
   FileText,
   LayoutDashboard,
@@ -19,7 +20,8 @@ export type AmbassadorProfileTabSection =
   | "reports"
   | "sourced"
   | "feedback"
-  | "payments";
+  | "payments"
+  | "notes";
 
 // Profile sections live in the URL (?section=), so the shared secondary tabs
 // navigate instead of switching local state.
@@ -40,7 +42,8 @@ export function AmbassadorProfileTabs({
     { value: "reports", label: "Reports", icon: FileText, count: counts.reports },
     { value: "sourced", label: "Sourced schools", icon: School2, count: counts.sourced },
     { value: "feedback", label: "School feedback", icon: Star, count: counts.feedback },
-    { value: "payments", label: "Payments", icon: Banknote, count: counts.payments }
+    { value: "payments", label: "Payments", icon: Banknote, count: counts.payments },
+    { value: "notes", label: "Staff notes", icon: MessageSquare, count: counts.notes }
   ];
 
   return (
