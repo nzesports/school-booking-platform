@@ -1,3 +1,5 @@
+import { formatWeekdayDate } from "@/lib/utils";
+
 export const BOOKING_WINDOW_START_MINUTES = 8 * 60;
 export const BOOKING_WINDOW_END_MINUTES = 16 * 60;
 export const SESSION_LENGTH_MINUTES = 10;
@@ -107,18 +109,13 @@ export function addTenMinutes(value: string) {
 }
 
 export function formatDisplayDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
+  // Midnight UTC is midday in New Zealand, so the plain calendar date
+  // ("2026-06-03") keeps its day when shown in NZ time.
+  const date = new Date(`${value}T00:00:00Z`);
 
   if (Number.isNaN(date.getTime())) {
     return value;
   }
 
-  const sameYear = date.getFullYear() === new Date().getFullYear();
-
-  return new Intl.DateTimeFormat("en-NZ", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" })
-  }).format(date);
+  return formatWeekdayDate(date);
 }

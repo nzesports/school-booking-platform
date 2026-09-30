@@ -1,5 +1,5 @@
 import { siteUrl } from "@/lib/site-url";
-import { formatTime } from "@/lib/utils";
+import { formatTime, formatWeekdayDate } from "@/lib/utils";
 
 export type SchoolEmailDetails = {
   ambassadorName?: string;
@@ -11,12 +11,6 @@ export type SchoolEmailDetails = {
   expectedStudentCount: number | null;
   yearLevels: string;
 };
-
-export function formatSchoolEmailDate(value: string) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland", weekday: "long", day: "numeric", month: "long", year: "numeric"
-  }).format(new Date(value));
-}
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -30,7 +24,7 @@ export function buildSchoolEmailDetails(details: SchoolEmailDetails) {
     referenceCode: details.referenceCode || "Not recorded",
     schoolName: details.schoolName,
     presentationTitle: details.presentationTitle,
-    sessionDate: formatSchoolEmailDate(details.sessionStartsAt),
+    sessionDate: formatWeekdayDate(details.sessionStartsAt),
     sessionTime: `${formatTime(details.sessionStartsAt)} – ${formatTime(details.sessionEndsAt)} (New Zealand time)`,
     expectedStudentCount: details.expectedStudentCount == null ? "Not recorded" : String(details.expectedStudentCount),
     yearLevels: details.yearLevels || "Not recorded"

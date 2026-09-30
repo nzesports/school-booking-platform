@@ -54,7 +54,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { relationOne } from "@/lib/supabase/relation";
 import { createClient } from "@/lib/supabase/server";
 import { safeLocalPath } from "@/lib/safe-redirect";
-import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
+import { formatCurrency, formatDateOnly, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
 
 // Every path revalidation in this module accompanies a data write, so bust the
 // shared platform-data cache (lib/services/portal.ts) at the same time. This
@@ -4161,13 +4161,13 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
 
   void notifyStaff({
     title: `${(school?.name as string | null) ?? "A school"} requested a reschedule`,
-    body: `Preferred date ${parsed.data.preferredDate}. ${parsed.data.notes}`,
+    body: `Preferred date ${formatDateOnly(parsed.data.preferredDate)}. ${parsed.data.notes}`,
     type: "booking_reschedule_requested",
     relatedUrl: `/staff/bookings?booking=${parsed.data.bookingRequestId}`
   }).catch(() => {});
 
   scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
-    [parsed.data.bookingSessionId], "reschedule_requested", parsed.data.preferredDate));
+    [parsed.data.bookingSessionId], "reschedule_requested", formatDateOnly(parsed.data.preferredDate)));
 
   await logAuditEvent(
     actor.id,

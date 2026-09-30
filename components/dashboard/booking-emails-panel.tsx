@@ -5,6 +5,7 @@ import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { loadBookingEmailsAction, previewBookingEmailAction, confirmBookingEmailAction } from "@/app/portal/booking-email-actions";
+import { formatDateTime } from "@/lib/utils";
 
 type History = Awaited<ReturnType<typeof loadBookingEmailsAction>>;
 type Preview = Awaited<ReturnType<typeof previewBookingEmailAction>>;
@@ -89,7 +90,7 @@ export function BookingEmailsPanel({ sessionId }: { sessionId: string }) {
     {data?.history.map(item => <div key={item.id} className="rounded-xl border p-3 text-sm">
       <p className="font-medium">{item.template_key?.replaceAll("_", " ")}</p>
       <p>{item.recipient_email}</p>
-      <p>{item.status} · {new Date(item.sent_at || item.created_at).toLocaleString("en-NZ", { timeZone: "Pacific/Auckland" })}</p>
+      <p>{item.status} · {formatDateTime(item.sent_at || item.created_at)}</p>
       {item.error_message && <p className="text-red-700">{item.error_message}</p>}
     </div>)}
   </div>;

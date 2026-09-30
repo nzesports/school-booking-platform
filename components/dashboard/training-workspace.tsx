@@ -28,6 +28,7 @@ import Link from "next/link";
 
 import type { PresentationType, TrainingModule } from "@/lib/domain/types";
 import { ButtonLink } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { SecondaryTabs, type SecondaryTabItem } from "@/components/ui/secondary-tabs";
 import type { ResourceRecord, TrainingPackRecord } from "@/lib/services/portal";
 import { colourWithAlpha, presentationPalette } from "@/lib/presentation-colors";
@@ -410,8 +411,10 @@ export function TrainingWorkspace({
                       <BookOpenCheck className="h-4.5 w-4.5" />
                     </span>
                     <div>
-                      <h4 className="text-xl font-semibold text-[color:var(--navy)]">Training resources</h4>
-                      <p className="text-sm text-[color:var(--text-soft)]">Open the guides and media for this presentation.</p>
+                      <h4 className="flex items-center gap-2 text-xl font-semibold text-[color:var(--navy)]">
+                        Training resources
+                        <InfoTooltip label="Training resources">Open the guides and media for this presentation.</InfoTooltip>
+                      </h4>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-3">
@@ -437,8 +440,10 @@ export function TrainingWorkspace({
                       <Layers3 className="h-4.5 w-4.5" />
                     </span>
                     <div>
-                      <h4 className="text-lg font-semibold text-[color:var(--navy)]">Pack files</h4>
-                      <p className="text-sm text-[color:var(--text-soft)]">Keep these close while you train.</p>
+                      <h4 className="flex items-center gap-2 text-lg font-semibold text-[color:var(--navy)]">
+                        Pack files
+                        <InfoTooltip label="Pack files">Keep these close while you train.</InfoTooltip>
+                      </h4>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-2.5">
@@ -867,14 +872,12 @@ export function ResourceLibraryWorkspace({
             <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[color:var(--green)]">
               {contextCopy.eyebrow}
             </p>
-            <h2 className="mt-1.5 text-3xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">
+            <h2 className="mt-1.5 flex items-center gap-2 text-3xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">
               {heading}
+              {context !== "materials" ? (
+                <InfoTooltip label={heading}>{contextCopy.description}</InfoTooltip>
+              ) : null}
             </h2>
-            {context !== "materials" ? (
-              <p className="mt-2 max-w-3xl text-base leading-7 text-[color:var(--text-soft)]">
-                {contextCopy.description}
-              </p>
-            ) : null}
           </div>
           {context !== "materials" ? (
             <p className="rounded-full bg-[color:var(--green-soft)] px-3.5 py-2 text-sm font-semibold text-[#117a2e]">
@@ -957,12 +960,12 @@ export function ResourceLibraryWorkspace({
                     </button>
                   ) : null}
                   <div>
-                    <h3 className="text-xl font-semibold text-[color:var(--navy)]">
+                    <h3 className="flex items-center gap-2 text-xl font-semibold text-[color:var(--navy)]">
                       {activeBucketLabel}
+                      <InfoTooltip label={activeBucketLabel}>
+                        {contextCopy.resultsDescription}
+                      </InfoTooltip>
                     </h3>
-                    <p className="text-base text-[color:var(--text-soft)]">
-                      {contextCopy.resultsDescription}
-                    </p>
                   </div>
                 </div>
               ) : (

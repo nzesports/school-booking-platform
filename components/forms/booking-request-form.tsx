@@ -18,6 +18,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { nextBookableDates } from "@/lib/services/availability";
 import type { PresentationType, Region } from "@/lib/domain/types";
+import { formatDateOnly } from "@/lib/utils";
 
 type SessionState = {
   presentationSlug: string;
@@ -170,7 +171,7 @@ export function BookingRequestForm({
                       {presentation?.title ?? "Presentation"}
                     </p>
                     <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                      {session.date} · {session.startTime} - {session.endTime}
+                      {session.date ? formatDateOnly(session.date) : ""} · {session.startTime} - {session.endTime}
                     </p>
                   </div>
                 );
@@ -252,7 +253,7 @@ export function BookingRequestForm({
                   >
                     {dates.map((date) => (
                       <option key={date} value={date}>
-                        {date}
+                        {formatDateOnly(date)}
                       </option>
                     ))}
                   </Select>

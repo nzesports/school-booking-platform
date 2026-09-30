@@ -24,6 +24,7 @@ import { getSignedFeedbackLinkAction, revokeBookingGuestAccessAction } from "@/a
 import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
@@ -37,19 +38,9 @@ import {
   type CalendarEventInput
 } from "@/lib/services/calendar-links";
 import { siteUrl } from "@/lib/site-url";
-import { cn } from "@/lib/utils";
+import { cn, formatDateOnly, formatWeekdayDate } from "@/lib/utils";
 
 const NZ_TIME_ZONE = "Pacific/Auckland";
-
-function formatNzDate(iso: string) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: NZ_TIME_ZONE
-  }).format(new Date(iso));
-}
 
 function formatNzTime(iso: string) {
   return new Intl.DateTimeFormat("en-NZ", {
@@ -198,7 +189,7 @@ export function SessionDetailsButton({
               <SessionChangeSummary session={session} />
               <p className="mt-5 flex flex-wrap items-center gap-2 text-base font-semibold tracking-[-0.02em] text-[#117a2e] md:text-lg">
                 <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
-                {formatNzDate(session.startsAt)}
+                {formatWeekdayDate(session.startsAt)}
                 <span aria-hidden="true">·</span>
                 {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
               </p>
@@ -332,9 +323,9 @@ export function SessionDetailsButton({
                       <UserRound className="h-5 w-5" />
                     </span>
                     No ambassador assigned yet
-                  </p>
-                  <p className="mt-2 pl-8 text-sm leading-6 text-[color:var(--text-soft)]">
-                    Assign an active applicant or search approved ambassadors from the booking row.
+                    <InfoTooltip label="No ambassador assigned yet">
+                      Assign an active applicant or search approved ambassadors from the booking row.
+                    </InfoTooltip>
                   </p>
                 </div>
               ) : null}
@@ -380,7 +371,7 @@ export function SessionDetailsButton({
                     School reschedule request
                   </p>
                   <p className="mt-3 text-sm leading-6 text-[#8f680f]">
-                    Preferred date: {session.rescheduleRequestedDate ?? "Not provided"}
+                    Preferred date: {session.rescheduleRequestedDate ? formatDateOnly(session.rescheduleRequestedDate) : "Not provided"}
                     {session.rescheduleRequestNotes
                       ? ` — ${session.rescheduleRequestNotes}`
                       : ""}
@@ -506,9 +497,9 @@ export function SessionDetailsButton({
                     <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                       <MessageSquare className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
                       Share school feedback form
-                    </p>
-                    <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
-                      Only send this link to the school. Anyone with it can submit feedback on behalf of the school after the session, with no login.
+                      <InfoTooltip label="Share school feedback form">
+                        Only send this link to the school. Anyone with it can submit feedback on behalf of the school after the session, with no login.
+                      </InfoTooltip>
                     </p>
                   </div>
                   <Button

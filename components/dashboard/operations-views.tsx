@@ -15,6 +15,7 @@ import { BookingsExplorer } from "@/components/dashboard/bookings-explorer";
 import { SchoolsExplorer } from "@/components/dashboard/schools-explorer";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import type {
   AmbassadorProfile,
   BookingRequestView,
@@ -101,7 +102,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
           label="Sessions"
           value={String(sessions.length)}
-          hint="Total in selected period"
+          info="Total in selected period"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#18a83b]"
@@ -112,7 +113,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#eef8f1] hover:bg-[#eaf8ee]"
           label="Completed"
           value={String(completedCount)}
-          hint="Marked as completed"
+          info="Marked as completed"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#7c3aed]"
@@ -123,7 +124,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#f5f1fd] hover:bg-[#f1edfd]"
           label="Confirmed"
           value={String(confirmedCount)}
-          hint="Confirmed, not yet completed"
+          info="Confirmed, not yet completed"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#d97706]"
@@ -134,7 +135,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fff9eb] hover:bg-[#fff5df]"
           label="Pending"
           value={String(pendingCount)}
-          hint="Awaiting confirmation or resolution"
+          info="Awaiting confirmation or resolution"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#dc2626]"
@@ -145,7 +146,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fef2f2] hover:bg-[#feecec]"
           label="Cancelled"
           value={String(cancelledCount)}
-          hint="Cancelled or declined"
+          info="Cancelled or declined"
         />
       </div>
 
@@ -190,7 +191,7 @@ function LifecycleStatTile({
   iconClassName,
   label,
   value,
-  hint,
+  info,
   href,
   active,
   activeClassName
@@ -200,18 +201,18 @@ function LifecycleStatTile({
   iconClassName: string;
   label: string;
   value: string;
-  hint: string;
+  info: string;
   href: string;
   active: boolean;
   activeClassName: string;
 }) {
+  // The whole tile is clickable through the link's stretched ::after, while
+  // the "?" sits beside the link (a button can't be nested inside an <a>).
   return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
+    <div
       className={cn(
-        "flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] p-5",
-        "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+        "relative flex items-center gap-4 rounded-[20px] border border-[color:var(--border-soft)] p-5",
+        "transition has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-blue-600",
         active ? activeClassName : "bg-white/92 hover:bg-slate-50",
         accentClassName
       )}
@@ -220,13 +221,24 @@ function LifecycleStatTile({
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block text-sm text-[color:var(--text-soft)]">{label}</span>
+        <span className="flex items-center gap-1.5 text-sm text-[color:var(--text-soft)]">
+          <Link
+            href={href}
+            aria-current={active ? "page" : undefined}
+            aria-label={`${label}: ${value}`}
+            className="after:absolute after:inset-0 after:rounded-[20px] after:content-[''] focus-visible:outline-none"
+          >
+            {label}
+          </Link>
+          <span className="relative z-10">
+            <InfoTooltip label={label}>{info}</InfoTooltip>
+          </span>
+        </span>
         <span className="block text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           {value}
         </span>
-        <span className="block text-xs text-[color:var(--text-soft)]">{hint}</span>
       </span>
-    </Link>
+    </div>
   );
 }
 

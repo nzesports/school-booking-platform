@@ -15,9 +15,10 @@ import { AmbassadorWithdrawDialog } from "@/components/dashboard/ambassador-with
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { BookingSessionView } from "@/lib/domain/types";
-import { formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
+import { formatDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -41,21 +42,22 @@ export function AmbassadorSessionsWorkspace({
           tone="blue"
           label={mode === "upcoming" ? "Confirmed sessions" : "Completed sessions"}
           value={String(sessions.length)}
-          detail={mode === "upcoming" ? "Currently assigned to you" : "Across your delivery history"}
+          info={mode === "upcoming" ? "Currently assigned to you" : "Across your delivery history"}
         />
         <SummaryCard
           icon={mode === "upcoming" ? <School2 className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
           tone="green"
           label={mode === "upcoming" ? "Schools coming up" : "Reports submitted"}
           value={String(mode === "upcoming" ? new Set(sessions.map((session) => session.schoolId ?? session.schoolName)).size : completedReports)}
-          detail={mode === "upcoming" ? "Distinct school visits" : "Delivery records completed"}
+          info={mode === "upcoming" ? "Distinct school visits" : "Delivery records completed"}
         />
         <SummaryCard
           icon={mode === "upcoming" ? <UsersRound className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
           tone={mode === "upcoming" ? "violet" : reportDue > 0 ? "amber" : "green"}
           label={mode === "upcoming" ? "Expected students" : "Reports still due"}
           value={String(mode === "upcoming" ? sessions.reduce((total, session) => total + session.expectedStudentCount, 0) : reportDue)}
-          detail={mode === "upcoming" ? "Across your upcoming schedule" : "Complete these to unlock payment review"}
+          info={mode === "upcoming" ? "Across your upcoming schedule" : undefined}
+          detail={mode === "upcoming" ? undefined : "Complete these to unlock payment review"}
         />
       </section>
 
@@ -67,8 +69,10 @@ export function AmbassadorSessionsWorkspace({
             </span>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">{mode === "upcoming" ? "Your schedule" : "Delivery history"}</p>
-              <h2 className="mt-1.5 text-2xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">{mode === "upcoming" ? "Upcoming school presentations" : "Completed bookings"}</h2>
-              {mode === "completed" ? <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">Track report and payment progress for each completed session.</p> : null}
+              <h2 className="mt-1.5 flex items-center gap-2 text-2xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">
+                {mode === "upcoming" ? "Upcoming school presentations" : "Completed bookings"}
+                {mode === "completed" ? <InfoTooltip label="Completed bookings">Track report and payment progress for each completed session.</InfoTooltip> : null}
+              </h2>
             </div>
           </div>
           {mode === "upcoming" ? <ButtonLink href="/ambassador/bookings?tab=open" variant="ghost" className="rounded-[13px]">Find more bookings <ArrowRight className="h-4 w-4" /></ButtonLink> : null}
@@ -92,12 +96,14 @@ export function AmbassadorSessionsWorkspace({
 }
 
 function SessionCard({ session, mode, withdrawalAction }: { session: BookingSessionView; mode: "upcoming" | "completed"; withdrawalAction: FormAction }) {
+  const [day, month, year] = formatDate(session.startsAt).split(" ");
   return (
     <article className="rounded-[19px] border border-[color:var(--border-soft)] bg-white shadow-[0_8px_22px_rgba(4,15,75,0.04)]">
       <div className="grid gap-3 p-3.5 sm:grid-cols-[56px_minmax(0,1fr)_auto] sm:items-center md:p-4">
-        <div className={mode === "upcoming" ? "flex h-14 w-14 flex-col items-center justify-center rounded-[15px] bg-[#e8f1fd]" : "flex h-14 w-14 flex-col items-center justify-center rounded-[15px] bg-[#eaf8ee]"}>
-          <span className={mode === "upcoming" ? "text-xs font-semibold uppercase text-[#1e4fae]" : "text-xs font-semibold uppercase text-[#117a2e]"}>{new Intl.DateTimeFormat("en-NZ", { month: "short", timeZone: "Pacific/Auckland" }).format(new Date(session.startsAt))}</span>
-          <span className="text-xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{new Intl.DateTimeFormat("en-NZ", { day: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(session.startsAt))}</span>
+        <div className={mode === "upcoming" ? "flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-[15px] bg-[#e8f1fd] leading-none" : "flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-[15px] bg-[#eaf8ee] leading-none"}>
+          <span className={mode === "upcoming" ? "text-[10px] font-semibold uppercase text-[#1e4fae]" : "text-[10px] font-semibold uppercase text-[#117a2e]"}>{month}</span>
+          <span className="text-xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{day}</span>
+          <span className={mode === "upcoming" ? "text-[10px] text-[#1e4fae]" : "text-[10px] text-[#117a2e]"}>{year}</span>
         </div>
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -124,12 +130,12 @@ function SessionCard({ session, mode, withdrawalAction }: { session: BookingSess
   );
 }
 
-function SummaryCard({ icon, tone, label, value, detail }: { icon: ReactNode; tone: "blue" | "green" | "violet" | "amber"; label: string; value: string; detail: string }) {
+function SummaryCard({ icon, tone, label, value, detail, info }: { icon: ReactNode; tone: "blue" | "green" | "violet" | "amber"; label: string; value: string; detail?: string; info?: string }) {
   const tones = { blue: "bg-[#e8f1fd] text-[#1e4fae]", green: "bg-[#e6f6eb] text-[#117a2e]", violet: "bg-[#f1edfd] text-[#6941c6]", amber: "bg-[#fff5df] text-[#9a5a00]" };
   return (
     <Card className="rounded-[24px] p-5 md:p-5">
-      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{value}</p></div><span className={`flex h-11 w-11 items-center justify-center rounded-[14px] ${tones[tone]}`}>{icon}</span></div>
-      <p className="mt-2 text-sm text-[color:var(--text-soft)]">{detail}</p>
+      <div className="flex items-start justify-between gap-4"><div><p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">{label}{info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}</p><p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{value}</p></div><span className={`flex h-11 w-11 items-center justify-center rounded-[14px] ${tones[tone]}`}>{icon}</span></div>
+      {detail ? <p className="mt-2 text-sm text-[color:var(--text-soft)]">{detail}</p> : null}
     </Card>
   );
 }

@@ -44,13 +44,14 @@ import { DataTable } from "@/components/dashboard/data-table";
 import { TrainingWorkspace } from "@/components/dashboard/training-workspace";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { PaymentRecord } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
 import { getAmbassadorPortalData, loadUserNotifications } from "@/lib/services/portal";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
-import { formatCurrency, formatShortDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatShortDate, formatTime } from "@/lib/utils";
 
 const navItems = [
   { href: "/ambassador", label: "Dashboard", icon: UserRound },
@@ -313,7 +314,7 @@ export default async function AmbassadorPortalPage({
                   <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
                 </div>
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatShortDate(selectedOpenSession.startsAt, true)} · ${new Intl.DateTimeFormat("en-NZ", { hour: "numeric", minute: "2-digit", timeZone: "Pacific/Auckland" }).format(new Date(selectedOpenSession.startsAt))}`} />
+                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatDate(selectedOpenSession.startsAt)} · ${formatTime(selectedOpenSession.startsAt)}`} />
                   <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
                   <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSession.expectedStudentCount} students · ${selectedOpenSession.yearLevels}`} />
                 </div>
@@ -375,7 +376,7 @@ export default async function AmbassadorPortalPage({
                 tone="green"
                 label="Total earned"
                 value={formatCurrency(portal.ambassador.estimatedEarningsCents)}
-                detail="Delivery fees and sourcing bonuses"
+                info="Delivery fees and sourcing bonuses"
               />
               <EarningsMetric
                 icon={<CheckCircle2 className="h-5 w-5" />}
@@ -394,7 +395,7 @@ export default async function AmbassadorPortalPage({
                     0
                   )
                 )}
-                detail={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
+                info={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
               />
             </div>
             <Card className="rounded-[26px]">
@@ -548,13 +549,15 @@ function EarningsMetric({
   tone,
   label,
   value,
-  detail
+  detail,
+  info
 }: {
   icon: ReactNode;
   tone: "green" | "blue" | "amber";
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
+  info?: string;
 }) {
   const toneClasses = {
     green: "bg-[#e6f6eb] text-[#117a2e]",
@@ -566,8 +569,9 @@ function EarningsMetric({
     <Card className="rounded-[24px] p-5 md:p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
             {label}
+            {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
           </p>
           <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
             {value}
@@ -577,7 +581,7 @@ function EarningsMetric({
           {icon}
         </span>
       </div>
-      <p className="mt-2 text-sm text-[color:var(--text-soft)]">{detail}</p>
+      {detail ? <p className="mt-2 text-sm text-[color:var(--text-soft)]">{detail}</p> : null}
     </Card>
   );
 }

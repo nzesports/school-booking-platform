@@ -44,6 +44,7 @@ import { SchoolResourceLibrary } from "@/components/dashboard/school-resource-li
 import { SchoolFeedbackForm } from "@/components/site/school-feedback-form";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Input } from "@/components/ui/input";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
@@ -859,12 +860,12 @@ export default async function SchoolPortalPage({
                     <MessageSquare className="h-5 w-5" />
                   </span>
                   <div>
-                    <h2 className="text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
+                    <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
                       Ready for feedback
+                      <InfoTooltip label="Ready for feedback">
+                        Completed presentations awaiting your review
+                      </InfoTooltip>
                     </h2>
-                    <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                      Completed presentations awaiting your review
-                    </p>
                   </div>
                 </div>
                 <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-[#e8f1fd] px-3 text-sm font-semibold text-[#1e4fae]">
@@ -925,12 +926,12 @@ export default async function SchoolPortalPage({
                     <CircleCheck className="h-5 w-5" />
                   </span>
                   <div>
-                    <h2 className="text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
+                    <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.025em] text-[color:var(--navy)]">
                       Feedback history
+                      <InfoTooltip label="Feedback history">
+                        Reviews your school has already submitted
+                      </InfoTooltip>
                     </h2>
-                    <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                      Reviews your school has already submitted
-                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -1325,13 +1326,15 @@ function SchoolStatTile({
           {icon}
         </span>
         <div>
-          <p className="text-sm text-[color:var(--text-soft)]">{label}</p>
+          <p className="flex items-center gap-2 text-sm text-[color:var(--text-soft)]">
+            {label}
+            {hint ? <InfoTooltip label={label}>{hint}</InfoTooltip> : null}
+          </p>
           <p className="text-3xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
             {value}
           </p>
         </div>
       </div>
-      {hint ? <p className="mt-3 text-xs text-[color:var(--text-soft)]">{hint}</p> : null}
     </div>
   );
 }
@@ -1369,10 +1372,10 @@ function ReviewPanelHeading({
         {icon}
       </span>
       <div>
-        <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           {title}
+          {hint ? <InfoTooltip label={title}>{hint}</InfoTooltip> : null}
         </h2>
-        {hint ? <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{hint}</p> : null}
       </div>
     </div>
   );
@@ -1424,13 +1427,13 @@ function SchoolContactCallout({ className }: { className?: string }) {
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
           Support
         </p>
-        <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-[-0.03em] text-[color:var(--navy)]">
+        <h2 className="mt-2 flex items-center gap-2 text-3xl font-semibold leading-tight tracking-[-0.03em] text-[color:var(--navy)]">
           Have any questions?
+          <InfoTooltip label="Have any questions?">
+            Reach out to our team and we&apos;ll help with bookings, scheduling, or presentation
+            details.
+          </InfoTooltip>
         </h2>
-        <p className="mt-3 text-base leading-7 text-[color:var(--text-soft)]">
-          Reach out to our team and we&apos;ll help with bookings, scheduling, or presentation
-          details.
-        </p>
       </div>
       <ButtonLink
         href="/contact"
@@ -1454,10 +1457,10 @@ function ProfileSection({
 }) {
   return (
     <div className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-      <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+      <h3 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
         {title}
+        {hint ? <InfoTooltip label={title}>{hint}</InfoTooltip> : null}
       </h3>
-      {hint ? <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{hint}</p> : null}
       <div className="mt-4">{children}</div>
     </div>
   );

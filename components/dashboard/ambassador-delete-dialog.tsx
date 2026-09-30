@@ -11,13 +11,16 @@ export function AmbassadorDeleteDialog({
   ambassadorName,
   recordType,
   returnTo,
-  action
+  action,
+  subtle = false
 }: {
   ambassadorId: string;
   ambassadorName: string;
   recordType: "application" | "volunteer";
   returnTo: string;
   action: (formData: FormData) => void | Promise<void>;
+  // A quiet text-style trigger for a separated "danger zone".
+  subtle?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
@@ -50,10 +53,21 @@ export function AmbassadorDeleteDialog({
 
   return (
     <>
-      <Button type="button" variant="danger" className="w-full" onClick={() => setOpen(true)}>
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-        Delete {recordType}
-      </Button>
+      {subtle ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex min-h-[40px] items-center gap-2 rounded-[12px] px-2 text-sm font-semibold text-[#9d2424] transition hover:bg-[#fff0f0]"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Delete {recordType}
+        </button>
+      ) : (
+        <Button type="button" variant="danger" className="w-full" onClick={() => setOpen(true)}>
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Delete {recordType}
+        </Button>
+      )}
 
       {open ? (
         <div

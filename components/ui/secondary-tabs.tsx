@@ -52,7 +52,7 @@ export function SecondaryTabs<T extends string>({
               aria-selected={active}
               onClick={() => onChange(item.value)}
               className={cn(
-                "relative inline-flex min-h-[48px] items-center gap-1.5 px-1 text-[11px] font-semibold transition",
+                "relative inline-flex min-h-[48px] items-center gap-1.5 rounded-[8px] px-1 text-[11px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[rgba(24,168,59,0.35)]",
                 active
                   ? activeTextClassName
                   : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"

@@ -30,6 +30,7 @@ import {
 
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { StarRating } from "@/components/ui/star-rating";
 import type {
   AmbassadorProfile,
@@ -509,21 +510,21 @@ export function OperationsAnalytics({
             icon={<UserCheck className="h-5 w-5 text-[color:var(--green)]" />}
             label="Active ambassadors"
             value={String(approvedAmbassadors.length)}
-            detail="Approved and available"
+            info="Approved and available"
             href={`${basePath}/ambassadors`}
           />
           <OpsTile
             icon={<Bell className="h-5 w-5 text-[#c07a12]" />}
             label="Pending approvals"
             value={String(pendingApplications.length)}
-            detail="Awaiting review"
+            info="Awaiting review"
             href={`${basePath}/ambassadors`}
           />
           <OpsTile
             icon={<CalendarCheck2 className="h-5 w-5 text-[#246bff]" />}
             label="Sessions assigned"
             value={String(sessionsAssignedThisYear)}
-            detail="Year to date"
+            info="Year to date"
             href={calendarHref ?? bookingsHref("future")}
           />
         </div>
@@ -1379,12 +1380,14 @@ function OpsTile({
   label,
   value,
   detail,
+  info,
   href
 }: {
   icon: ReactNode;
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
+  info?: string;
   href: string;
 }) {
   return (
@@ -1396,10 +1399,13 @@ function OpsTile({
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[linear-gradient(180deg,#f6fbff,#edf7ff)]">
           {icon}
         </div>
-        <p className="text-sm font-medium text-[color:var(--text-soft)]">{label}</p>
+        <p className="flex items-center gap-1.5 text-sm font-medium text-[color:var(--text-soft)]">
+          {label}
+          {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
+        </p>
       </div>
       <p className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{value}</p>
-      <p className="text-xs text-[color:var(--text-soft)]">{detail}</p>
+      {detail ? <p className="text-xs text-[color:var(--text-soft)]">{detail}</p> : null}
     </Link>
   );
 }

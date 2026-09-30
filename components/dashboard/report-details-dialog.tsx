@@ -30,7 +30,7 @@ import { FeedbackDialogNavigation } from "@/components/dashboard/feedback-dialog
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import type { ReportSummary } from "@/lib/domain/types";
-import { cn } from "@/lib/utils";
+import { cn, formatTime, formatWeekdayDate } from "@/lib/utils";
 
 type ReportMediaItem = { id?: string; url: string; type: string; title?: string };
 
@@ -47,14 +47,7 @@ function formatNzDate(iso?: string, withTime = false) {
     return "—";
   }
 
-  return new Intl.DateTimeFormat("en-NZ", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    ...(withTime ? { hour: "numeric", minute: "2-digit", hour12: true } : {}),
-    timeZone: "Pacific/Auckland"
-  }).format(new Date(iso));
+  return withTime ? `${formatWeekdayDate(iso)}, ${formatTime(iso)}` : formatWeekdayDate(iso);
 }
 
 function yesNo(value?: boolean) {

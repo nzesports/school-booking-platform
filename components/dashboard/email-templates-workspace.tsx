@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { EmailEditor } from "@/components/ui/email-editor";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import type { EmailTemplateSummary } from "@/lib/domain/types";
 import { renderBrandedEmail } from "@/lib/services/email-layout";
 import {
@@ -121,28 +122,28 @@ export function EmailTemplatesWorkspace({
             iconClassName="bg-[#eaf8ee] text-[#117a2e]"
             label="Active templates"
             value={String(activeCount)}
-            hint="Published and in use"
+            info="Published and in use"
           />
           <StatTile
             icon={<PencilLine className="h-5 w-5" />}
             iconClassName="bg-[#fff5df] text-[#b7791f]"
             label="Drafts"
             value={String(draftCount)}
-            hint="Fall back to built-in wording"
+            info="Fall back to built-in wording"
           />
           <StatTile
             icon={<Grid2x2 className="h-5 w-5" />}
             iconClassName="bg-[#e8f1fd] text-[#2563eb]"
             label="Categories"
             value={String(categoryCount)}
-            hint="School, Ambassador, Finance, System"
+            info="School, Ambassador, Finance, System"
           />
           <StatTile
             icon={<Send className="h-5 w-5" />}
             iconClassName="bg-[#ece9ff] text-[#5b4fc0]"
             label="Total templates"
             value={String(templates.length)}
-            hint="Across all platform emails"
+            info="Across all platform emails"
           />
         </div>
         <Button
@@ -340,19 +341,19 @@ export function EmailTemplatesWorkspace({
                   </label>
 
                   <div className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
                       Email body
+                      <InfoTooltip label="Email body">
+                        The branded header, footer, unsubscribe link, and website links are added
+                        automatically — only write the message itself. Images must be hosted
+                        https links (max 560px wide) so email clients don&apos;t block them.
+                      </InfoTooltip>
                     </span>
                     <EmailEditor
                       name="bodyHtml"
                       defaultValue={selected.bodyHtml ?? ""}
                       placeholders={PLACEHOLDERS}
                     />
-                    <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-                      The branded header, footer, unsubscribe link, and website links are added
-                      automatically — only write the message itself. Images must be hosted
-                      https links (max 560px wide) so email clients don&apos;t block them.
-                    </p>
                   </div>
 
                   <details className="rounded-[14px] border border-[color:var(--border-soft)] bg-white/80 px-4 py-3">
@@ -463,13 +464,13 @@ function StatTile({
   iconClassName,
   label,
   value,
-  hint
+  info
 }: {
   icon: ReactNode;
   iconClassName: string;
   label: string;
   value: string;
-  hint: string;
+  info: string;
 }) {
   return (
     <div className="flex items-center gap-3.5 rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-4">
@@ -482,11 +483,13 @@ function StatTile({
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block text-xs text-[color:var(--text-soft)]">{label}</span>
+        <span className="flex items-center gap-1.5 text-xs text-[color:var(--text-soft)]">
+          {label}
+          <InfoTooltip label={label}>{info}</InfoTooltip>
+        </span>
         <span className="block text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           {value}
         </span>
-        <span className="block truncate text-[11px] text-[color:var(--text-soft)]">{hint}</span>
       </span>
     </div>
   );

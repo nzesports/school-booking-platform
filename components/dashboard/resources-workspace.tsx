@@ -33,6 +33,7 @@ import { createPortal } from "react-dom";
 import { TrainingPackResourcePicker, RemoveFromTrainingPackButton } from "@/components/dashboard/training-pack-resource-picker";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 import type { ResourceAudience } from "@/lib/domain/types";
 import type {
@@ -40,7 +41,7 @@ import type {
   ResourceRecord,
   TrainingPackRecord
 } from "@/lib/services/portal";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { RESOURCE_UPLOAD_MAX_MB, RESOURCE_VIDEO_UPLOAD_MAX_MB, resourceUploadLimitMb } from "@/lib/resource-upload";
 import { prepareResourceUploadAction } from "@/app/portal/actions";
 import { uploadResourceWithProgress } from "@/lib/resource-upload-client";
@@ -259,12 +260,7 @@ function formatUpdatedDate(iso?: string) {
     return "—";
   }
 
-  return new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    day: "numeric",
-    month: "short",
-    year: "numeric"
-  }).format(new Date(iso));
+  return formatDate(iso);
 }
 
 function previewUrlFor(resource: ResourceRecord) {
@@ -1146,7 +1142,12 @@ function TrainingPackEditorDialog({
           />
         </label>
         <label className="grid gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
-          Linked presentation
+          <span className="flex items-center gap-2">
+            Linked presentation
+            <InfoTooltip label="Linked presentation">
+              Optional. Linking a presentation automatically associates new pack resources with it.
+            </InfoTooltip>
+          </span>
           <select name="presentationTypeId" defaultValue="" className={inputClassName}>
             <option value="">No linked presentation</option>
             {presentations.map((presentation) => (
@@ -1155,9 +1156,6 @@ function TrainingPackEditorDialog({
               </option>
             ))}
           </select>
-          <span className="text-xs font-normal leading-5 text-[color:var(--text-soft)]">
-            Optional. Linking a presentation automatically associates new pack resources with it.
-          </span>
         </label>
         <div className="flex items-center justify-end gap-3 border-t border-[color:var(--border-soft)] pt-4">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -1820,10 +1818,10 @@ function EditorSection({
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eaf8ee] text-[#117a2e]">
           <Icon className="h-4.5 w-4.5" />
         </span>
-        <div>
-          <h3 className="font-semibold text-[color:var(--navy)]">{title}</h3>
-          <p className="mt-0.5 text-xs leading-5 text-[color:var(--text-soft)]">{subtitle}</p>
-        </div>
+        <h3 className="flex min-h-10 items-center gap-2 font-semibold text-[color:var(--navy)]">
+          {title}
+          <InfoTooltip label={title}>{subtitle}</InfoTooltip>
+        </h3>
       </div>
       {children}
     </section>

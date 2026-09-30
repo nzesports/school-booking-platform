@@ -10,7 +10,7 @@ import type {
   School,
   SchoolFeedbackSummary
 } from "@/lib/domain/types";
-import { formatShortDate } from "@/lib/utils";
+import { formatDateOnly, formatShortDate } from "@/lib/utils";
 
 export type DashboardRange =
   | `year:${number}`
@@ -126,12 +126,7 @@ export function readDashboardCustomRange(
 }
 
 function formatCustomRangeDate(value: string) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC"
-  }).format(new Date(`${value}T00:00:00Z`));
+  return formatDateOnly(value);
 }
 
 export function dashboardRangeLabel(

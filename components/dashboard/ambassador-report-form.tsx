@@ -18,9 +18,11 @@ import {
 import { ReportMediaUpload } from "@/components/dashboard/report-media-upload";
 import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
+import { formatDate } from "@/lib/utils";
 
 const RATING_ROWS = [
   { name: "attendanceRating", label: "Attendance" },
@@ -100,7 +102,7 @@ export function AmbassadorReportForm({
             >
               {sessions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.schoolName} · {option.presentationTitle} · {new Intl.DateTimeFormat("en-NZ", { day: "numeric", month: "short", year: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(option.startsAt))}
+                  {option.schoolName} · {option.presentationTitle} · {formatDate(option.startsAt)}
                 </option>
               ))}
             </select>
@@ -262,8 +264,10 @@ function ReportField({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-sm font-semibold text-[color:var(--navy)]">{label}</span>
-      {hint ? <span className="-mt-1 text-xs text-[color:var(--text-soft)]">{hint}</span> : null}
+      <span className="flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+        {label}
+        {hint ? <InfoTooltip label={label}>{hint}</InfoTooltip> : null}
+      </span>
       {children}
     </label>
   );

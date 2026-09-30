@@ -1,6 +1,7 @@
 "use client";
 
 import { StatusEmailForm } from "@/components/dashboard/status-email-form";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   addDays,
@@ -1320,8 +1321,12 @@ function BookingsCalendar({
           >
             <ChevronRight className="h-4 w-4" />
           </button>
-          <h3 className="ml-2 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+          <h3 className="ml-2 flex items-center gap-2 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
             {monthLabel}
+            <InfoTooltip label="Bookings calendar">
+              Click any session for full details, contact info, and assignment status. Empty days show
+              where the gaps are.
+            </InfoTooltip>
           </h3>
           <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#64748b]">
             {monthCount} session{monthCount === 1 ? "" : "s"}
@@ -1416,11 +1421,6 @@ function BookingsCalendar({
           </div>
         </div>
       </div>
-
-      <p className="mt-3 text-xs text-[color:var(--text-soft)]">
-        Click any session for full details, contact info, and assignment status. Empty days show
-        where the gaps are.
-      </p>
     </div>
   );
 }

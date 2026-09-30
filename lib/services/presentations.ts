@@ -10,6 +10,7 @@ import { unstable_cache } from "next/cache";
 import { PUBLIC_CONTENT_TAG } from "@/lib/services/cache-tags";
 import { createSignedResourceUrl } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatDate } from "@/lib/utils";
 
 // Regions, homepage copy, testimonials, and resources are cached for five
 // minutes and invalidated whenever staff save public content. Presentation
@@ -309,13 +310,7 @@ async function listPublicTestimonialsUncached(limit = 6): Promise<Testimonial[]>
     presentationTitle:
       (presentationsById.get(review.presentation_type_id as string)?.title as string | undefined) ??
       undefined,
-    feedbackDate: review.created_at
-      ? new Intl.DateTimeFormat("en-NZ", {
-          timeZone: "Pacific/Auckland",
-          month: "short",
-          year: "numeric"
-        }).format(new Date(review.created_at as string))
-      : undefined,
+    feedbackDate: review.created_at ? formatDate(review.created_at as string) : undefined,
     rating: review.rating === null || review.rating === undefined ? undefined : Number(review.rating)
   }));
 }

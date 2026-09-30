@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { SchoolCombobox } from "@/components/dashboard/school-combobox";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { Region, School } from "@/lib/domain/types";
 
@@ -76,6 +77,7 @@ export function AmbassadorManualBookingDialog({
             <BookingDialogShell
               title="Log your booking"
               description="Add a booking you arranged directly with a school. You will be assigned automatically and can confirm it straight away."
+              descriptionDisplay="tooltip"
               onClose={() => setOpen(false)}
               compact
               maxWidthClassName="max-w-[920px]"
@@ -177,12 +179,12 @@ export function AmbassadorManualBookingDialog({
                 </Field>
 
                 <fieldset className="rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4">
-                  <legend className="px-1 text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
+                  <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--text-soft)]">
                     Did you personally source this school relationship?
+                    <InfoTooltip label="School sourcing">
+                      This attribution is used to track sourced schools and the additional {payoutLabels.sourcingBonus} bonus.
+                    </InfoTooltip>
                   </legend>
-                  <p className="mt-2 text-sm leading-6 text-[color:var(--text-soft)]">
-                    This attribution is used to track sourced schools and the additional {payoutLabels.sourcingBonus} bonus.
-                  </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
                       <input type="radio" name="schoolSource" value="sourced" required className="mt-0.5" />
@@ -202,11 +204,11 @@ export function AmbassadorManualBookingDialog({
                     className="mt-0.5 h-5 w-5 rounded border-[color:var(--border-soft)] accent-[#18a83b]"
                   />
                   <span>
-                    <span className="block text-sm font-semibold text-[color:var(--navy)]">
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
                       Confirm this booking now
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-[color:var(--text-soft)]">
-                      Leave this unticked to save it as assigned to you without marking it confirmed.
+                      <InfoTooltip label="Confirm this booking now">
+                        Leave this unticked to save it as assigned to you without marking it confirmed.
+                      </InfoTooltip>
                     </span>
                   </span>
                 </label>

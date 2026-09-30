@@ -7,10 +7,11 @@ import { createPortal } from "react-dom";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Input } from "@/components/ui/input";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export type FeedbackSessionOption = {
   id: string;
@@ -62,17 +63,8 @@ function nzTimeValue(iso?: string) {
   }).format(new Date(iso));
 }
 
-function displayDate(iso: string) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(new Date(iso));
-}
-
 function sessionLabel(session: FeedbackSessionOption) {
-  return `${session.schoolName} · ${session.presentationTitle} · ${displayDate(session.startsAt)}`;
+  return `${session.schoolName} · ${session.presentationTitle} · ${formatDate(session.startsAt)}`;
 }
 
 export function LogFeedbackDialog({
@@ -120,7 +112,7 @@ export function LogFeedbackDialog({
         session.schoolName,
         session.presentationTitle,
         session.assignedAmbassadorName,
-        displayDate(session.startsAt)
+        formatDate(session.startsAt)
       ].some((value) => value?.toLowerCase().includes(normalizedQuery))
     )
     .slice(0, 12);
@@ -397,11 +389,12 @@ export function LogFeedbackDialog({
                   </div>
                 </FeedbackSection>
 
-                <FeedbackSection title="Photos, video & evidence">
-                  <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-                    Add presentation photos, video, PDFs, or a signed media release. These files
-                    will appear in the report&apos;s media gallery for staff and admins. Up to 15
-                    files, 5 MB each.
+                <FeedbackSection
+                  title="Photos, video & evidence"
+                  help="Add presentation photos, video, PDFs, or a signed media release. These files will appear in the report's media gallery for staff and admins."
+                >
+                  <p className="text-xs text-[color:var(--text-soft)]">
+                    Up to 15 files, 5 MB each.
                   </p>
                   <input
                     type="file"
@@ -471,10 +464,21 @@ export function LogFeedbackDialog({
   );
 }
 
-function FeedbackSection({ title, children }: { title: string; children: ReactNode }) {
+function FeedbackSection({
+  title,
+  help,
+  children
+}: {
+  title: string;
+  help?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-      <h3 className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">{title}</h3>
+      <h3 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+        {title}
+        {help ? <InfoTooltip label={title}>{help}</InfoTooltip> : null}
+      </h3>
       <div className="mt-4 grid gap-4">{children}</div>
     </section>
   );

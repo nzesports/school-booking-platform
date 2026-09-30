@@ -40,6 +40,7 @@ export function ManualSchoolDialog({
               kicker="Manual entry"
               title="Add a school"
               description="Create the school record and add its primary contact details."
+              descriptionDisplay="tooltip"
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[960px]"
               overlayClassName="z-[90]"

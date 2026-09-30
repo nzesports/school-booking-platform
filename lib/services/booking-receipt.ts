@@ -1,6 +1,5 @@
 import { siteUrl } from "@/lib/site-url";
-import { formatTime } from "@/lib/utils";
-import { formatSchoolEmailDate } from "./school-email-details";
+import { formatTime, formatWeekdayDate } from "@/lib/utils";
 
 export type BookingReceiptSession = {
   presentationTitle: string;
@@ -34,7 +33,7 @@ export function buildBookingReceipt(details: BookingReceiptDetails) {
     <h3 style="margin:24px 0 8px;">Requested session ${index + 1}</h3>
     <table role="table" style="width:100%;border-collapse:collapse;">
       ${row("Presentation", session.presentationTitle)}
-      ${row("Date", formatSchoolEmailDate(session.startsAt))}
+      ${row("Date", formatWeekdayDate(session.startsAt))}
       ${row("Time", `${formatTime(session.startsAt)} – ${formatTime(session.endsAt)} (New Zealand time)`)}
       ${row("School / location", details.schoolName)}
       ${row("Region", session.regionName)}

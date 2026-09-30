@@ -2,12 +2,14 @@ import { useId, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { cn } from "@/lib/utils";
 
 export function BookingDialogShell({
   title,
   kicker,
   description,
+  descriptionDisplay = "text",
   onClose,
   children,
   headerAside,
@@ -20,6 +22,10 @@ export function BookingDialogShell({
   title: string;
   kicker?: string;
   description?: string;
+  // "tooltip" tucks explanatory prose behind a "?" beside the title (dashboard
+  // dialogs); "text" keeps it as a visible paragraph (public site, data lines,
+  // and instructions the user must read before acting).
+  descriptionDisplay?: "text" | "tooltip";
   onClose: () => void;
   children: ReactNode;
   headerAside?: ReactNode;
@@ -95,19 +101,23 @@ export function BookingDialogShell({
                   {kicker}
                 </p>
               ) : null}
-              <h2
-                id={titleId}
-                className={cn(
-                  "font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--navy)]",
-                  kicker && "mt-2",
-                  compact
-                    ? "text-[1.45rem] md:text-[1.8rem]"
-                    : "max-w-[19ch] text-[2.2rem] leading-[0.98] tracking-[-0.06em] md:max-w-[23ch] md:text-[3rem] xl:max-w-none"
-                )}
-              >
-                {title}
-              </h2>
-              {description ? (
+              <div className={cn("flex items-center gap-2", kicker && "mt-2")}>
+                <h2
+                  id={titleId}
+                  className={cn(
+                    "font-semibold leading-[1.02] tracking-[-0.05em] text-[color:var(--navy)]",
+                    compact
+                      ? "text-[1.45rem] md:text-[1.8rem]"
+                      : "max-w-[19ch] text-[2.2rem] leading-[0.98] tracking-[-0.06em] md:max-w-[23ch] md:text-[3rem] xl:max-w-none"
+                  )}
+                >
+                  {title}
+                </h2>
+                {description && descriptionDisplay === "tooltip" ? (
+                  <InfoTooltip label={title}>{description}</InfoTooltip>
+                ) : null}
+              </div>
+              {description && descriptionDisplay === "text" ? (
                 <p className="mt-3 max-w-4xl text-base leading-8 text-[color:var(--text-soft)]">
                   {description}
                 </p>

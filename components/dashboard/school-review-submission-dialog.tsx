@@ -7,9 +7,7 @@ import { createPortal } from "react-dom";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import type { SchoolFeedbackSummary } from "@/lib/domain/types";
-import { cn } from "@/lib/utils";
-
-const NZ_TIME_ZONE = "Pacific/Auckland";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 
 type SchoolReviewSubmissionButtonProps = {
   review: SchoolFeedbackSummary;
@@ -25,13 +23,7 @@ function formatNzDate(iso?: string, withTime = false) {
     return "Not recorded";
   }
 
-  return new Intl.DateTimeFormat("en-NZ", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    ...(withTime ? { hour: "numeric", minute: "2-digit", hour12: true } : {}),
-    timeZone: NZ_TIME_ZONE
-  }).format(new Date(iso));
+  return withTime ? formatDateTime(iso) : formatDate(iso);
 }
 
 function displayAnswer(value?: string) {

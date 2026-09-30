@@ -25,6 +25,7 @@ import { ReportDetailsButton } from "@/components/dashboard/report-details-dialo
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type {
   AmbassadorProfile,
@@ -36,7 +37,7 @@ import type {
 } from "@/lib/domain/types";
 import type { ResourceRecord } from "@/lib/services/portal";
 import { colourWithAlpha } from "@/lib/presentation-colors";
-import { formatCurrency, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
+import { MONTH_ABBREVIATIONS, formatCurrency, formatDate, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -104,10 +105,10 @@ export function AmbassadorDashboard({
           </div>
         </div>
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          <ImpactMetric icon={<UsersRound className="h-5 w-5" />} tone="green" label="Students reached" value={studentsReached.toLocaleString("en-NZ")} detail="From submitted reports" />
-          <ImpactMetric icon={<School2 className="h-5 w-5" />} tone="blue" label="Schools presented to" value={schoolsReached.toLocaleString("en-NZ")} detail="Distinct schools reported" />
+          <ImpactMetric icon={<UsersRound className="h-5 w-5" />} tone="green" label="Students reached" value={studentsReached.toLocaleString("en-NZ")} info="From submitted reports" />
+          <ImpactMetric icon={<School2 className="h-5 w-5" />} tone="blue" label="Schools presented to" value={schoolsReached.toLocaleString("en-NZ")} info="Distinct schools reported" />
           <ImpactMetric icon={<Presentation className="h-5 w-5" />} tone="violet" label="Presentations completed" value={completedSessions.length.toLocaleString("en-NZ")} detail={`${reportDueSessions.length} report${reportDueSessions.length === 1 ? "" : "s"} still due`} />
-          <ImpactMetric icon={<CalendarCheck2 className="h-5 w-5" />} tone="amber" label="Upcoming" value={upcomingSessions.length.toLocaleString("en-NZ")} detail="Confirmed school sessions" />
+          <ImpactMetric icon={<CalendarCheck2 className="h-5 w-5" />} tone="amber" label="Upcoming" value={upcomingSessions.length.toLocaleString("en-NZ")} info="Confirmed school sessions" />
         </div>
       </Card>
 
@@ -119,14 +120,10 @@ export function AmbassadorDashboard({
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-white text-[#117a2e] shadow-[0_8px_24px_rgba(17,122,46,0.10)]">
                   <Coins className="h-5 w-5" />
                 </span>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
-                    Earnings
-                  </p>
-                  <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                    Delivery fees and sourcing bonuses
-                  </p>
-                </div>
+                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
+                  Earnings
+                  <InfoTooltip label="Earnings">Delivery fees and sourcing bonuses</InfoTooltip>
+                </p>
               </div>
 
               <div className="mt-7 flex flex-wrap items-end justify-between gap-4">
@@ -157,21 +154,21 @@ export function AmbassadorDashboard({
               <EarningsBreakdownRow
                 icon={<Banknote className="h-4 w-4" />}
                 label="Paid to date"
-                detail="Completed payments"
+                info="Completed payments"
                 value={formatCurrency(ambassador.paidPaymentsCents)}
                 tone="green"
               />
               <EarningsBreakdownRow
                 icon={<FileCheck2 className="h-4 w-4" />}
                 label="Outstanding"
-                detail="Received or approved"
+                info="Received or approved"
                 value={formatCurrency(ambassador.pendingPaymentsCents)}
                 tone="amber"
               />
               <EarningsBreakdownRow
                 icon={<CircleDollarSign className="h-4 w-4" />}
                 label="Sourcing bonus"
-                detail="Eligible sourced schools"
+                info="Eligible sourced schools"
                 value={formatCurrency(sourcingBonusCents)}
                 tone="violet"
               />
@@ -338,21 +335,21 @@ function PresentationDownloadCard({
   );
 }
 
-function ImpactMetric({ icon, tone, label, value, detail }: { icon: ReactNode; tone: "green" | "blue" | "violet" | "amber"; label: string; value: string; detail: string }) {
+function ImpactMetric({ icon, tone, label, value, detail, info }: { icon: ReactNode; tone: "green" | "blue" | "violet" | "amber"; label: string; value: string; detail?: string; info?: string }) {
   const tones = { green: "bg-[#e6f6eb] text-[#117a2e]", blue: "bg-[#e8f1fd] text-[#1e4fae]", violet: "bg-[#f1edfd] text-[#6941c6]", amber: "bg-[#fff5df] text-[#9a5a00]" };
-  return <div className="flex gap-4 border-b border-[color:var(--border-soft)] p-5 last:border-b-0 sm:even:border-l xl:border-b-0 xl:border-l xl:first:border-l-0 md:p-6"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] ${tones[tone]}`}>{icon}</span><div><p className="text-xs font-semibold uppercase tracking-[0.13em] text-[color:var(--text-soft)]">{label}</p><p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{value}</p><p className="mt-1 text-xs text-[color:var(--text-soft)]">{detail}</p></div></div>;
+  return <div className="flex gap-4 border-b border-[color:var(--border-soft)] p-5 last:border-b-0 sm:even:border-l xl:border-b-0 xl:border-l xl:first:border-l-0 md:p-6"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] ${tones[tone]}`}>{icon}</span><div><p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-[color:var(--text-soft)]">{label}{info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}</p><p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{value}</p>{detail ? <p className="mt-1 text-xs text-[color:var(--text-soft)]">{detail}</p> : null}</div></div>;
 }
 
 function EarningsBreakdownRow({
   icon,
   label,
-  detail,
+  info,
   value,
   tone
 }: {
   icon: ReactNode;
   label: string;
-  detail: string;
+  info: string;
   value: string;
   tone: "green" | "amber" | "violet";
 }) {
@@ -368,10 +365,10 @@ function EarningsBreakdownRow({
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] ${iconClassName}`}>
           {icon}
         </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[color:var(--navy)]">{label}</p>
-          <p className="mt-0.5 truncate text-xs text-[color:var(--text-soft)]">{detail}</p>
-        </div>
+        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+          <span className="truncate">{label}</span>
+          <InfoTooltip label={label}>{info}</InfoTooltip>
+        </p>
       </div>
       <p className="shrink-0 text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
         {value}
@@ -395,7 +392,7 @@ export function EarningsYearChart({ payments }: { payments: PaymentRecord[] }) {
 
     return {
       key: `${currentYear}-${month}`,
-      label: new Intl.DateTimeFormat("en-NZ", { month: "short" }).format(date),
+      label: MONTH_ABBREVIATIONS[month],
       year: currentYear,
       amountCents
     };
@@ -456,7 +453,8 @@ function OpportunityCard({ session, applyAction, withdrawApplicationAction }: { 
 }
 
 function ScheduleRow({ session, requestWithdrawalAction }: { session: BookingSessionView; requestWithdrawalAction: FormAction }) {
-  return <div className="grid items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white p-3.5 sm:grid-cols-[54px_minmax(0,1fr)_auto]"><div className="flex h-[54px] w-[54px] flex-col items-center justify-center rounded-[14px] bg-[#eaf8ee] text-center"><span className="text-[10px] font-semibold uppercase text-[#117a2e]">{new Intl.DateTimeFormat("en-NZ", { month: "short", timeZone: "Pacific/Auckland" }).format(new Date(session.startsAt))}</span><span className="text-xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{new Intl.DateTimeFormat("en-NZ", { day: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(session.startsAt))}</span></div><div className="min-w-0"><p className="truncate font-semibold text-[color:var(--navy)]">{session.schoolName}</p><p className="mt-1 truncate text-sm text-[color:var(--text-soft)]">{session.presentationTitle} · {formatTime(session.startsAt)}</p></div><div className="flex flex-wrap gap-2 sm:justify-end"><SessionDetailsButton session={session} /><AmbassadorWithdrawDialog session={session} action={requestWithdrawalAction} returnTo="/ambassador" /></div></div>;
+  const [day, month, year] = formatDate(session.startsAt).split(" ");
+  return <div className="grid items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white p-3.5 sm:grid-cols-[54px_minmax(0,1fr)_auto]"><div className="flex h-[54px] w-[54px] flex-col items-center justify-center gap-0.5 rounded-[14px] bg-[#eaf8ee] text-center leading-none"><span className="text-[10px] font-semibold uppercase text-[#117a2e]">{month}</span><span className="text-xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{day}</span><span className="text-[10px] text-[#117a2e]">{year}</span></div><div className="min-w-0"><p className="truncate font-semibold text-[color:var(--navy)]">{session.schoolName}</p><p className="mt-1 truncate text-sm text-[color:var(--text-soft)]">{session.presentationTitle} · {formatTime(session.startsAt)}</p></div><div className="flex flex-wrap gap-2 sm:justify-end"><SessionDetailsButton session={session} /><AmbassadorWithdrawDialog session={session} action={requestWithdrawalAction} returnTo="/ambassador" /></div></div>;
 }
 
 function AttentionRow({ icon, label, value, href }: { icon: ReactNode; label: string; value: number; href: string }) {

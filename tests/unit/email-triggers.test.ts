@@ -21,7 +21,7 @@ import {
 
 const session = {
   contactEmail: "school@example.nz", contactName: "Teacher", schoolName: "Test School",
-  sessionDate: "22 September 2026, 9:00 am", presentationTitle: "Digital Wellbeing",
+  sessionDate: "22 Sep 2026, 9:00 am", presentationTitle: "Digital Wellbeing",
   expectedStudentCount: 120, yearLevels: "Years 7 to 8",
   bookingId: "booking-1", bookingSessionId: "session-1", referenceCode: "123456",
   sessionStartsAt: "2026-09-21T21:00:00.000Z", sessionEndsAt: "2026-09-21T22:00:00.000Z"
@@ -44,7 +44,7 @@ describe("notification routing and content", () => {
     mocks.template.mockResolvedValue({ data: { ...schoolTemplates.find((template) => template.template_key === key), is_active: true } });
     await send(session);
     const html = mocks.send.mock.calls[0][0].html;
-    for (const value of ["Digital Wellbeing", "Test School", "Tuesday, 22 September 2026", "9:00", "10:00", "120"]) expect(html).toContain(value);
+    for (const value of ["Digital Wellbeing", "Test School", "Tue 22 Sep 2026", "9:00", "10:00", "120"]) expect(html).toContain(value);
     expect(html.match(/data-school-session-details/g)).toHaveLength(1);
     expect(html).not.toMatch(/\{\{\w+\}\}/);
   });
@@ -53,7 +53,7 @@ describe("notification routing and content", () => {
     mocks.template.mockResolvedValue({ data: { subject: "School email", body_html: "<p>Hello</p>", is_active: true } });
     await send(session);
     const html = mocks.send.mock.calls[0][0].html;
-    for (const detail of ["Digital Wellbeing", "Test School", "Tuesday, 22 September 2026", "9:00", "10:00", "120", "Years 7 to 8"]) {
+    for (const detail of ["Digital Wellbeing", "Test School", "Tue 22 Sep 2026", "9:00", "10:00", "120", "Years 7 to 8"]) {
       expect(html).toContain(detail);
     }
   });
@@ -75,7 +75,7 @@ describe("notification routing and content", () => {
       { presentationTitle: "Online Safety", regionName: "Hamilton", startsAt: "2026-09-22T21:00:00Z", endsAt: "2026-09-22T22:00:00Z", yearLevels: "Years 9 to 13", expectedStudentCount: 85 }
     ] });
     const html = mocks.send.mock.calls[0][0].html;
-    for (const detail of ["Digital Wellbeing", "Online Safety", "120", "85", "Tuesday, 22 September 2026", "Wednesday, 23 September 2026", "9:00", "10:00"]) expect(html).toContain(detail);
+    for (const detail of ["Digital Wellbeing", "Online Safety", "120", "85", "Tue 22 Sep 2026", "Wed 23 Sep 2026", "9:00", "10:00"]) expect(html).toContain(detail);
     expect(html.match(/Requested session 1/g)).toHaveLength(1);
   });
   it("sends school and ambassador signup and approval emails to the correct users", async () => {

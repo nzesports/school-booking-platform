@@ -41,8 +41,9 @@ import {
   AmbassadorProfileWorkspace,
   AmbassadorsWorkspace,
   type AmbassadorProfileSection,
-  type VolunteerDirectorySort,
-  type VolunteerDirectoryStatus
+  ambassadorListStatusFor,
+  readAmbassadorListStatus,
+  type VolunteerDirectorySort
 } from "@/components/dashboard/ambassadors-workspace";
 import {
   BookingLifecyclePanel,
@@ -62,6 +63,7 @@ import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialo
 import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
@@ -182,12 +184,11 @@ export default async function StaffPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
-  const ambassadorTab =
-    readSearchParam(resolvedSearchParams, "tab") === "applications"
-      ? ("applications" as const)
-      : ("profiles" as const);
-  const volunteerDirectoryStatus: VolunteerDirectoryStatus =
-    readSearchParam(resolvedSearchParams, "roster") === "inactive" ? "inactive" : "active";
+  const ambassadorListStatus = readAmbassadorListStatus({
+    status: readSearchParam(resolvedSearchParams, "status"),
+    tab: readSearchParam(resolvedSearchParams, "tab"),
+    roster: readSearchParam(resolvedSearchParams, "roster")
+  });
   const volunteerDirectoryQuery = readSearchParam(resolvedSearchParams, "q") ?? "";
   const volunteerDirectorySort: VolunteerDirectorySort =
     readSearchParam(resolvedSearchParams, "sort") === "desc" ? "desc" : "asc";
@@ -453,10 +454,9 @@ export default async function StaffPortalPage({
               reports={portal.reports}
               schoolReviews={portal.schoolReviews}
               payments={portal.payments}
-              activeTab={ambassadorTab}
-              directoryStatus={volunteerDirectoryStatus}
-              directoryQuery={volunteerDirectoryQuery}
-              directorySort={volunteerDirectorySort}
+              status={ambassadorListStatus}
+              query={volunteerDirectoryQuery}
+              sort={volunteerDirectorySort}
               basePath="/staff/ambassadors"
             />
           </div>
@@ -469,11 +469,7 @@ export default async function StaffPortalPage({
             ) : null}
             <div>
               <ButtonLink
-                href={`/staff/ambassadors?tab=${
-                  selectedAmbassador.status === "applied" || selectedAmbassador.status === "declined"
-                    ? "applications"
-                    : "profiles"
-                }`}
+                href={`/staff/ambassadors?status=${ambassadorListStatusFor(selectedAmbassador)}`}
                 variant="ghost"
                 className="min-h-[42px] rounded-[14px] px-4 py-2"
               >
@@ -581,13 +577,13 @@ export default async function StaffPortalPage({
               </p>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  <h2 className="flex items-center gap-2 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
                     {isCreatingResource ? "Create Resource" : "Edit Resource"}
+                    <InfoTooltip label={isCreatingResource ? "Create Resource" : "Edit Resource"}>
+                      Upload files, attach videos, link resources to presentations, and control who can
+                      access them.
+                    </InfoTooltip>
                   </h2>
-                  <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                    Upload files, attach videos, link resources to presentations, and control who can
-                    access them.
-                  </p>
                 </div>
                 <ButtonLink href="/staff/resources" variant="secondary">
                   Back to resources
@@ -691,7 +687,10 @@ export default async function StaffPortalPage({
                     </select>
                   </Field>
                   <div className="lg:col-span-2">
-                    <Field label="Sharing permission">
+                    <Field
+                      label="Sharing permission"
+                      info="Public sharing is required for Schools to see this resource — internal resources stay hidden from school portals even when Schools is ticked."
+                    >
                       <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm sm:grid-cols-2">
                         {[
                           ["internal", "Internal", "NZ Esports use only. Not visible to schools."],
@@ -714,10 +713,6 @@ export default async function StaffPortalPage({
                           </label>
                         ))}
                       </div>
-                      <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-                        Public sharing is required for Schools to see this resource — internal
-                        resources stay hidden from school portals even when Schools is ticked.
-                      </p>
                     </Field>
                   </div>
                 </div>
@@ -747,7 +742,10 @@ export default async function StaffPortalPage({
                   />
                 </Field>
 
-                <Field label="Linked presentation">
+                <Field
+                  label="Linked presentation"
+                  info="Linked ambassador resources are automatically included in the Materials tab."
+                >
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
@@ -760,9 +758,6 @@ export default async function StaffPortalPage({
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-                    Linked ambassador resources are automatically included in the Materials tab.
-                  </p>
                 </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -1334,11 +1329,12 @@ function NoticeBanner({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, info, children }: { label: string; info?: string; children: ReactNode }) {
   return (
     <label className="grid gap-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
         {label}
+        {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
       </span>
       {children}
     </label>

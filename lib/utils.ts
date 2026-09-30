@@ -21,33 +21,41 @@ export function formatCurrency(amountCents: number, currency = "NZD") {
   }).format(amountCents / 100);
 }
 
-export function formatLongDate(value: string | Date) {
-  return new Intl.DateTimeFormat("en-NZ", {
+export const MONTH_ABBREVIATIONS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The platform's one date style: "03 Jun 2026", in New Zealand time. Built
+// from numeric parts because the en-NZ locale abbreviates September as "Sept".
+export function formatDate(value: string | Date) {
+  const parts = new Intl.DateTimeFormat("en-NZ", {
     timeZone: "Pacific/Auckland",
-    day: "numeric",
-    month: "long",
+    day: "2-digit",
+    month: "numeric",
     year: "numeric"
-  }).format(new Date(value));
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+
+  return `${part("day")} ${MONTH_ABBREVIATIONS[Number(part("month")) - 1]} ${part("year")}`;
+}
+
+// A plain calendar date ("2026-06-03") has no time zone. Midnight UTC is
+// midday in New Zealand (+12/+13), so it formats as that same day.
+export function formatDateOnly(dateString: string) {
+  return formatDate(`${dateString}T00:00:00Z`);
+}
+
+export function formatLongDate(value: string | Date) {
+  return formatDate(value);
 }
 
 export function formatDateTime(value: string | Date) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date(value));
+  return `${formatDate(value)}, ${formatTime(value)}`;
 }
 
-export function formatShortDate(value: string | Date, includeYear = false) {
-  return new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    day: "numeric",
-    month: "short",
-    ...(includeYear ? { year: "numeric" as const } : {})
-  }).format(new Date(value));
+// Kept for existing callers: every date now shows its year.
+export function formatShortDate(value: string | Date, _includeYear = false) {
+  void _includeYear;
+  return formatDate(value);
 }
 
 export function formatTime(value: string | Date) {
@@ -58,14 +66,14 @@ export function formatTime(value: string | Date) {
   }).format(new Date(value));
 }
 
-export function formatWeekdayDate(value: string | Date, includeYear = false) {
-  return new Intl.DateTimeFormat("en-NZ", {
+export function formatWeekdayDate(value: string | Date, _includeYear = false) {
+  void _includeYear;
+  const weekday = new Intl.DateTimeFormat("en-NZ", {
     timeZone: "Pacific/Auckland",
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(includeYear ? { year: "numeric" as const } : {})
+    weekday: "short"
   }).format(new Date(value));
+
+  return `${weekday} ${formatDate(value)}`;
 }
 
 export function initials(value: string) {

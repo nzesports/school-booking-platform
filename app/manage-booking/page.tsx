@@ -8,7 +8,7 @@ import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { ButtonLink } from "@/components/ui/button";
 import { loadGuestBookings } from "@/lib/services/guest-booking-access";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
-import { formatDateTime, formatTime } from "@/lib/utils";
+import { formatDate, formatDateTime, formatTime } from "@/lib/utils";
 import { changeGuestSessionAction, endBookingAccessAction, requestBookingAccessAction } from "./actions";
 
 export const metadata: Metadata = {
@@ -100,15 +100,14 @@ export default async function ManageBookingPage({ searchParams }: {
           <div className="divide-y divide-slate-200 px-5 sm:px-8">{booking.booking_sessions.map((session) => {
             const canChange = activeStatuses.has(session.status) && Date.parse(session.starts_at) > Date.now() + CHANGE_NOTICE_HOURS * 3600000;
             const canReschedule = canChange && !["reschedule_requested", "withdrawal_requested"].includes(session.status);
-            const date = new Date(session.starts_at);
-            const datePart = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-NZ", { ...options, timeZone: "Pacific/Auckland" }).format(date);
+            const [dateDay, dateMonth, dateYear] = formatDate(session.starts_at).split(" ");
             const statusColour = ["confirmed", "ambassador_assigned", "delivered"].includes(session.status) ? "border-green-200 bg-green-50 text-green-800" : ["cancelled", "declined"].includes(session.status) ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-900";
             return <section key={session.id} className="py-7 sm:py-8">
               <div className="flex items-start gap-4 sm:gap-6">
                 <div className="w-16 shrink-0 overflow-hidden rounded-2xl border border-blue-100 bg-blue-50 text-center text-[color:var(--navy)] sm:w-20">
-                  <div className="bg-blue-100/70 py-1.5 text-xs font-semibold uppercase tracking-wider">{datePart({ month: "short" })}</div>
-                  <div className="py-2 text-3xl font-semibold">{datePart({ day: "numeric" })}</div>
-                  <div className="pb-2 text-xs text-slate-600">{datePart({ year: "numeric" })}</div>
+                  <div className="bg-blue-100/70 py-1.5 text-xs font-semibold uppercase tracking-wider">{dateMonth}</div>
+                  <div className="py-2 text-3xl font-semibold">{dateDay}</div>
+                  <div className="pb-2 text-xs text-slate-600">{dateYear}</div>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="mb-3 flex flex-wrap items-center gap-2"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${statusColour}`}><span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />{session.status.replaceAll("_", " ")}</span></div>

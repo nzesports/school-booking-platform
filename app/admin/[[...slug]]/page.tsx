@@ -7,9 +7,7 @@ import {
   ArrowLeft,
   Bell,
   CalendarDays,
-  CircleCheck,
   CircleDollarSign,
-  Clock3,
   FileText,
   FolderKanban,
   GraduationCap,
@@ -54,6 +52,9 @@ import {
 } from "@/app/portal/actions";
 import {
   AmbassadorProfileWorkspace,
+  AmbassadorsWorkspace,
+  ambassadorListStatusFor,
+  readAmbassadorListStatus,
   type AmbassadorProfileSection
 } from "@/components/dashboard/ambassadors-workspace";
 import { CopyTextButton } from "@/components/dashboard/copy-text-button";
@@ -79,6 +80,7 @@ import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialo
 import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requirePortalAccess } from "@/lib/services/auth";
@@ -93,7 +95,7 @@ import {
 } from "@/lib/services/dashboard-insights";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getAdminPortalData } from "@/lib/services/portal";
-import { cn, formatCurrency, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
+import { cn, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
 
 const directoryGridClass =
   "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,110px)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1.5fr)_minmax(0,180px)]";
@@ -176,8 +178,10 @@ export default async function AdminPortalPage({
     ? Number(rawAnalyticsYear)
     : undefined;
   const activeBookingView = readBookingLifecycleView(resolvedSearchParams.status);
-  const ambassadorTab =
-    readSearchParam(resolvedSearchParams, "view") === "pending" ? "pending" : "approved";
+  const ambassadorListStatus = readAmbassadorListStatus({
+    status: readSearchParam(resolvedSearchParams, "status"),
+    view: readSearchParam(resolvedSearchParams, "view")
+  });
   const requestedAmbassadorSection = readSearchParam(resolvedSearchParams, "section");
   const ambassadorSection: AmbassadorProfileSection = [
     "overview",
@@ -307,15 +311,9 @@ export default async function AdminPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
-  const pendingAmbassadors = portal.ambassadors.filter(
-    (ambassador) => ambassador.status === "applied"
-  );
-  const approvedAmbassadors = portal.ambassadors.filter(
-    (ambassador) => ambassador.status === "approved" || ambassador.status === "inactive"
-  );
-  const visibleAmbassadors =
-    ambassadorTab === "pending" ? pendingAmbassadors : approvedAmbassadors;
-  const ambassadorListHref = `/admin/ambassadors?view=${ambassadorTab}`;
+  const ambassadorListHref = `/admin/ambassadors?status=${
+    selectedAmbassador ? ambassadorListStatusFor(selectedAmbassador) : ambassadorListStatus
+  }`;
   const paymentSettings = route === "payments" ? await getPaymentSettings() : null;
   const feedbackSearchParams = new URLSearchParams({ range: dashboardRange });
   if (customRange) {
@@ -567,94 +565,16 @@ export default async function AdminPortalPage({
         ) : null}
 
         {route === "ambassadors" ? (
-          <DataTable
-            title="Ambassador pipeline"
-            headerContent={
-              <nav
-                aria-label="Ambassador status"
-                className="flex gap-7 border-b border-[color:var(--border-soft)]"
-              >
-                {[
-                  { value: "approved", label: "Approved", icon: CircleCheck },
-                  { value: "pending", label: "Pending", icon: Clock3 }
-                ].map(({ value, label, icon: Icon }) => {
-                  const isActive = ambassadorTab === value;
-
-                  return (
-                    <Link
-                      key={value}
-                      href={`/admin/ambassadors?view=${value}`}
-                      prefetch={false}
-                      aria-current={isActive ? "page" : undefined}
-                      aria-label={
-                        value === "pending" && pendingAmbassadors.length > 0
-                          ? `Pending, ${pendingAmbassadors.length} awaiting review`
-                          : label
-                      }
-                      className={cn(
-                        "relative inline-flex items-center gap-2 px-1 pb-3 text-sm font-semibold transition",
-                        isActive
-                          ? "text-[color:var(--navy)]"
-                          : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {label}
-                      {value === "pending" && pendingAmbassadors.length > 0 ? (
-                        <span
-                          aria-hidden="true"
-                          className="absolute -right-1 top-0 h-2 w-2 rounded-full bg-[#f4b63f] ring-2 ring-white"
-                        />
-                      ) : null}
-                      {isActive ? (
-                        <span
-                          aria-hidden="true"
-                          className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[color:var(--green)]"
-                        />
-                      ) : null}
-                    </Link>
-                  );
-                })}
-              </nav>
-            }
-            columns={["Name", "Region", "Travel", "Pending payout", "Status", "Action"]}
-            emptyMessage={
-              ambassadorTab === "pending"
-                ? "No ambassador applications are waiting for review."
-                : "No approved ambassadors to show."
-            }
-            rows={visibleAmbassadors.map((ambassador) => [
-              ambassador.name,
-              ambassador.regionSlug,
-              ambassador.openToTravel
-                ? ambassador.travelRegions.length > 0
-                  ? ambassador.travelRegions.join(", ")
-                  : "Open to travel"
-                : "Local only",
-              ambassador.pendingPaymentsCents > 0
-                ? formatCurrency(ambassador.pendingPaymentsCents)
-                : "—",
-              <StatusBadge
-                key={`${ambassador.id}-status`}
-                value={
-                  ambassador.status === "approved"
-                    ? "confirmed"
-                    : ambassador.status === "declined"
-                      ? "declined"
-                      : ambassador.status === "inactive"
-                        ? "restricted"
-                        : "tentative"
-                }
-              />,
-              <ButtonLink
-                key={`${ambassador.id}-action`}
-                href={`/admin/ambassadors/${ambassador.id}?view=${ambassadorTab}`}
-                variant="ghost"
-                className="min-h-[38px] rounded-[14px] px-3 py-1.5"
-              >
-                {ambassadorTab === "pending" ? "Review application" : "View profile"}
-              </ButtonLink>
-            ])}
+          <AmbassadorsWorkspace
+            ambassadors={portal.ambassadors}
+            bookings={portal.bookings}
+            reports={portal.reports}
+            schoolReviews={portal.schoolReviews}
+            payments={portal.payments}
+            status={ambassadorListStatus}
+            query={readSearchParam(resolvedSearchParams, "q") ?? ""}
+            sort={readSearchParam(resolvedSearchParams, "sort") === "desc" ? "desc" : "asc"}
+            basePath="/admin/ambassadors"
           />
         ) : null}
 
@@ -785,13 +705,13 @@ export default async function AdminPortalPage({
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">
                       Invite access
                     </p>
-                    <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                    <h3 className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
                       Add staff, super admins, or ambassadors
+                      <InfoTooltip label="Add staff, super admins, or ambassadors">
+                        The invite email lets them set a password. Ambassadors added here are
+                        approved automatically and skip the application queue.
+                      </InfoTooltip>
                     </h3>
-                    <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                      The invite email lets them set a password. Ambassadors added here are
-                      approved automatically and skip the application queue.
-                    </p>
                   </div>
                   <ButtonLink href="/admin/users" variant="ghost" className="min-h-[40px] px-3 py-2">
                     Dismiss
@@ -1233,12 +1153,12 @@ export default async function AdminPortalPage({
             ) : (
               <div className="mt-6 grid gap-5">
                 <div className="rounded-[20px] border border-[rgba(24,168,59,0.18)] bg-[linear-gradient(135deg,#f5fcf7,#f6faff)] px-5 py-4">
-                  <p className="font-semibold text-[color:var(--navy)]">
+                  <p className="flex items-center gap-2 font-semibold text-[color:var(--navy)]">
                     One edit updates both public views
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
-                    Short summaries feed the front-page cards. Descriptions, outcomes, equipment,
-                    formats, audience details, and What to expect feed each Learn more page.
+                    <InfoTooltip label="One edit updates both public views">
+                      Short summaries feed the front-page cards. Descriptions, outcomes, equipment,
+                      formats, audience details, and What to expect feed each Learn more page.
+                    </InfoTooltip>
                   </p>
                 </div>
 
@@ -1315,12 +1235,12 @@ export default async function AdminPortalPage({
               </p>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  <h2 className="flex items-center gap-2 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
                     {isCreatingPresentation ? "Create Presentation" : "Edit Presentation"}
+                    <InfoTooltip label={isCreatingPresentation ? "Create Presentation" : "Edit Presentation"}>
+                      Refine the presentation details, media, settings, and linked resources from one place.
+                    </InfoTooltip>
                   </h2>
-                  <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                    Refine the presentation details, media, settings, and linked resources from one place.
-                  </p>
                 </div>
                 <ButtonLink href="/admin/presentations" variant="secondary">
                   Back to presentations
@@ -1388,7 +1308,7 @@ export default async function AdminPortalPage({
 
                 <Field
                   label="Front-page card summary"
-                  hint="This is the shorter description shown on the homepage presentation card and in search results."
+                  info="This is the shorter description shown on the homepage presentation card and in search results."
                 >
                   <textarea
                     name="shortSummary"
@@ -1400,7 +1320,7 @@ export default async function AdminPortalPage({
                 <div id="presentation-content" className="scroll-mt-8">
                   <Field
                     label="Learn more — description"
-                    hint="This is the opening body copy at the top of the public Learn more page."
+                    info="This is the opening body copy at the top of the public Learn more page."
                   >
                     <RichTextEditor
                       name="fullDescription"
@@ -1412,7 +1332,7 @@ export default async function AdminPortalPage({
 
                 <Field
                   label="Learn more — What to expect"
-                  hint="Shown in the What to expect section beneath the outcomes and equipment."
+                  info="Shown in the What to expect section beneath the outcomes and equipment."
                 >
                   <RichTextEditor
                     name="contentSnippet"
@@ -1422,7 +1342,7 @@ export default async function AdminPortalPage({
                 </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <Field label="Learning outcomes" hint="One per line — shown as a list on the public page">
+                  <Field label="Learning outcomes" info="One per line — shown as a list on the public page">
                     <textarea
                       name="learningOutcomes"
                       defaultValue={presentationEditor.learningOutcomes.join("\n")}
@@ -1442,7 +1362,7 @@ export default async function AdminPortalPage({
 
                 <Field
                   label="YouTube video link"
-                  hint="Optional — embedded on the public presentation page so schools can watch a preview"
+                  info="Optional — embedded on the public presentation page so schools can watch a preview"
                 >
                   <input
                     name="youtubeUrl"
@@ -1486,11 +1406,9 @@ export default async function AdminPortalPage({
                 <div id="presentation-settings" className="scroll-mt-8 rounded-[28px] border border-[color:var(--border-soft)] bg-white/92 p-5">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
+                      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
                         Status
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        Control visibility and publishing state.
+                        <InfoTooltip label="Status">Control visibility and publishing state.</InfoTooltip>
                       </p>
                     </div>
                     <label className="relative inline-flex h-8 w-14 items-center">
@@ -1508,7 +1426,7 @@ export default async function AdminPortalPage({
                   <div className="mt-5 grid gap-4">
                     <Field
                       label="Presentation colour"
-                      hint="Used consistently across the public website and every portal."
+                      info="Used consistently across the public website and every portal."
                     >
                       <div className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5">
                         <input
@@ -1525,7 +1443,7 @@ export default async function AdminPortalPage({
                     </Field>
                     <Field
                       label="Year levels"
-                      hint="Comma separate multiple groups, e.g. Years 5 to 6, Years 7 to 8, Years 9 to 13 — each shows as its own tag on the website"
+                      info="Comma separate multiple groups, e.g. Years 5 to 6, Years 7 to 8, Years 9 to 13 — each shows as its own tag on the website"
                     >
                       <input
                         name="yearLevels"
@@ -1709,13 +1627,13 @@ export default async function AdminPortalPage({
               </p>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  <h2 className="flex items-center gap-2 text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
                     {isCreatingResource ? "Create Resource" : "Edit Resource"}
+                    <InfoTooltip label={isCreatingResource ? "Create Resource" : "Edit Resource"}>
+                      Upload files, attach videos, link resources to presentations, and control who can
+                      access them.
+                    </InfoTooltip>
                   </h2>
-                  <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-                    Upload files, attach videos, link resources to presentations, and control who can
-                    access them.
-                  </p>
                 </div>
                 <ButtonLink href="/admin/resources" variant="secondary">
                   Back to resources
@@ -1819,7 +1737,10 @@ export default async function AdminPortalPage({
                     </select>
                   </Field>
                   <div className="lg:col-span-2">
-                    <Field label="Sharing permission">
+                    <Field
+                      label="Sharing permission"
+                      info="Public sharing is required for Schools to see this resource — internal resources stay hidden from school portals even when Schools is ticked."
+                    >
                       <div className="grid gap-2 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm sm:grid-cols-2">
                         {[
                           ["internal", "Internal", "NZ Esports use only. Not visible to schools."],
@@ -1842,10 +1763,6 @@ export default async function AdminPortalPage({
                           </label>
                         ))}
                       </div>
-                      <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-                        Public sharing is required for Schools to see this resource — internal
-                        resources stay hidden from school portals even when Schools is ticked.
-                      </p>
                     </Field>
                   </div>
                 </div>
@@ -1872,7 +1789,10 @@ export default async function AdminPortalPage({
                   />
                 </Field>
 
-                <Field label="Linked presentation">
+                <Field
+                  label="Linked presentation"
+                  info="Linked ambassador resources are automatically included in the Materials tab."
+                >
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
@@ -1885,9 +1805,6 @@ export default async function AdminPortalPage({
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs leading-5 text-[color:var(--text-soft)]">
-                    Linked ambassador resources are automatically included in the Materials tab.
-                  </p>
                 </Field>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -2636,17 +2553,20 @@ function NoticeBanner({
 function Field({
   label,
   hint,
+  info,
   children
 }: {
   label: string;
   hint?: string;
+  info?: string;
   children: ReactNode;
 }) {
   return (
     <label className="grid gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]">
           {label}
+          {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
         </span>
         {hint ? <span className="text-xs text-[color:var(--text-soft)]">{hint}</span> : null}
       </div>

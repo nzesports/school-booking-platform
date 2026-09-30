@@ -27,6 +27,7 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import { SchoolLogoUploader } from "@/components/dashboard/school-logo-uploader";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TagMultiSelect } from "@/components/ui/tag-multi-select";
@@ -204,7 +205,7 @@ export function AmbassadorProfileWorkspace({
               iconClassName="bg-[#ece9ff] text-[#5b4fc0]"
               label="School visits"
               value={String(stats.schoolVisits)}
-              hint="Delivered sessions"
+              info="Delivered sessions"
             />
             <HeaderStat
               icon={<FileText className="h-5 w-5" />}
@@ -214,8 +215,9 @@ export function AmbassadorProfileWorkspace({
               hint={
                 stats.latestInvoiceGeneratedAt
                   ? `Latest ${formatShortDate(stats.latestInvoiceGeneratedAt)}`
-                  : "Generated after approval"
+                  : undefined
               }
+              info={stats.latestInvoiceGeneratedAt ? undefined : "Generated after approval"}
             />
             <HeaderStat
               icon={<Star className="h-5 w-5" />}
@@ -721,20 +723,25 @@ function HeaderStat({
   iconClassName,
   label,
   value,
-  hint
+  hint,
+  info
 }: {
   icon: ReactNode;
   iconClassName: string;
   label: string;
   value: string;
   hint?: string;
+  info?: string;
 }) {
   return (
     <div className="flex flex-col items-center gap-1 px-3 text-center">
       <div className={cn("flex h-11 w-11 items-center justify-center rounded-full", iconClassName)}>
         {icon}
       </div>
-      <p className="mt-1 text-sm text-[color:var(--text-soft)]">{label}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm text-[color:var(--text-soft)]">
+        {label}
+        {info ? <InfoTooltip label={label}>{info}</InfoTooltip> : null}
+      </p>
       <p className="max-w-full truncate text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
         {value}
       </p>
