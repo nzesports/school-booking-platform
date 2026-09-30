@@ -99,6 +99,12 @@ export async function syncOutlookCalendarEvent(
     }
   );
 
+  // The stored event was deleted in Outlook; create a replacement rather than
+  // failing every retry against an id that no longer exists.
+  if (externalEventId && response.status === 404) {
+    return syncOutlookCalendarEvent(input, null);
+  }
+
   if (!response.ok) {
     return {
       id: `calendar-${randomUUID()}`,

@@ -39,6 +39,7 @@ import { loadSessionRescheduleHistory } from "@/lib/services/session-change-hist
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
 export type ResourceCategory = "resource" | "training" | "presentation_material";
@@ -134,6 +135,7 @@ export type AdminPortalData = {
   emailTemplates: EmailTemplateSummary[];
   auditLogs: AuditLogRecord[];
   faqs: Array<{ id: string; question: string; answer: string }>;
+  settings: Array<{ key: string; value: string }>;
 };
 
 export type SchoolProfileDetails = {
@@ -191,6 +193,11 @@ async function loadPlatformDataUncached() {
     return null;
   }
 
+  // Every whole-table read is paged past PostgREST's max_rows cap, and any
+  // query error throws rather than degrading to []: unstable_cache never
+  // stores a rejected load, whereas an empty result would be served to every
+  // portal as an empty dashboard for the whole revalidate window.
+  //
   // Bookings and sessions intentionally load across the full history. Staff
   // and admin dashboards share this same snapshot, and the historical import
   // must remain available to all-time reporting rather than disappearing
@@ -198,97 +205,210 @@ async function loadPlatformDataUncached() {
   const bookingSessionSelectBase =
     "id, booking_request_id, presentation_type_id, region_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, year_levels, expected_student_count, actual_student_count, report_status, payment_status, location_address, share_contact_with_ambassador";
   const bookingSessionSelectWithWithdrawals = `${bookingSessionSelectBase}, withdrawal_reason, withdrawal_requested_at, reschedule_requested_date, reschedule_request_notes, reschedule_requested_at, reschedule_previous_status`;
+  const loadBookingSessions = <Select extends string>(select: Select) =>
+    fetchAllRows("booking_sessions", (from, to) =>
+      admin
+        .from("booking_sessions")
+        .select(select)
+        .order("starts_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
 
   const [
-    profilesResult,
-    regionsResult,
-    schoolsResult,
-    contactsResult,
-    schoolContactUsersResult,
-    requestsResult,
-    sessionsResult,
-    presentationsResult,
-    ambassadorProfilesResult,
-    ambassadorTravelRegionsResult,
-    sessionApplicationsResult,
-    reportsResult,
-    reportMediaResult,
-    schoolReviewsResult,
-    paymentsResult,
-    resourcesResult,
-    settingsResult,
-    rolesResult,
-    homepageSectionsResult,
-    emailTemplatesResult,
+    profiles,
+    regions,
+    schools,
+    contacts,
+    schoolContactUsers,
+    bookingRequests,
+    bookingSessions,
+    presentations,
+    ambassadorProfiles,
+    ambassadorTravelRegions,
+    sessionApplications,
+    reports,
+    reportMedia,
+    schoolReviews,
+    payments,
+    resources,
+    settings,
+    roles,
+    homepageSections,
+    emailTemplates,
     auditLogsResult,
-    faqsResult,
+    faqs,
     bookingActivityLogsResult,
-    trainingModulesResult,
-    trainingLessonsResult,
-    trainingPacksResult,
-    packResourcesResult,
+    trainingModules,
+    trainingLessons,
+    trainingPacks,
+    packResources,
     sessionRescheduleHistory
   ] = await Promise.all([
-    admin.from("profiles").select("id, email, full_name, phone, avatar_url, role, status, created_at"),
-    admin
-      .from("regions")
-      .select("id, name, slug, is_active, sort_order")
-      .order("sort_order", { ascending: true }),
+    fetchAllRows("profiles", (from, to) =>
+      admin
+        .from("profiles")
+        .select("id, email, full_name, phone, avatar_url, role, status, created_at")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("regions", (from, to) =>
+      admin
+        .from("regions")
+        .select("id, name, slug, is_active, sort_order")
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     // Select * so environments missing the 0013 columns (logo_url,
     // profile_notes) still load schools.
-    admin.from("schools").select("*"),
-    admin.from("school_contacts").select("id, school_id, full_name, email, phone, position, is_primary"),
-    admin.from("school_contact_users").select("school_contact_id, user_id"),
-    admin
-      .from("booking_requests")
-      .select(
-        "id, reference_code, manual_email_only, import_batch_id, contact_position, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id, ambassador_outreach_by"
-      )
-      .order("created_at", { ascending: false }),
-    admin
-      .from("booking_sessions")
-      .select(bookingSessionSelectWithWithdrawals)
-      .order("starts_at", { ascending: true }),
-    admin.from("presentation_types").select("*"),
+    fetchAllRows("schools", (from, to) =>
+      admin.from("schools").select("*").order("id", { ascending: true }).range(from, to)
+    ),
+    fetchAllRows("school_contacts", (from, to) =>
+      admin
+        .from("school_contacts")
+        .select("id, school_id, full_name, email, phone, position, is_primary")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("school_contact_users", (from, to) =>
+      admin
+        .from("school_contact_users")
+        .select("school_contact_id, user_id")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("booking_requests", (from, to) =>
+      admin
+        .from("booking_requests")
+        .select(
+          "id, reference_code, manual_email_only, import_batch_id, contact_position, school_id, primary_contact_id, region_id, status, source, school_notes, internal_notes, created_at, updated_at, staff_owner_id, submitted_by_user_id, ambassador_outreach_by"
+        )
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    loadBookingSessions(bookingSessionSelectWithWithdrawals).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "";
+
+      if (
+        message.includes("withdrawal_reason") ||
+        message.includes("withdrawal_requested_at") ||
+        message.includes("reschedule_")
+      ) {
+        return loadBookingSessions(bookingSessionSelectBase);
+      }
+
+      throw error;
+    }),
+    fetchAllRows("presentation_types", (from, to) =>
+      admin.from("presentation_types").select("*").order("id", { ascending: true }).range(from, to)
+    ),
     // Select * so optional columns added by later migrations (profile_details)
     // don't break the whole portal query before the migration runs.
-    admin.from("ambassador_profiles").select("*"),
-    admin.from("ambassador_travel_regions").select("ambassador_profile_id, region_id"),
-    admin
-      .from("booking_session_applications")
-      .select("id, booking_session_id, ambassador_profile_id, status"),
-    admin.from("ambassador_reports").select("*").order("submitted_at", { ascending: false }),
-    admin
-      .from("media_library")
-      .select("id, report_id, public_url, media_type, title")
-      .not("report_id", "is", null),
+    fetchAllRows("ambassador_profiles", (from, to) =>
+      admin.from("ambassador_profiles").select("*").order("id", { ascending: true }).range(from, to)
+    ),
+    fetchAllRows("ambassador_travel_regions", (from, to) =>
+      admin
+        .from("ambassador_travel_regions")
+        .select("ambassador_profile_id, region_id")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("booking_session_applications", (from, to) =>
+      admin
+        .from("booking_session_applications")
+        .select("id, booking_session_id, ambassador_profile_id, status")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("ambassador_reports", (from, to) =>
+      admin
+        .from("ambassador_reports")
+        .select("*")
+        .order("submitted_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("media_library", (from, to) =>
+      admin
+        .from("media_library")
+        .select("id, report_id, public_url, media_type, title")
+        .not("report_id", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     // Select * so environments missing the 0012 details column still load.
-    admin
-      .from("presentation_reviews")
-      .select("*")
-      .order("created_at", { ascending: false }),
+    fetchAllRows("presentation_reviews", (from, to) =>
+      admin
+        .from("presentation_reviews")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     // Select * so the explicit sourcing-fee breakdown added in 0026 is
     // available without breaking environments while that migration rolls out.
-    admin.from("payments").select("*"),
+    fetchAllRows("payments", (from, to) =>
+      admin.from("payments").select("*").order("id", { ascending: true }).range(from, to)
+    ),
     // Select * so environments missing the 0006 columns (audiences/tags)
     // still load resources instead of failing the whole query.
-    admin.from("presentation_resources").select("*").order("created_at", { ascending: false }),
-    admin.from("settings").select("setting_key, setting_value"),
-    admin.from("roles").select("id, name, description, is_system_role"),
-    admin
-      .from("homepage_sections")
-      .select("id, section_key, title, subtitle, body, image_url, is_active, sort_order")
-      .order("sort_order", { ascending: true }),
-    admin
-      .from("email_templates")
-      .select("id, template_key, subject, body_html, body_text, is_active")
-      .order("updated_at", { ascending: false }),
+    fetchAllRows("presentation_resources", (from, to) =>
+      admin
+        .from("presentation_resources")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("settings", (from, to) =>
+      admin
+        .from("settings")
+        .select("setting_key, setting_value")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("roles", (from, to) =>
+      admin
+        .from("roles")
+        .select("id, name, description, is_system_role")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("homepage_sections", (from, to) =>
+      admin
+        .from("homepage_sections")
+        .select("id, section_key, title, subtitle, body, image_url, is_active, sort_order")
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("email_templates", (from, to) =>
+      admin
+        .from("email_templates")
+        .select("id, template_key, subject, body_html, body_text, is_active")
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    // Audit logs and the activity feed are deliberately capped below max_rows,
+    // so they stay single queries.
     admin
       .from("audit_logs")
       .select("id, action, entity_type, actor_id, created_at")
       .order("created_at", { ascending: false })
       .limit(30),
-    admin.from("faqs").select("id, question, answer").order("sort_order", { ascending: true }),
+    fetchAllRows("faqs", (from, to) =>
+      admin
+        .from("faqs")
+        .select("id, question, answer")
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     admin
       .from("booking_activity_logs")
       .select("booking_request_id, booking_session_id, action, details, created_at, actor_type")
@@ -296,58 +416,84 @@ async function loadPlatformDataUncached() {
       .limit(500),
     // Select * so environments missing the 0004 columns (is_published etc.)
     // still load training modules.
-    admin.from("training_modules").select("*").order("sort_order", { ascending: true }),
-    admin
-      .from("training_lessons")
-      .select("id, training_module_id, title, lesson_type, content, youtube_url, sort_order")
-      .order("sort_order", { ascending: true }),
-    admin
-      .from("training_resource_packs")
-      .select("id, title, presentation_type_id, created_at")
-      .order("created_at", { ascending: true }),
-    admin.from("training_pack_resources").select("training_pack_id, resource_id"),
+    fetchAllRows("training_modules", (from, to) =>
+      admin
+        .from("training_modules")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("training_lessons", (from, to) =>
+      admin
+        .from("training_lessons")
+        .select("id, training_module_id, title, lesson_type, content, youtube_url, sort_order")
+        .order("sort_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("training_resource_packs", (from, to) =>
+      admin
+        .from("training_resource_packs")
+        .select("id, title, presentation_type_id, created_at")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    // Pack links are optional: environments without the multi-pack table fall
+    // back to presentation_resources.training_pack_id (see mapResources).
+    fetchAllRows("training_pack_resources", (from, to) =>
+      admin
+        .from("training_pack_resources")
+        .select("training_pack_id, resource_id")
+        .order("training_pack_id", { ascending: true })
+        .order("resource_id", { ascending: true })
+        .range(from, to)
+    ).catch(() => null),
     loadSessionRescheduleHistory()
   ]);
-  const shouldRetrySessionsWithoutWithdrawals =
-    sessionsResult.error?.message?.includes("withdrawal_reason") ||
-    sessionsResult.error?.message?.includes("withdrawal_requested_at") ||
-    sessionsResult.error?.message?.includes("reschedule_");
-  const fallbackSessionsResult = shouldRetrySessionsWithoutWithdrawals
-    ? await admin
-        .from("booking_sessions")
-        .select(bookingSessionSelectBase)
-        .order("starts_at", { ascending: true })
-    : null;
+
+  if (auditLogsResult.error) {
+    throw new Error(
+      `Unable to load audit_logs (${auditLogsResult.error.code}): ${auditLogsResult.error.message}`
+    );
+  }
+
+  if (bookingActivityLogsResult.error) {
+    throw new Error(
+      `Unable to load booking_activity_logs (${bookingActivityLogsResult.error.code}): ${bookingActivityLogsResult.error.message}`
+    );
+  }
 
   return {
     sessionRescheduleHistory,
-    profiles: profilesResult.data ?? [],
-    regions: regionsResult.data ?? [],
-    schools: schoolsResult.data ?? [],
-    contacts: contactsResult.data ?? [],
-    schoolContactUsers: schoolContactUsersResult.data ?? [],
-    bookingRequests: requestsResult.data ?? [],
-    bookingSessions: fallbackSessionsResult?.data ?? sessionsResult.data ?? [],
-    presentations: presentationsResult.data ?? [],
-    ambassadorProfiles: ambassadorProfilesResult.data ?? [],
-    ambassadorTravelRegions: ambassadorTravelRegionsResult.data ?? [],
-    sessionApplications: sessionApplicationsResult.data ?? [],
-    reports: reportsResult.data ?? [],
-    reportMedia: reportMediaResult.data ?? [],
-    schoolReviews: schoolReviewsResult.data ?? [],
-    payments: paymentsResult.data ?? [],
-    resources: resourcesResult.data ?? [],
-    settings: settingsResult.data ?? [],
-    roles: rolesResult.data ?? [],
-    homepageSections: homepageSectionsResult.data ?? [],
-    emailTemplates: emailTemplatesResult.data ?? [],
+    profiles,
+    regions,
+    schools,
+    contacts,
+    schoolContactUsers,
+    bookingRequests,
+    bookingSessions,
+    presentations,
+    ambassadorProfiles,
+    ambassadorTravelRegions,
+    sessionApplications,
+    reports,
+    reportMedia,
+    schoolReviews,
+    payments,
+    resources,
+    settings,
+    roles,
+    homepageSections,
+    emailTemplates,
     auditLogs: auditLogsResult.data ?? [],
-    faqs: faqsResult.data ?? [],
+    faqs,
     bookingActivityLogs: bookingActivityLogsResult.data ?? [],
-    trainingModules: trainingModulesResult.data ?? [],
-    trainingLessons: trainingLessonsResult.data ?? [],
-    trainingPacks: trainingPacksResult.data ?? [],
-    packResources: packResourcesResult.error ? null : packResourcesResult.data ?? []
+    trainingModules,
+    trainingLessons,
+    trainingPacks,
+    packResources
   };
 }
 
@@ -607,6 +753,9 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
     return {
       id: request.id as string,
       referenceCode: (request.reference_code as string | null) ?? undefined,
+      // Imported history shares the manual-only flag but still sends status
+      // emails, so only non-imported manual-only bookings are fully silent.
+      recordOnly: Boolean(request.manual_email_only) && !request.import_batch_id,
       schoolName: (school?.name as string | undefined) ?? "School",
       primaryContactName: (contact?.full_name as string | undefined) ?? "Primary contact",
       primaryContactPosition: (request.contact_position || contact?.position || undefined) as string | undefined,
@@ -1198,13 +1347,7 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
     notifications: userId ? await loadUserNotifications(userId) : [],
     activityLogs,
     upcomingSessions,
-    settings: data.settings.map((setting) => ({
-      key: setting.setting_key as string,
-      value:
-        typeof setting.setting_value === "string"
-          ? (setting.setting_value as string)
-          : JSON.stringify(setting.setting_value)
-    })),
+    settings: mapSettings(data),
     tasks: [
       {
         id: "applications",
@@ -1230,6 +1373,16 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
       }
     ]
   };
+}
+
+function mapSettings(data: NonNullable<RawPlatformData>) {
+  return data.settings.map((setting) => ({
+    key: setting.setting_key as string,
+    value:
+      typeof setting.setting_value === "string"
+        ? (setting.setting_value as string)
+        : JSON.stringify(setting.setting_value)
+  }));
 }
 
 export async function getAdminPortalData(userId?: string): Promise<AdminPortalData> {
@@ -1264,7 +1417,11 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
       homepageSections: [],
       emailTemplates: demoEmailTemplates,
       auditLogs: demoAuditLogs,
-      faqs: demoFaqs
+      faqs: demoFaqs,
+      settings: [
+        { key: "booking_defaults", value: "08:00 - 16:00 / 60 min slots" },
+        { key: "payments", value: "NZD 250 default payout" }
+      ]
     };
   }
 
@@ -1314,7 +1471,8 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
       id: faq.id as string,
       question: faq.question as string,
       answer: faq.answer as string
-    }))
+    })),
+    settings: mapSettings(data)
   };
 }
 

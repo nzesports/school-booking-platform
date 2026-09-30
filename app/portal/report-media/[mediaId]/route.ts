@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { config } from "@/lib/env";
 import { getAuthenticatedPortalUser } from "@/lib/services/auth";
 import { createSignedReportMediaUrl } from "@/lib/services/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -22,13 +23,31 @@ function encodedFilename(title: string | null, sourcePath: string) {
   return encodeURIComponent(title || decodeURIComponent(fallback));
 }
 
+// Served inline from the app's own origin, so never pass through a type a
+// browser would execute (text/html, image/svg+xml, ...): only the media types
+// report uploads allow, else a download.
 function contentTypeFor(sourcePath: string, upstreamType: string | null) {
-  if (upstreamType && upstreamType !== "application/octet-stream") {
-    return upstreamType;
+  const extension = sourcePath.split("?")[0].split(".").at(-1)?.toLowerCase() ?? "";
+  const byExtension = CONTENT_TYPE_BY_EXTENSION.get(extension);
+
+  if (byExtension) {
+    return byExtension;
   }
 
-  const extension = sourcePath.split("?")[0].split(".").at(-1)?.toLowerCase() ?? "";
-  return CONTENT_TYPE_BY_EXTENSION.get(extension) ?? "application/octet-stream";
+  const upstream = upstreamType?.split(";")[0].trim().toLowerCase() ?? "";
+  return [...CONTENT_TYPE_BY_EXTENSION.values()].includes(upstream)
+    ? upstream
+    : "application/octet-stream";
+}
+
+// Legacy report media lives only in this project's public-assets bucket.
+function isLegacyReportMediaUrl(url: URL) {
+  if (!config.supabaseUrl) {
+    return false;
+  }
+
+  const bucketUrl = new URL("/storage/v1/object/public/public-assets/", config.supabaseUrl);
+  return url.origin === bucketUrl.origin && url.pathname.startsWith(bucketUrl.pathname);
 }
 
 export async function GET(
@@ -106,7 +125,7 @@ export async function GET(
       return NextResponse.json({ error: "Media URL is invalid." }, { status: 400 });
     }
 
-    if (!["http:", "https:"].includes(sourceUrl.protocol)) {
+    if (!isLegacyReportMediaUrl(sourceUrl)) {
       return NextResponse.json({ error: "Media URL is invalid." }, { status: 400 });
     }
 
@@ -123,10 +142,12 @@ export async function GET(
     return NextResponse.json({ error: "Media preview is unavailable." }, { status: 502 });
   }
 
+  const contentType = contentTypeFor(filenameSource, upstream.headers.get("content-type"));
+  const disposition = contentType === "application/octet-stream" ? "attachment" : "inline";
   const headers = new Headers({
     "Cache-Control": "private, max-age=300",
-    "Content-Disposition": `inline; filename*=UTF-8''${encodedFilename(media.title, filenameSource)}`,
-    "Content-Type": contentTypeFor(filenameSource, upstream.headers.get("content-type")),
+    "Content-Disposition": `${disposition}; filename*=UTF-8''${encodedFilename(media.title, filenameSource)}`,
+    "Content-Type": contentType,
     "X-Content-Type-Options": "nosniff"
   });
 

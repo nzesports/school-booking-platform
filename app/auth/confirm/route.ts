@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { config } from "@/lib/env";
+import { safeLocalPath } from "@/lib/safe-redirect";
 
 function withWelcomeFlag(next: string, type: string | null) {
   if (type === "invite" && next.startsWith("/reset-password")) {
@@ -17,12 +18,7 @@ export async function GET(request: NextRequest) {
   const type = requestUrl.searchParams.get("type");
   const code = requestUrl.searchParams.get("code");
   const rawNext = requestUrl.searchParams.get("next") ?? "/login";
-  // Same strict rule as sanitizeReturnTo (portal actions): must be a local
-  // path — "//host" is protocol-relative and "\" can smuggle one past parsers.
-  const next =
-    rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes("\\")
-      ? rawNext
-      : "/login";
+  const next = safeLocalPath(rawNext, "/login");
 
   if (!config.isSupabaseConfigured) {
     return NextResponse.redirect(new URL("/login?error=invalid-confirm-link", request.url));

@@ -19,7 +19,7 @@ import { HeroBookingWidget } from "@/components/site/hero-booking-widget";
 import { PresentationCard } from "@/components/site/presentation-card";
 import { SchoolFeedbackCarousel } from "@/components/site/school-feedback-carousel";
 import { ButtonLink } from "@/components/ui/button";
-import { loadAvailabilityConfig } from "@/lib/services/availability-server";
+import { loadAvailabilityConfigForDisplay } from "@/lib/services/availability-server";
 import {
   listHomepageSections,
   listPublicPresentations,
@@ -67,7 +67,7 @@ export default async function HomePage() {
     listRegions(),
     listHomepageSections(),
     listPublicTestimonials(8),
-    loadAvailabilityConfig()
+    loadAvailabilityConfigForDisplay()
   ]);
   const homepageSectionMap = new Map(
     homepageSections.map((section) => [section.sectionKey, section])

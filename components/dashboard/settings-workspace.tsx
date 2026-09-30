@@ -3,6 +3,7 @@ import { CalendarClock, CircleDollarSign, Mail } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { cn } from "@/lib/utils";
 
 const fieldClassName =
@@ -47,12 +48,14 @@ export function SettingsWorkspace({
   settings,
   action,
   returnTo,
-  notice
+  notice,
+  canEditFinanceEmail
 }: {
   settings: Array<{ key: string; value: string }>;
   action: (formData: FormData) => void | Promise<void>;
   returnTo: string;
   notice?: { tone: "success" | "error"; message: string } | null;
+  canEditFinanceEmail: boolean;
 }) {
   const parsed = parseSettings(settings);
   const bookingDefaults = parsed.booking_defaults;
@@ -163,12 +166,12 @@ export function SettingsWorkspace({
         icon={<CircleDollarSign className="h-5 w-5" />}
         iconClassName="bg-[#e6f5ec] text-[#117a2e]"
         title="Payments"
-        description="Defaults for ambassador session payouts: the standard payment per delivered session, the attendee count a report needs before it becomes payment-eligible, and where approved payments are sent."
+        description="Ambassador session payouts: the standard payment per delivered session, the higher payment when the ambassador sourced the school themselves, the attendee count a report needs before it becomes payment-eligible, and where approved payments are sent."
         action={action}
         section="payments"
         returnTo={returnTo}
       >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Default payment per session ($)">
             <input
               type="number"
@@ -176,6 +179,20 @@ export function SettingsWorkspace({
               min={0}
               step={0.01}
               defaultValue={readNumber(payments, "defaultAmountCents", 25000) / 100}
+              required
+              className={fieldClassName}
+            />
+          </Field>
+          <Field
+            label="Sourced booking payment ($)"
+            help="Paid instead of the default when the ambassador sourced the school themselves."
+          >
+            <input
+              type="number"
+              name="sourcedAmountDollars"
+              min={0}
+              step={0.01}
+              defaultValue={readNumber(payments, "sourcedAmountCents", 30000) / 100}
               required
               className={fieldClassName}
             />
@@ -206,8 +223,14 @@ export function SettingsWorkspace({
               name="financeEmail"
               defaultValue={readString(payments, "financeEmail", "info@esf.nz")}
               required
-              className={fieldClassName}
+              readOnly={!canEditFinanceEmail}
+              className={cn(fieldClassName, !canEditFinanceEmail && "cursor-not-allowed bg-[#f4f6fa] text-[color:var(--text-soft)]")}
             />
+            {canEditFinanceEmail ? null : (
+              <span className="text-xs text-[color:var(--text-soft)]">
+                Only a super admin can change where payment invoices are sent.
+              </span>
+            )}
           </Field>
         </div>
       </SettingsCard>
@@ -249,12 +272,10 @@ function SettingsCard({
           >
             {icon}
           </span>
-          <div>
-            <h3 className="text-xl font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-              {title}
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">{description}</p>
-          </div>
+          <h3 className="flex min-h-11 items-center gap-2 text-xl font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+            {title}
+            <InfoTooltip label={title}>{description}</InfoTooltip>
+          </h3>
         </div>
 
         {children}
@@ -272,11 +293,12 @@ function SettingsCard({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
         {label}
+        {help ? <InfoTooltip label={label}>{help}</InfoTooltip> : null}
       </span>
       {children}
     </label>

@@ -49,6 +49,7 @@ import {
   saveRegionAction,
   saveResourceEditorAction,
   saveResourceAction,
+  savePlatformSettingsAction,
   updateUserAccessAction
 } from "@/app/portal/actions";
 import {
@@ -70,6 +71,7 @@ import {
   getPaymentsNotice
 } from "@/components/dashboard/payments-workspace";
 import { PortalProfileWorkspace } from "@/components/dashboard/portal-profile-workspace";
+import { SettingsWorkspace } from "@/components/dashboard/settings-workspace";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ManualSchoolDialog } from "@/components/dashboard/manual-school-dialog";
@@ -397,6 +399,8 @@ export default async function AdminPortalPage({
                                     ? "Review recent admin actions"
                                     : route === "profile"
                                       ? "Your profile"
+                                    : route === "settings"
+                                      ? "Booking hours, branding and payments"
                                     : route === "activity"
                                       ? "Admin activity and ambassador approvals"
                                       : "Platform configuration";
@@ -494,6 +498,7 @@ export default async function AdminPortalPage({
         logoutAction={logoutAction}
         auditLogsHref="/admin/audit-logs"
         usersHref="/admin/users"
+        settingsHref="/admin/settings"
         profile={{
           name: actor.fullName,
           subtitle: "Platform Admin",
@@ -2104,6 +2109,24 @@ export default async function AdminPortalPage({
               log.actor,
               formatDateTime(log.createdAt)
             ])}
+          />
+        ) : null}
+
+        {route === "settings" ? (
+          <SettingsWorkspace
+            settings={portal.settings}
+            action={savePlatformSettingsAction}
+            returnTo="/admin/settings"
+            canEditFinanceEmail
+            notice={
+              readSearchParam(resolvedSearchParams, "saved") === "settings"
+                ? { tone: "success", message: "Settings saved." }
+                : readSearchParam(resolvedSearchParams, "error") === "invalid-settings"
+                  ? { tone: "error", message: "Those settings didn't look right — please check the fields and try again." }
+                  : readSearchParam(resolvedSearchParams, "error") === "settings-save-failed"
+                    ? { tone: "error", message: "Saving failed — please try again." }
+                    : null
+            }
           />
         ) : null}
 

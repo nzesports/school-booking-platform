@@ -4,6 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { safeLocalPath } from "@/lib/safe-redirect";
 import { AVAILABILITY_DATA_TAG, PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { getAuthenticatedPortalUser } from "@/lib/services/auth";
@@ -14,26 +15,36 @@ import {
 } from "@/lib/services/availability";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import { BookingConfigurationError, submitBookingRequest } from "@/lib/services/bookings";
+import { allowPublicRequest, publicClientAddress } from "@/lib/services/public-rate-limit";
+
+// Accepts "9:00" as well as "09:00" and normalises to HH:MM.
+const sessionTimeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{1,2}:\d{2}$/)
+  .transform((value) => value.padStart(5, "0"));
 
 const bookingSchema = z.object({
-  schoolName: z.string().min(2),
-  contactName: z.string().min(2),
-  contactEmail: z.string().email(),
-  contactPhone: z.string().min(5),
+  schoolName: z.string().trim().min(2).max(200),
+  contactName: z.string().trim().min(2).max(200),
+  contactEmail: z.string().email().max(254),
+  contactPhone: z.string().trim().min(5).max(50),
   contactPosition: z.string().trim().max(200).optional(),
-  regionSlug: z.string().min(1),
-  schoolNotes: z.string().optional(),
+  regionSlug: z.string().min(1).max(100),
+  schoolNotes: z.string().max(5000).optional(),
   marketingConsent: z.boolean(),
   sessions: z
     .array(
       z.object({
-        presentationSlug: z.string().min(1),
-        regionSlug: z.string().min(1),
-        date: z.string().min(1),
-        startTime: z.string().min(1),
-        endTime: z.string().min(1),
-        yearLevels: z.string().min(1),
-        expectedStudentCount: z.number().int().positive()
+        presentationSlug: z.string().min(1).max(200),
+        regionSlug: z.string().min(1).max(100),
+        // Strict formats: nzDateTimeToIso throws on anything else, after the
+        // booking row has already been inserted.
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        startTime: sessionTimeSchema,
+        endTime: sessionTimeSchema,
+        yearLevels: z.string().min(1).max(200),
+        expectedStudentCount: z.number().int().positive().max(5000)
       })
     )
     .min(1)
@@ -54,9 +65,7 @@ function appendSearchParam(path: string, key: string, value: string) {
 }
 
 function sanitizeReturnTo(path: string) {
-  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")
-    ? path
-    : "/#contact";
+  return safeLocalPath(path, "/#contact");
 }
 
 export type BookingFormState = { error: string } | null;
@@ -129,10 +138,28 @@ export async function submitBookingRequestAction(
     return { error: "Please review every session detail before sending your request." };
   }
 
-  const [availabilityConfig, user] = await Promise.all([
-    loadAvailabilityConfig(),
-    getAuthenticatedPortalUser()
+  // Every submission emails the address given, so cap how often one visitor
+  // or one address can trigger that.
+  const [ipAllowed, emailAllowed] = await Promise.all([
+    publicClientAddress().then((address) => allowPublicRequest("booking-ip", address, 10)),
+    allowPublicRequest("booking-email", parsed.data.contactEmail, 5)
   ]);
+
+  if (!ipAllowed || !emailAllowed) {
+    return { error: "We've received several booking requests from you in the last hour. Please try again later or contact the NZ Esports team directly." };
+  }
+
+  let availabilityConfig: Awaited<ReturnType<typeof loadAvailabilityConfig>>;
+  let user: Awaited<ReturnType<typeof getAuthenticatedPortalUser>>;
+
+  try {
+    [availabilityConfig, user] = await Promise.all([
+      loadAvailabilityConfig(),
+      getAuthenticatedPortalUser()
+    ]);
+  } catch {
+    return { error: "We couldn't check availability just now. Please try again in a moment." };
+  }
   const invalidDate = parsed.data.sessions.find(
     (session) =>
       !isWithinBookingWindow(session.date) ||
@@ -196,6 +223,10 @@ export async function subscribeFooterAction(formData: FormData) {
 
   if (Date.now() - parsed.data.startedAt < 800) {
     redirect(appendSearchParam(returnTo, "error", "subscribe-too-fast"));
+  }
+
+  if (!await allowPublicRequest("subscribe-ip", await publicClientAddress(), 10)) {
+    redirect(appendSearchParam(returnTo, "error", "subscribe-failed"));
   }
 
   const result = await addContactToTeachersList({

@@ -28,7 +28,8 @@ export function AmbassadorManualBookingDialog({
   triggerLabel = "Log a booking",
   triggerClassName,
   wrapperClassName = "flex justify-end",
-  returnTo = "/ambassador/bookings?tab=sourced"
+  returnTo = "/ambassador/bookings?tab=sourced",
+  payoutLabels
 }: {
   schools: School[];
   regions: Region[];
@@ -38,6 +39,8 @@ export function AmbassadorManualBookingDialog({
   triggerClassName?: string;
   wrapperClassName?: string;
   returnTo?: string;
+  // Formatted amounts from Settings → Payments.
+  payoutLabels: { delivery: string; sourcingBonus: string; sourced: string };
 }) {
   const [open, setOpen] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState(45);
@@ -81,13 +84,17 @@ export function AmbassadorManualBookingDialog({
                 <input type="hidden" name="returnTo" value={returnTo} />
 
                 <div className="rounded-[18px] border border-[#b9e2c7] bg-[#f4fbf6] px-4 py-3 text-sm leading-6 text-[#1d6f35]">
-                  You&apos;ll receive the standard <strong>$250 delivery fee</strong>. If you personally
+                  You&apos;ll receive the standard <strong>{payoutLabels.delivery} delivery fee</strong>. If you personally
                   sourced the school, the eligible payment will also include a separately tracked
-                  <strong> $50 sourcing bonus</strong>, for a <strong>$300 total</strong>.
+                  <strong> {payoutLabels.sourcingBonus} sourcing bonus</strong>, for a <strong>{payoutLabels.sourced} total</strong>.
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <SchoolCombobox schools={schoolOptions} regions={regions} />
+                  <SchoolCombobox
+                    schools={schoolOptions}
+                    regions={regions}
+                    newSchoolNote="will be added and sent to the NZ Esports team to review."
+                  />
 
                   <Field label="Presentation">
                     <select
@@ -174,7 +181,7 @@ export function AmbassadorManualBookingDialog({
                     Did you personally source this school relationship?
                   </legend>
                   <p className="mt-2 text-sm leading-6 text-[color:var(--text-soft)]">
-                    This attribution is used to track sourced schools and the additional $50 bonus.
+                    This attribution is used to track sourced schools and the additional {payoutLabels.sourcingBonus} bonus.
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">

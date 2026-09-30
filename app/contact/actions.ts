@@ -6,6 +6,7 @@ import {
   type ContactFormState
 } from "@/lib/services/contact";
 import { sendTransactionalEmail } from "@/lib/services/email";
+import { allowPublicRequest, publicClientAddress } from "@/lib/services/public-rate-limit";
 
 export async function submitContactFormAction(
   _previousState: ContactFormState,
@@ -42,6 +43,13 @@ export async function submitContactFormAction(
     return {
       status: "error",
       message: "Please wait a moment, then send your message again."
+    };
+  }
+
+  if (!await allowPublicRequest("contact-ip", await publicClientAddress(), 5)) {
+    return {
+      status: "error",
+      message: "You've sent several messages in the last hour. Please try again later."
     };
   }
 

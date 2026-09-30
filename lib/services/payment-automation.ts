@@ -21,13 +21,19 @@ export type PaymentDetails = {
 
 export type PaymentSettings = {
   financeEmail: string;
+  // Paid for each delivered session that meets the attendee threshold.
   defaultAmountCents: number;
+  // Paid instead when the ambassador also sourced the booking themselves.
+  sourcedAmountCents: number;
+  eligibleAttendeeThreshold: number;
   currency: string;
 };
 
 const fallbackPaymentSettings: PaymentSettings = {
   financeEmail: "info@esf.nz",
   defaultAmountCents: 25000,
+  sourcedAmountCents: 30000,
+  eligibleAttendeeThreshold: 100,
   currency: "NZD"
 };
 
@@ -37,7 +43,12 @@ const FINANCE_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 // stable across email retries and profile edits.
 export function generateInvoiceNumber(paymentId: string, approvedAt: Date) {
   const fragment = paymentId.replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `INV-${approvedAt.getFullYear()}-${fragment}`;
+  // The server runs in UTC; invoices are numbered by the New Zealand year.
+  const year = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric"
+  }).format(approvedAt);
+  return `INV-${year}-${fragment}`;
 }
 
 export function hashFinanceConfirmationToken(token: string) {
@@ -85,6 +96,14 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
       typeof value.defaultAmountCents === "number"
         ? value.defaultAmountCents
         : fallbackPaymentSettings.defaultAmountCents,
+    sourcedAmountCents:
+      typeof value.sourcedAmountCents === "number"
+        ? value.sourcedAmountCents
+        : fallbackPaymentSettings.sourcedAmountCents,
+    eligibleAttendeeThreshold:
+      typeof value.eligibleAttendeeThreshold === "number"
+        ? value.eligibleAttendeeThreshold
+        : fallbackPaymentSettings.eligibleAttendeeThreshold,
     currency:
       typeof value.currency === "string" && value.currency.length > 0
         ? value.currency

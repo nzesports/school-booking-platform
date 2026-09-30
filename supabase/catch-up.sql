@@ -1,8 +1,9 @@
 -- ============================================================================
--- CATCH-UP MIGRATIONS — paste this whole file into the Supabase SQL editor
--- and run it once. Your live database is missing several migrations from the
--- repo (0004, 0006/0007 pieces, 0009, 0010, 0011, 0012, 0013). Everything below is
--- idempotent, so running it twice is safe.
+-- DO NOT RUN — HISTORICAL ONLY.
+-- This was a one-off catch-up for 0004–0013. It recreates an old
+-- handle_new_auth_user and the pre-0030 "relevant users read resources"
+-- policy, so running it on a current database undoes later security fixes
+-- (0030, 0031, 0048). Apply the numbered migrations instead.
 -- ============================================================================
 
 -- ---------------------------------------------------------------- from 0004

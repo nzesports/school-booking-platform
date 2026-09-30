@@ -351,6 +351,7 @@ export function BookingsExplorer({
     return new Date(rightDate).getTime() - new Date(leftDate).getTime()
       || left.id.localeCompare(right.id);
   }), [inputBookings]);
+  const ambassadorSchedule = useMemo(() => buildAmbassadorSchedule(allBookings), [allBookings]);
   // Deep links like /bookings?q=School+Name (e.g. "View bookings" on the
   // schools page) land pre-filtered on the list view. Deep links with
   // ?booking=<id> (notifications, post-update redirects) land on the list
@@ -794,6 +795,15 @@ export function BookingsExplorer({
                         Ref {booking.referenceCode}
                       </p>
                     ) : null}
+                    {booking.recordOnly ? (
+                      <span
+                        className="mt-1 inline-flex items-center gap-1 rounded-full border border-[color:var(--border-soft)] bg-[#f4f6fa] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--text-soft)]"
+                        title="Record only: no emails are sent for this booking"
+                      >
+                        <Mail className="h-3 w-3" />
+                        No emails
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="min-w-0">
@@ -869,6 +879,7 @@ export function BookingsExplorer({
                             key={session.id}
                             session={session}
                             ambassadors={ambassadors}
+                            ambassadorSchedule={ambassadorSchedule}
                             assignAmbassadorAction={assignAmbassadorAction}
                             updateStatusAction={updateStatusAction}
                             resolveWithdrawalAction={resolveWithdrawalAction}
@@ -945,6 +956,8 @@ export function BookingsExplorer({
                                   <input type="hidden" name="returnTo" value={cardReturnTo} />
                                   <AmbassadorSearchSelect
                                     ambassadors={ambassadors}
+                                    session={session}
+                                    schedule={ambassadorSchedule}
                                     applicants={session.applicants ?? []}
                                     assignedId={session.assignedAmbassadorId}
                                     assignedName={session.assignedAmbassadorName}
@@ -1073,6 +1086,7 @@ export function BookingsExplorer({
 function CompactSessionCard({
   session,
   ambassadors,
+  ambassadorSchedule,
   assignAmbassadorAction,
   updateStatusAction,
   resolveWithdrawalAction,
@@ -1081,6 +1095,7 @@ function CompactSessionCard({
 }: {
   session: BookingSessionView;
   ambassadors: Array<{ id: string; name: string }>;
+  ambassadorSchedule: AmbassadorSchedule;
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
@@ -1139,6 +1154,8 @@ function CompactSessionCard({
             <input type="hidden" name="returnTo" value={returnTo} />
             <AmbassadorSearchSelect
               ambassadors={ambassadors}
+              session={session}
+              schedule={ambassadorSchedule}
               applicants={session.applicants ?? []}
               assignedId={session.assignedAmbassadorId}
               assignedName={session.assignedAmbassadorName}
@@ -1412,13 +1429,77 @@ function BookingsCalendar({
 /* Ambassador typeahead                                                */
 /* ------------------------------------------------------------------ */
 
+type AmbassadorScheduleEntry = {
+  sessionId: string;
+  startsAt: string;
+  endsAt: string;
+  schoolName: string;
+};
+type AmbassadorSchedule = Map<string, AmbassadorScheduleEntry[]>;
+
+// Every live session each ambassador is assigned to, across all bookings
+// (not just the filtered page), so the picker can flag clashes.
+function buildAmbassadorSchedule(bookings: BookingRequestView[]): AmbassadorSchedule {
+  const schedule: AmbassadorSchedule = new Map();
+
+  for (const booking of bookings) {
+    for (const session of booking.sessions) {
+      if (!session.assignedAmbassadorId || ["cancelled", "declined"].includes(session.status)) {
+        continue;
+      }
+
+      const entries = schedule.get(session.assignedAmbassadorId) ?? [];
+      entries.push({
+        sessionId: session.id,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        schoolName: session.schoolName || booking.schoolName
+      });
+      schedule.set(session.assignedAmbassadorId, entries);
+    }
+  }
+
+  return schedule;
+}
+
+// Only sessions that actually overlap in time. Back-to-back sessions are
+// normal (ambassadors group nearby schools to cut travel), so they are not
+// flagged, and a clash is a warning: staff can still assign.
+function findScheduleClash(
+  schedule: AmbassadorSchedule,
+  ambassadorId: string,
+  session: Pick<BookingSessionView, "id" | "startsAt" | "endsAt">
+) {
+  const start = new Date(session.startsAt).getTime();
+  const end = new Date(session.endsAt).getTime();
+
+  return (schedule.get(ambassadorId) ?? []).find(
+    (entry) =>
+      entry.sessionId !== session.id &&
+      new Date(entry.startsAt).getTime() < end &&
+      start < new Date(entry.endsAt).getTime()
+  );
+}
+
+function ClashNote({ clash }: { clash: AmbassadorScheduleEntry }) {
+  return (
+    <span className="truncate text-[10px] font-semibold text-[#9a5b00]">
+      Also booked {formatTime(clash.startsAt)} – {formatTime(clash.endsAt)} · {clash.schoolName}
+    </span>
+  );
+}
+
 function AmbassadorSearchSelect({
   ambassadors,
+  session,
+  schedule,
   applicants,
   assignedId,
   assignedName
 }: {
   ambassadors: Array<{ id: string; name: string }>;
+  session: Pick<BookingSessionView, "id" | "startsAt" | "endsAt">;
+  schedule: AmbassadorSchedule;
   applicants: Array<{ id: string; name: string }>;
   assignedId?: string;
   assignedName?: string;
@@ -1518,6 +1599,7 @@ function AmbassadorSearchSelect({
     setText(ambassador.name);
     setPosition(null);
   };
+  const selectedClash = selectedId ? findScheduleClash(schedule, selectedId, session) : undefined;
 
   return (
     <div ref={anchorRef} className="relative min-w-0 flex-1">
@@ -1558,6 +1640,13 @@ function AmbassadorSearchSelect({
           </button>
         ) : null}
       </div>
+
+      {selectedClash ? (
+        <p className="mt-1.5 flex min-w-0 items-center gap-1 rounded-[8px] border border-[#f5d9a8] bg-[#fff7e8] px-2 py-1">
+          <Clock3 className="h-3 w-3 shrink-0 text-[#9a5b00]" />
+          <ClashNote clash={selectedClash} />
+        </p>
+      ) : null}
 
       {assignedName || applicants.length > 0 ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
@@ -1602,7 +1691,13 @@ function AmbassadorSearchSelect({
                       onClick={() => select(applicant)}
                       className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm text-[color:var(--navy)] transition hover:bg-[color:var(--green-soft)]"
                     >
-                      <span className="truncate font-medium">{applicant.name}</span>
+                      <span className="grid min-w-0">
+                        <span className="truncate font-medium">{applicant.name}</span>
+                        {(() => {
+                          const clash = findScheduleClash(schedule, applicant.id, session);
+                          return clash ? <ClashNote clash={clash} /> : null;
+                        })()}
+                      </span>
                       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color:var(--green-soft)] px-2 py-0.5 text-[10px] font-semibold text-[#117a2e]">
                         <CheckCircle2 className="h-3 w-3" />
                         Applied
@@ -1625,7 +1720,13 @@ function AmbassadorSearchSelect({
                       onClick={() => select(ambassador)}
                       className="flex w-full items-center rounded-[10px] px-2.5 py-2 text-left text-sm text-[color:var(--navy)] transition hover:bg-[#f4f8ff]"
                     >
-                      <span className="truncate">{ambassador.name}</span>
+                      <span className="grid min-w-0">
+                        <span className="truncate">{ambassador.name}</span>
+                        {(() => {
+                          const clash = findScheduleClash(schedule, ambassador.id, session);
+                          return clash ? <ClashNote clash={clash} /> : null;
+                        })()}
+                      </span>
                     </button>
                   ))}
                 </>

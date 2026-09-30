@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { Card } from "@/components/ui/card";
 import { config } from "@/lib/env";
+import { safeLocalPath } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/browser";
 
 /**
@@ -20,13 +21,7 @@ export default function AuthCompletePage() {
       const refreshToken = hashParams.get("refresh_token");
       const type = hashParams.get("type");
       const rawNext = queryParams.get("next") || "/";
-      // Same strict rule as sanitizeReturnTo (portal actions, server-only so
-      // not importable here): must be a local path — "//host" is
-      // protocol-relative and "\" can smuggle one past parsers.
-      const next =
-        rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes("\\")
-          ? rawNext
-          : "/";
+      const next = safeLocalPath(rawNext, "/");
 
       if (!config.isSupabaseConfigured || !accessToken || !refreshToken) {
         window.location.replace("/login?error=invalid-confirm-link");

@@ -1,4 +1,5 @@
 import { siteUrl } from "@/lib/site-url";
+import { safeLocalPath } from "@/lib/safe-redirect";
 
 type PublicAuthMode = "login" | "signup" | "forgot";
 export type PublicAuthRole = "school" | "ambassador";
@@ -40,7 +41,7 @@ export function portalPathForRole(role: "school" | "ambassador" | "staff" | "sup
 }
 
 export function sanitizePublicAuthReturnPath(path?: string | null) {
-  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+  if (!path || safeLocalPath(path, "") !== path) {
     return "/";
   }
 

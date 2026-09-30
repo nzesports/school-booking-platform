@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 
 import { Select } from "@/components/ui/select";
 import type { Region, School } from "@/lib/domain/types";
@@ -15,11 +15,16 @@ function normalized(value: string) {
 export function SchoolCombobox({
   schools,
   regions,
-  label = "School"
+  label = "School",
+  icon,
+  newSchoolNote = "will be created as an active school."
 }: {
   schools: School[];
   regions: Region[];
   label?: string;
+  icon?: ReactNode;
+  // What happens to a school typed in that doesn't exist yet.
+  newSchoolNote?: string;
 }) {
   const inputId = useId();
   const listboxId = `${inputId}-listbox`;
@@ -78,9 +83,11 @@ export function SchoolCombobox({
     >
       <label
         htmlFor={inputId}
-        className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]"
+        className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--navy)]"
       >
+        {icon}
         {label}
+        <RequiredMark />
       </label>
       <div className="relative">
         <input type="hidden" name="schoolId" value={resolvedSchoolId} />
@@ -166,11 +173,12 @@ export function SchoolCombobox({
       {willCreate ? (
         <div className="grid gap-2 rounded-[16px] border border-[#b9e2c7] bg-[#f4fbf6] p-3">
           <p className="text-sm leading-6 text-[#1d6f35]">
-            No exact school match. <strong>{query.trim()}</strong> will be created as an active
-            school.
+            No exact school match. <strong>{query.trim()}</strong> {newSchoolNote}
           </p>
           <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--navy)]">
-            New school region
+            <span>
+              New school region <RequiredMark />
+            </span>
             <Select name="newSchoolRegionId" required defaultValue="">
               <option value="" disabled>
                 Select an active region
@@ -185,5 +193,13 @@ export function SchoolCombobox({
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="text-[#c0392b]">
+      *
+    </span>
   );
 }

@@ -8,10 +8,11 @@ import { buildBookingReceipt, type BookingReceiptSession } from "./booking-recei
 import { formatLongDate, formatTime } from "@/lib/utils";
 
 import { buildSchoolEmailDetails, type SchoolEmailDetails } from "./school-email-details";
+import { feedbackUrl } from "./feedback-links";
 
 type EmailResult = Awaited<ReturnType<typeof sendTransactionalEmail>>;
 
-function escapeHtml(value: string) {
+export function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -84,16 +85,26 @@ async function renderTemplate(
   }
 
   const templateVars: Record<string, string> = { ...vars, siteUrl: config.siteUrl };
-  const substitute = (value: string) =>
+  // Object.hasOwn so placeholders like {{constructor}} can't resolve to
+  // prototype properties.
+  const plainValue = (placeholder: string) =>
+    Object.hasOwn(templateVars, placeholder) ? templateVars[placeholder] ?? "" : "";
+  const substituteHtml = (value: string) =>
     value.replace(/\{\{(\w+)\}\}/g, (_, placeholder: string) =>
-      placeholder in htmlVars
+      Object.hasOwn(htmlVars, placeholder)
         ? htmlVars[placeholder]
-        : escapeHtml(templateVars[placeholder] ?? "")
+        : escapeHtml(plainValue(placeholder))
+    );
+  // Subjects are plain text: substitute raw values (no HTML entities, no HTML
+  // blocks) and flatten line breaks so a value can't inject extra headers.
+  const substituteSubject = (value: string) =>
+    value.replace(/\{\{(\w+)\}\}/g, (_, placeholder: string) =>
+      plainValue(placeholder).replace(/[\r\n]+/g, " ")
     );
 
   return {
-    subject: substitute(data.subject as string),
-    html: substitute(data.body_html as string),
+    subject: substituteSubject(data.subject as string),
+    html: substituteHtml(data.body_html as string),
     htmlPlaceholders: Object.keys(htmlVars).filter((name) =>
       (data.body_html as string).includes(`{{${name}}}`)
     )
@@ -283,7 +294,7 @@ export async function sendFeedbackRequestEmail(opts: SchoolEmailDetails & {
   const presentationTitle = escapeHtml(opts.presentationTitle);
   // Absolute public link — works whether or not the school has a portal login.
   const reviewUrl = opts.bookingSessionId
-    ? `${config.siteUrl}/feedback/${opts.bookingSessionId}`
+    ? feedbackUrl(opts.bookingSessionId)
     : `${config.siteUrl}/school/reviews`;
   const template = await renderSchoolTemplate(details, "school_feedback_request", {
     contactName: opts.contactName,
@@ -629,6 +640,50 @@ export async function sendAmbassadorAssignedEmail(opts: {
       <p>You've been assigned to deliver <strong>${presentationTitle}</strong>
       at <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
       <p>Location: ${sessionAddress}</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "ambassador"
+  });
+  return result;
+}
+
+// Only sent for cancellations inside the 24-hour window, when the ambassador
+// may already be preparing or travelling and an in-portal notice is too slow.
+export async function sendAmbassadorLateCancellationEmail(opts: {
+  ambassadorEmail: string;
+  ambassadorName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  bookingSessionId: string;
+}) {
+  const ambassadorName = escapeHtml(opts.ambassadorName);
+  const schoolName = escapeHtml(opts.schoolName);
+  const sessionDate = escapeHtml(opts.sessionDate);
+  const presentationTitle = escapeHtml(opts.presentationTitle);
+  const template = await renderTemplate("ambassador_late_cancellation", {
+    ambassadorName: opts.ambassadorName,
+    schoolName: opts.schoolName,
+    sessionDate: opts.sessionDate,
+    presentationTitle: opts.presentationTitle,
+    bookingSessionId: opts.bookingSessionId
+  });
+  const result = await sendTransactionalEmail({
+    bookingSessionId: opts.bookingSessionId,
+    templateKey: "ambassador_late_cancellation",
+    recipientEmail: opts.ambassadorEmail,
+    subject: template?.subject ?? `Cancelled: ${opts.presentationTitle} at ${opts.schoolName}`,
+    html:
+      template?.html ??
+      `
+      <p>Hi ${ambassadorName},</p>
+      <p><strong>${schoolName}</strong> has cancelled <strong>${presentationTitle}</strong>
+      on <strong>${sessionDate}</strong>. You no longer need to attend.</p>
+      <p>The NZ Esports team has been notified. Get in touch with them if you have
+      already made travel arrangements.</p>
     `
   });
 

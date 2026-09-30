@@ -94,7 +94,7 @@ export function buildCalendarLinksEmailHtml(event: CalendarEventInput, icsUrl?: 
 }
 
 function escapeIcsText(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r\n|\r|\n/g, "\\n");
 }
 
 // RFC 5545 lines are limited to 75 octets. Fold on Unicode character

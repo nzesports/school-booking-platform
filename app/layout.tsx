@@ -11,7 +11,7 @@ import {
 } from "@/app/auth/actions";
 import { AppChrome } from "@/components/site/app-chrome";
 import { config } from "@/lib/env";
-import { loadAvailabilityConfig } from "@/lib/services/availability-server";
+import { loadAvailabilityConfigForDisplay } from "@/lib/services/availability-server";
 import { listPublicPresentations, listRegions } from "@/lib/services/presentations";
 
 import "./globals.css";
@@ -50,7 +50,7 @@ export default async function RootLayout({
   const [presentations, regions, availabilityConfig] = await Promise.all([
     listPublicPresentations(),
     listRegions(),
-    loadAvailabilityConfig()
+    loadAvailabilityConfigForDisplay()
   ]);
 
   return (

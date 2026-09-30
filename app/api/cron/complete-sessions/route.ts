@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { revalidateTag } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,6 +11,7 @@ import {
 } from "@/lib/services/email-triggers";
 import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { formatDateTime } from "@/lib/utils";
 
 // How far ahead the upcoming-session reminder goes out.
@@ -30,6 +33,15 @@ const ACTIVE_SESSION_STATUSES = [
   "withdrawal_requested",
   "reschedule_requested"
 ];
+// Booking ids per .in() lookup, keeping the PostgREST request URL well short
+// of proxy limits.
+const POLICY_LOOKUP_CHUNK = 100;
+const SESSION_SELECT =
+  "id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))";
+
+function secretDigest(value: string) {
+  return createHash("sha256").update(value).digest();
+}
 
 function isAuthorized(request: NextRequest) {
   if (!config.cronSecret) {
@@ -40,7 +52,41 @@ function isAuthorized(request: NextRequest) {
   // the secret via query string, where it would leak into logs and referrers.
   const header = request.headers.get("authorization");
 
-  return header === `Bearer ${config.cronSecret}`;
+  if (!header) {
+    return false;
+  }
+
+  // Compare fixed-length digests so neither the secret's contents nor its
+  // length leak through comparison timing.
+  return timingSafeEqual(secretDigest(header), secretDigest(`Bearer ${config.cronSecret}`));
+}
+
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>;
+
+// Load the import/manual-email flags for just the bookings this run touches,
+// instead of the whole booking_requests table.
+async function loadBookingPolicies(admin: AdminClient, bookingIds: Iterable<string>) {
+  const ids = [...new Set(bookingIds)];
+  const imported = new Set<string>();
+  const manualOnly = new Set<string>();
+
+  for (let index = 0; index < ids.length; index += POLICY_LOOKUP_CHUNK) {
+    const { data, error } = await admin
+      .from("booking_requests")
+      .select("id, manual_email_only, import_batch_id")
+      .in("id", ids.slice(index, index + POLICY_LOOKUP_CHUNK));
+
+    if (error) {
+      throw new Error(`Booking policies are unavailable (${error.code}).`);
+    }
+
+    for (const row of data ?? []) {
+      if (row.import_batch_id) imported.add(row.id as string);
+      if (row.manual_email_only) manualOnly.add(row.id as string);
+    }
+  }
+
+  return { imported, manualOnly };
 }
 
 export async function GET(request: NextRequest) {
@@ -57,35 +103,55 @@ export async function GET(request: NextRequest) {
   const { error: pruneError } = await admin.rpc("prune_booking_access_records");
   if (pruneError) console.error("[booking-access] Access cleanup failed", { code: pruneError.code });
 
-  const { data: policies, error: policyError } = await admin.from("booking_requests")
-    .select("id, manual_email_only, import_batch_id");
-  if (policyError) return NextResponse.json({ error: "Booking policies are unavailable." }, { status: 503 });
-  const imported = new Set((policies ?? []).filter(row => row.import_batch_id).map(row => row.id));
-  const manualOnly = new Set((policies ?? []).filter(row => row.manual_email_only).map(row => row.id));
   const now = new Date().toISOString();
-  const { data: dueSessions, error } = await admin
-    .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
-    .in("status", DELIVERABLE_STATUSES)
-    .lt("ends_at", now);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Imported sessions are never moved out of DELIVERABLE_STATUSES, so this set
+  // keeps growing; page it so real sessions aren't starved past max_rows.
+  let dueSessions;
+  try {
+    dueSessions = await fetchAllRows("due sessions", (from, to) =>
+      admin
+        .from("booking_sessions")
+        .select(SESSION_SELECT)
+        .in("status", DELIVERABLE_STATUSES)
+        .lt("ends_at", now)
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Due sessions are unavailable." },
+      { status: 500 }
+    );
   }
+
+  let policies;
+  try {
+    policies = await loadBookingPolicies(
+      admin,
+      dueSessions.map((session) => session.booking_request_id as string)
+    );
+  } catch {
+    return NextResponse.json({ error: "Booking policies are unavailable." }, { status: 503 });
+  }
+  const { imported, manualOnly } = policies;
 
   let completedSessions = 0;
   let emailsSent = 0;
   const touchedBookingIds = new Set<string>();
 
-  for (const session of dueSessions ?? []) {
+  for (const session of dueSessions) {
     if (imported.has(session.booking_request_id)) continue;
-    const { error: updateError } = await admin
+    // The status guard plus .select() means a concurrent run that already
+    // moved this session returns no row, so its history, activity and email
+    // follow-ups are not duplicated here.
+    const { data: updatedRows, error: updateError } = await admin
       .from("booking_sessions")
       .update({ status: "completed_pending_report" })
       .eq("id", session.id)
-      .in("status", DELIVERABLE_STATUSES);
+      .in("status", DELIVERABLE_STATUSES)
+      .select("id");
 
-    if (updateError) {
+    if (updateError || !updatedRows?.length) {
       continue;
     }
 
@@ -192,13 +258,19 @@ export async function GET(request: NextRequest) {
   ).toISOString();
   const { data: upcomingSessions } = await admin
     .from("booking_sessions")
-    .select("id, booking_request_id, school_id, presentation_type_id, starts_at, ends_at, expected_student_count, year_levels, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name))")
+    .select(SESSION_SELECT)
     .in("status", DELIVERABLE_STATUSES)
     .gt("starts_at", now)
     .lte("starts_at", reminderWindowEnd);
+  // Skip reminders entirely if the manual-email flags can't be read, rather
+  // than risk emailing a manual-only booking.
+  const reminderPolicies = await loadBookingPolicies(
+    admin,
+    (upcomingSessions ?? []).map((session) => session.booking_request_id as string)
+  ).catch(() => null);
 
   for (const session of upcomingSessions ?? []) {
-    if (manualOnly.has(session.booking_request_id)) continue;
+    if (!reminderPolicies || reminderPolicies.manualOnly.has(session.booking_request_id)) continue;
     const { data: alreadyReminded } = await admin
       .from("email_logs")
       .select("id")

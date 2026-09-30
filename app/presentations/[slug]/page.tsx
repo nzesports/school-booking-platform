@@ -19,7 +19,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { splitYearGroups, yearGroupChipClass } from "@/lib/domain/year-groups";
 import { presentationPalette } from "@/lib/presentation-colors";
-import { loadAvailabilityConfig } from "@/lib/services/availability-server";
+import { loadAvailabilityConfigForDisplay } from "@/lib/services/availability-server";
 import {
   getPresentationBySlug,
   listPublicPresentationResources,
@@ -39,7 +39,7 @@ export default async function PresentationDetailPage({
     getPresentationBySlug(slug),
     listPublicPresentations(),
     listRegions(),
-    loadAvailabilityConfig()
+    loadAvailabilityConfigForDisplay()
   ]);
 
   if (!presentation) {

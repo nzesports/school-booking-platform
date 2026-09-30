@@ -20,11 +20,26 @@ function nzDateString(value: Date) {
 
 // Queried by the root layout on every page render — cache it. The date window
 // drifting by up to 5 minutes is harmless; staff settings saves bust the tag.
+// Query errors throw so a failed load is never cached: an empty override list
+// would otherwise make blocked dates bookable for the whole cache window.
+// Server-side booking validation calls this directly and fails closed.
 export const loadAvailabilityConfig = unstable_cache(
   loadAvailabilityConfigUncached,
   ["availability-config"],
   { revalidate: 300, tags: [PUBLIC_CONTENT_TAG, AVAILABILITY_DATA_TAG] }
 );
+
+// For rendering the public date pickers only. A failed load falls back to the
+// default weekday availability so the site still renders; submissions are
+// re-validated against loadAvailabilityConfig, which rejects instead.
+export async function loadAvailabilityConfigForDisplay(): Promise<AvailabilityConfig> {
+  try {
+    return await loadAvailabilityConfig();
+  } catch (error) {
+    console.error("[availability] Unable to load availability config", error);
+    return { rules: [], overrides: [], limitedDates: [] };
+  }
+}
 
 async function loadAvailabilityConfigUncached(daysAhead = BOOKING_WINDOW_DAYS): Promise<AvailabilityConfig> {
   const admin = createAdminClient();
@@ -61,6 +76,17 @@ async function loadAvailabilityConfigUncached(daysAhead = BOOKING_WINDOW_DAYS): 
         "reschedule_requested"
       ])
   ]);
+  const errors = {
+    availability_rules: rulesResult.error,
+    availability_overrides: overridesResult.error,
+    booking_sessions: sessionsResult.error
+  };
+
+  for (const [table, error] of Object.entries(errors)) {
+    if (error) {
+      throw new Error(`Unable to load ${table} (${error.code}): ${error.message}`);
+    }
+  }
 
   const limitedDates = new Set(
     (sessionsResult.data ?? []).map((session) => nzDateString(new Date(session.starts_at as string)))

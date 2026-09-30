@@ -174,6 +174,24 @@ function customDateBoundary(value: string, addDay = false) {
   return boundary;
 }
 
+// Today's calendar date in New Zealand, with a zero-based month.
+function nzCalendarDate(now: Date) {
+  const parts = Object.fromEntries(
+    nzDatePartsFormatter
+      .formatToParts(now)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)])
+  );
+
+  return { year: parts.year, month: parts.month - 1, day: parts.day };
+}
+
+// NZ-local midnight at the start of a calendar date as a UTC instant. Month
+// and day overflow roll over the same way Date.UTC does.
+function nzMidnight(year: number, month: number, day = 1) {
+  return customDateBoundary(new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10));
+}
+
 export function dashboardRangeWindow(
   range: DashboardRange,
   now = new Date(),
@@ -196,60 +214,52 @@ export function dashboardRangeWindow(
     const year = Number(range.slice(5));
     return { start: customDateBoundary(`${year}-01-01`), end: customDateBoundary(`${year + 1}-01-01`) };
   }
+
+  // The server runs in UTC, so calendar ranges start from today's date in New
+  // Zealand and each boundary is that NZ-local midnight as a UTC instant.
+  const today = nzCalendarDate(now);
+
   if (range === "90days") {
-    const parts = Object.fromEntries(nzDatePartsFormatter.formatToParts(now)
-      .filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
-    const day = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-    const endDay = day.toISOString().slice(0, 10);
-    day.setUTCDate(day.getUTCDate() - 89);
-    return { start: customDateBoundary(day.toISOString().slice(0, 10)), end: customDateBoundary(endDay, true) };
+    return {
+      start: nzMidnight(today.year, today.month, today.day - 89),
+      end: nzMidnight(today.year, today.month, today.day + 1)
+    };
   }
 
-  const start = new Date(now);
-  const end = new Date(now);
-
   if (range === "week") {
-    const day = start.getDay();
-    const mondayOffset = day === 0 ? -6 : 1 - day;
-    start.setDate(start.getDate() + mondayOffset);
-    start.setHours(0, 0, 0, 0);
-    end.setTime(start.getTime());
-    end.setDate(start.getDate() + 7);
-    return { start, end };
+    const weekday = new Date(Date.UTC(today.year, today.month, today.day)).getUTCDay();
+    const monday = today.day + (weekday === 0 ? -6 : 1 - weekday);
+    return {
+      start: nzMidnight(today.year, today.month, monday),
+      end: nzMidnight(today.year, today.month, monday + 7)
+    };
   }
 
   if (range === "month") {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    end.setTime(start.getTime());
-    end.setMonth(start.getMonth() + 1);
-    return { start, end };
+    return {
+      start: nzMidnight(today.year, today.month),
+      end: nzMidnight(today.year, today.month + 1)
+    };
   }
 
   if (range === "term") {
-    const month = now.getMonth();
+    const month = today.month;
     const termStartMonth = month < 3 ? 0 : month < 6 ? 3 : month < 9 ? 6 : 9;
-    start.setMonth(termStartMonth, 1);
-    start.setHours(0, 0, 0, 0);
-    end.setTime(start.getTime());
-    end.setMonth(termStartMonth + 3);
-    return { start, end };
+    return {
+      start: nzMidnight(today.year, termStartMonth),
+      end: nzMidnight(today.year, termStartMonth + 3)
+    };
   }
 
   if (range === "biannual") {
-    const startMonth = now.getMonth() < 6 ? 0 : 6;
-    start.setMonth(startMonth, 1);
-    start.setHours(0, 0, 0, 0);
-    end.setTime(start.getTime());
-    end.setMonth(startMonth + 6);
-    return { start, end };
+    const startMonth = today.month < 6 ? 0 : 6;
+    return {
+      start: nzMidnight(today.year, startMonth),
+      end: nzMidnight(today.year, startMonth + 6)
+    };
   }
 
-  start.setMonth(0, 1);
-  start.setHours(0, 0, 0, 0);
-  end.setFullYear(start.getFullYear() + 1, 0, 1);
-  end.setHours(0, 0, 0, 0);
-  return { start, end };
+  return { start: nzMidnight(today.year, 0), end: nzMidnight(today.year + 1, 0) };
 }
 
 export function sessionInRange(

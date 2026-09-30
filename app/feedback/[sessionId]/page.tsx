@@ -1,10 +1,12 @@
 import { CircleCheck, Clock3, HelpCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { submitPublicFeedbackAction } from "@/app/portal/actions";
+import { requestFeedbackLinkAction, submitPublicFeedbackAction } from "@/app/portal/actions";
 import { SchoolFeedbackForm } from "@/components/site/school-feedback-form";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
+import { feedbackPath, isValidFeedbackLinkToken } from "@/lib/services/feedback-links";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatWeekdayDate } from "@/lib/utils";
 
@@ -19,7 +21,10 @@ const FEEDBACK_ELIGIBLE_STATUSES = new Set([
 ]);
 
 // Public post-session feedback page, reached from the "How was your session?"
-// email. No login required — the unguessable session UUID is the capability.
+// email. No login required, but the link must carry the signature issued in
+// that email: the session UUID alone is visible to ambassadors, and school
+// feedback must only come from the school. Without a valid signature nothing
+// about the session is shown, only an option to email the school a fresh link.
 export default async function PublicFeedbackPage({
   params,
   searchParams
@@ -33,6 +38,37 @@ export default async function PublicFeedbackPage({
   const submitted = (Array.isArray(submittedParam) ? submittedParam[0] : submittedParam) === "1";
   const errorParam = resolvedSearchParams.error;
   const error = Array.isArray(errorParam) ? errorParam[0] : errorParam;
+  const tokenParam = resolvedSearchParams.t;
+  const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
+  const linkParam = resolvedSearchParams.link;
+  const linkRequested = (Array.isArray(linkParam) ? linkParam[0] : linkParam) === "requested";
+
+  if (!isValidFeedbackLinkToken(sessionId, token)) {
+    return (
+      <FeedbackShell>
+        {linkRequested ? (
+          <StateCard
+            icon={<CircleCheck className="h-8 w-8" />}
+            iconClassName="bg-[#eaf8ee] text-[#117a2e]"
+            title="Check your school's inbox"
+            copy="If feedback is open for this session, we've emailed a fresh feedback link to the booking contact for the school. It can take a few minutes to arrive, so check spam too. Need help? Email schools@esf.nz."
+          />
+        ) : (
+          <StateCard
+            icon={<HelpCircle className="h-8 w-8" />}
+            title="This feedback link has expired"
+            copy="For security, feedback links now come with a code that this one doesn't have. We can email a fresh link to your school's booking contact."
+          >
+            <form action={requestFeedbackLinkAction}>
+              <input type="hidden" name="bookingSessionId" value={sessionId} />
+              <PendingSubmitButton type="submit">Email a fresh link</PendingSubmitButton>
+            </form>
+          </StateCard>
+        )}
+      </FeedbackShell>
+    );
+  }
+
   const now = new Date();
   const admin = createAdminClient();
 
@@ -148,7 +184,8 @@ export default async function PublicFeedbackPage({
       <SchoolFeedbackForm
         action={submitPublicFeedbackAction}
         sessionId={sessionId}
-        returnTo={`/feedback/${sessionId}`}
+        returnTo={feedbackPath(sessionId)}
+        feedbackToken={token}
         schoolName={(school?.name as string | null) ?? "Your school"}
         presentationTitle={(presentation?.title as string | null) ?? undefined}
         startsAt={session.starts_at as string}
@@ -166,12 +203,14 @@ function StateCard({
   icon,
   iconClassName,
   title,
-  copy
+  copy,
+  children
 }: {
   icon: ReactNode;
   iconClassName?: string;
   title: string;
   copy: string;
+  children?: ReactNode;
 }) {
   return (
     <Card className="rounded-[28px] text-center">
@@ -186,7 +225,8 @@ function StateCard({
       <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--text-soft)]">
         {copy}
       </p>
-      <div className="mt-6 flex justify-center">
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        {children}
         <ButtonLink href="/" variant="secondary">
           Back to the NZ Esports site
         </ButtonLink>

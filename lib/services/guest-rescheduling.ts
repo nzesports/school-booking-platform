@@ -31,8 +31,9 @@ export async function validateGuestReschedule(input: {
   const endMinutes = startMinutes + duration / 60000;
   if (endMinutes >= 24 * 60) return null;
   const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
-  const availability = await loadAvailabilityConfig();
-  if (!isBookableSessionTime(input.date, input.time, endTime, availability)) return null;
+  // A failed availability load rejects the change rather than allowing it.
+  const availability = await loadAvailabilityConfig().catch(() => null);
+  if (!availability || !isBookableSessionTime(input.date, input.time, endTime, availability)) return null;
   if (!input.ambassadorId) return { startsAt, endsAt };
   const admin = createAdminClient();
   if (!admin) return null;

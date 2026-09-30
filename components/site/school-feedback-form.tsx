@@ -29,7 +29,8 @@ export function SchoolFeedbackForm({
   defaultName,
   presentationTitle,
   startsAt,
-  ambassadorName
+  ambassadorName,
+  feedbackToken
 }: {
   action: (formData: FormData) => void | Promise<void>;
   sessionId: string;
@@ -39,6 +40,8 @@ export function SchoolFeedbackForm({
   presentationTitle?: string;
   startsAt?: string;
   ambassadorName?: string;
+  // Signature from the public email link; the portal form doesn't need one.
+  feedbackToken?: string;
 }) {
   return (
     <div className="grid gap-5">
@@ -83,6 +86,7 @@ export function SchoolFeedbackForm({
         <form action={action} className="grid">
           <input type="hidden" name="bookingSessionId" value={sessionId} />
           <input type="hidden" name="returnTo" value={returnTo} />
+          {feedbackToken ? <input type="hidden" name="feedbackToken" value={feedbackToken} /> : null}
 
           <FeedbackSection step={1} title="About you">
             <div className="grid gap-4 md:grid-cols-2">

@@ -6,7 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // Public .ics download for the "Apple / .ics" add-to-calendar link in
 // booking emails. Knowing the session UUID is the capability — same model as
 // the public /feedback/[sessionId] page. Email clients need a hosted https
-// file; data: URIs get stripped.
+// file; data: URIs get stripped. Session UUIDs are visible to ambassadors, so
+// the file must not carry the booking reference: reference + contact email
+// is what unlocks /manage-booking.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -20,7 +22,7 @@ export async function GET(
 
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("starts_at, ends_at, status, location_address, year_levels, expected_student_count, booking_requests(reference_code), ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name)), presentation_types(title), schools(name, city, address)")
+    .select("starts_at, ends_at, status, location_address, year_levels, expected_student_count, ambassador_profiles(display_name, profiles!ambassador_profiles_user_id_fkey(full_name)), presentation_types(title), schools(name, city, address)")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -45,7 +47,6 @@ export async function GET(
       presentationTitle: title,
       schoolName: school?.name || "School",
       ambassadorName: relationOne(relationOne(session.ambassador_profiles)?.profiles)?.full_name || relationOne(session.ambassador_profiles)?.display_name,
-      referenceCode: relationOne(session.booking_requests)?.reference_code,
       yearLevels: session.year_levels,
       expectedStudentCount: session.expected_student_count,
       manageUrl: `${config.siteUrl}/manage-booking`

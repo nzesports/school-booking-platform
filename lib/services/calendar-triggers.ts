@@ -1,6 +1,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { syncOutlookCalendarEvent } from "./calendar";
+import { escapeHtml } from "./email-triggers";
+
+// Unsynced results carry a random `calendar-<uuid>` placeholder, not an
+// Outlook id, so only a real stored id may be PATCHed.
+function isOutlookEventId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !value.startsWith("calendar-");
+}
 
 export async function syncSessionToCalendar(opts: {
   bookingSessionId: string;
@@ -21,15 +28,16 @@ export async function syncSessionToCalendar(opts: {
         .limit(1)
         .maybeSingle()
     : { data: null };
-  const existingExternalId =
-    existingEvent?.sync_status === "synced"
-      ? (existingEvent.external_event_id as string | null)
-      : null;
+  // A failed sync keeps the last real Outlook id, so retries update that event
+  // instead of creating a duplicate.
+  const existingExternalId = isOutlookEventId(existingEvent?.external_event_id)
+    ? existingEvent.external_event_id
+    : null;
   const result = await syncOutlookCalendarEvent({
     title: opts.title,
     startsAt: opts.startsAt,
     endsAt: opts.endsAt,
-    description: `Ambassador: ${opts.ambassadorName}<br>School: ${opts.schoolName}`,
+    description: `Ambassador: ${escapeHtml(opts.ambassadorName)}<br>School: ${escapeHtml(opts.schoolName)}`,
     location: opts.schoolAddress
   }, existingExternalId);
 
@@ -40,7 +48,8 @@ export async function syncSessionToCalendar(opts: {
   const calendarPayload = {
     booking_session_id: opts.bookingSessionId,
     provider: "outlook",
-    external_event_id: result.id,
+    // Never replace a real event id with a failure placeholder.
+    external_event_id: result.status === "synced" ? result.id : existingExternalId,
     sync_status: result.status,
     last_synced_at: result.status === "synced" ? new Date().toISOString() : null,
     last_error: "error" in result ? result.error : null

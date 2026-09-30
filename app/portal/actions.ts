@@ -22,6 +22,7 @@ import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
 import {
   sendAmbassadorApprovedEmail,
   sendAmbassadorAssignedEmail,
+  sendAmbassadorLateCancellationEmail,
   sendAmbassadorWithdrawalResolvedEmail,
   sendPaymentApprovalToFinanceEmail
 } from "@/lib/services/email-triggers";
@@ -46,9 +47,13 @@ import {
 import { emailDeliveryContext } from "@/lib/services/email-delivery-context";
 import { statusEmailEvent } from "@/lib/services/status-email-choice";
 import { sendSchoolSessionEmails, sendSchoolStatusChangeEmails } from "@/lib/services/school-session-email";
+import { feedbackPath, feedbackUrl, isValidFeedbackLinkToken } from "@/lib/services/feedback-links";
+import { allowPublicRequest } from "@/lib/services/public-rate-limit";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { relationOne } from "@/lib/supabase/relation";
 import { createClient } from "@/lib/supabase/server";
+import { safeLocalPath } from "@/lib/safe-redirect";
 import { formatCurrency, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
 
 // Every path revalidation in this module accompanies a data write, so bust the
@@ -139,8 +144,8 @@ const manualBookingSchema = z.object({
   contactEmail: z.string().trim().email().toLowerCase(),
   contactPhone: z.string().trim().max(100).optional(),
   contactPosition: z.string().trim().max(200).optional(),
-  assignedAmbassadorId: z.string().optional(),
-  outreachAmbassadorId: z.string().optional(),
+  assignedAmbassadorId: z.uuid().optional(),
+  outreachAmbassadorId: z.uuid().optional(),
   status: z.enum([
     "tentative",
     "applied",
@@ -151,13 +156,16 @@ const manualBookingSchema = z.object({
     "report_submitted",
     "cancelled"
   ]),
-  date: z.string().min(1),
-  startTime: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
   durationMinutes: z.coerce.number().int().positive(),
   yearLevels: z.string().min(1),
   expectedStudentCount: z.coerce.number().int().positive(),
   actualStudentCount: z.coerce.number().int().nonnegative().optional(),
   internalNotes: z.string().optional(),
+  // Record only: no emails of any kind for this booking, and a past session
+  // is saved as already reported and settled (used to backlog history).
+  recordOnly: z.boolean().default(false),
   returnTo: z.string().min(1)
 }).superRefine((value, context) => {
   if (!value.schoolId && (!value.schoolName || !value.newSchoolRegionId)) {
@@ -206,10 +214,21 @@ const ambassadorManualBookingSchema = z.object({
 });
 
 const AMBASSADOR_BOOKING_SOURCE = "ambassador_booked";
-const AMBASSADOR_DELIVERY_PAYMENT_CENTS = 25_000;
-const AMBASSADOR_SOURCING_BONUS_CENTS = 5_000;
-const AMBASSADOR_BOOKED_PAYMENT_CENTS =
-  AMBASSADOR_DELIVERY_PAYMENT_CENTS + AMBASSADOR_SOURCING_BONUS_CENTS;
+// Payout amounts and the attendee threshold come from Settings → Payments.
+// A sourced booking pays the sourced amount instead of the default; the
+// difference is recorded as the sourcing bonus.
+async function loadPayoutRates() {
+  const settings = await getPaymentSettings();
+  const deliveryCents = settings.defaultAmountCents;
+  const sourcedCents = Math.max(settings.sourcedAmountCents, deliveryCents);
+
+  return {
+    deliveryCents,
+    sourcedCents,
+    sourcingBonusCents: sourcedCents - deliveryCents,
+    eligibleThreshold: settings.eligibleAttendeeThreshold
+  };
+}
 
 const ambassadorReportSubmitSchema = z.object({
   bookingSessionId: z.uuid(),
@@ -316,12 +335,12 @@ const schoolReviewSchema = z.object({
   role: z.string().trim().min(1).max(150),
   studentsAttended: z.string().trim().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)),
   studentsCompeted: z.enum(["yes", "no"]),
-  attendeeFeedback: z.string().trim().min(1),
+  attendeeFeedback: z.string().trim().min(1).max(2000),
   attendanceRating: z.coerce.number().int().min(1).max(5),
   studentResponseRating: z.coerce.number().int().min(1).max(5),
   contentRating: z.coerce.number().int().min(1).max(5),
   presenterEnergyRating: z.coerce.number().int().min(1).max(5),
-  quote: z.string().trim().min(10),
+  quote: z.string().trim().min(10).max(2000),
   hadEsportsClub: z.enum(["yes", "no"]),
   consideringClub: z.enum(["yes", "no"]),
   mailingListOptIn: z.enum(["yes", "no"]).optional(),
@@ -451,6 +470,14 @@ const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] 
   declined: { to: "declined", onlyFrom: NON_TERMINAL_SESSION_STATUSES }
 };
 
+// Links rendered as hrefs: only web URLs, never javascript:/data: schemes.
+const httpUrlSchema = z
+  .string()
+  .trim()
+  .max(2000)
+  .url()
+  .refine((value) => /^https?:\/\//i.test(value), "Enter a web link starting with https://");
+
 const resourceSchema = z
   .object({
     id: z.string().optional(),
@@ -464,8 +491,8 @@ const resourceSchema = z
     trainingPackId: z.uuid().optional(),
     presentationTypeId: z.uuid().optional(),
     versionLabel: z.string().optional(),
-    youtubeUrl: z.string().optional(),
-    externalUrl: z.string().optional(),
+    youtubeUrl: httpUrlSchema.optional(),
+    externalUrl: httpUrlSchema.optional(),
     isCurrent: z.boolean().optional(),
     isActive: z.boolean().optional(),
     returnTo: z.string().min(1)
@@ -574,9 +601,7 @@ function appendSearchParam(path: string, key: string, value: string) {
 }
 
 function sanitizeReturnTo(path: string, fallback: string) {
-  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")
-    ? path
-    : fallback;
+  return safeLocalPath(path, fallback);
 }
 
 async function logAuditEvent(actorId: string, action: string, entityType: string, entityId?: string) {
@@ -594,7 +619,8 @@ type AdminClient = ReturnType<typeof getAdminClientOrThrow>;
 
 async function resolveManualBookingSchool(
   admin: AdminClient,
-  selection: { schoolId?: string; schoolName?: string; newSchoolRegionId?: string }
+  selection: { schoolId?: string; schoolName?: string; newSchoolRegionId?: string },
+  newSchoolStatus: "active" | "pending_review" = "active"
 ) {
   if (selection.schoolId) {
     const { data: school } = await admin
@@ -642,13 +668,40 @@ async function resolveManualBookingSchool(
     .insert({
       name: schoolName,
       region_id: region.id,
-      status: "active"
+      status: newSchoolStatus
     })
     .select("id, name, region_id, status")
     .single();
 
   return school;
 }
+
+// Sessions whose school may leave feedback through the public link.
+const PUBLIC_FEEDBACK_ELIGIBLE_STATUSES = new Set([
+  "confirmed",
+  "ambassador_assigned",
+  "completed_pending_report",
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed"
+]);
+
+// Cancelling inside this window is still allowed, but flagged as late.
+const LATE_CANCELLATION_HOURS = 24;
+
+// Sessions an assigned ambassador may report on once they have ended.
+const AMBASSADOR_REPORTABLE_SESSION_STATUSES = ["confirmed", "completed_pending_report"];
+// Sessions that need no further report, so a sibling in one of these does not
+// hold its parent booking open.
+const REPORT_TERMINAL_SESSION_STATUSES = new Set([
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed",
+  "cancelled",
+  "declined"
+]);
 
 const PRE_CONFIRMATION_BOOKING_STATUSES = new Set([
   "requested",
@@ -829,40 +882,28 @@ export async function invitePortalUserAction(formData: FormData) {
     redirect("/admin/users?compose=1&error=invite-failed");
   }
 
-  const roleUpdateQuery = inviteData.user?.id
-    ? admin
-        .from("profiles")
-        .update({ role: parsed.data.role, full_name: parsed.data.fullName })
-        .eq("id", inviteData.user.id)
-    : admin
-        .from("profiles")
-        .update({ role: parsed.data.role, full_name: parsed.data.fullName })
-        .eq("email", parsed.data.email);
-  const { error: roleUpdateError } = await roleUpdateQuery;
+  // Always target the invited auth user by id. profiles.email is not a
+  // reliable key (it can be stale or duplicated), and matching on it could
+  // grant the invited role to a different account.
+  if (!inviteData.user?.id) {
+    redirect("/admin/users?compose=1&error=invite-role-failed");
+  }
+
+  const { error: roleUpdateError } = await admin
+    .from("profiles")
+    .update({ role: parsed.data.role, full_name: parsed.data.fullName })
+    .eq("id", inviteData.user.id);
 
   if (roleUpdateError) {
     redirect("/admin/users?compose=1&error=invite-role-failed");
   }
 
   if (parsed.data.role === "ambassador") {
-    let invitedUserId: string | null = inviteData.user?.id ?? null;
-
-    if (!invitedUserId) {
-      const { data: invitedProfile } = await admin
-        .from("profiles")
-        .select("id")
-        .eq("email", parsed.data.email)
-        .maybeSingle();
-      invitedUserId = (invitedProfile?.id as string | undefined) ?? null;
-    }
-
-    const { data: ambassadorProfile } = invitedUserId
-      ? await admin
-          .from("ambassador_profiles")
-          .select("id, status")
-          .eq("user_id", invitedUserId)
-          .maybeSingle()
-      : { data: null };
+    const { data: ambassadorProfile } = await admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", inviteData.user.id)
+      .maybeSingle();
 
     if (!ambassadorProfile) {
       redirect("/admin/users?compose=1&error=invite-ambassador-failed");
@@ -1175,6 +1216,24 @@ export async function updateUserStatusAction(formData: FormData) {
   redirect("/admin/users?updated=status");
 }
 
+// An ambassador_profiles row outlives a role change (applyUserRoleChange only
+// marks it inactive), so its user_id can point at a staff or super_admin
+// account. Staff-level ambassador actions may only change the login of a user
+// who is still an ambassador; otherwise they touch the ambassador record alone.
+async function ambassadorManagedUserId(userId: string | null | undefined) {
+  if (!userId) {
+    return null;
+  }
+
+  const { data } = await getAdminClientOrThrow()
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return data?.role === "ambassador" ? userId : null;
+}
+
 export async function reviewAmbassadorAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -1202,6 +1261,8 @@ export async function reviewAmbassadorAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
   }
 
+  const managedUserId = await ambassadorManagedUserId(ambassador.user_id as string | null);
+
   const updatePayload =
     parsed.data.status === "approved"
       ? {
@@ -1220,18 +1281,18 @@ export async function reviewAmbassadorAction(formData: FormData) {
 
   let previousUserStatus: string | null = null;
 
-  if (ambassador.user_id) {
+  if (managedUserId) {
     const { data: linkedUser } = await admin
       .from("profiles")
       .select("status")
-      .eq("id", ambassador.user_id)
+      .eq("id", managedUserId)
       .maybeSingle();
     previousUserStatus = (linkedUser?.status as string | null) ?? null;
 
     const { error: userStatusError } = await admin
       .from("profiles")
       .update({ status: parsed.data.status === "approved" ? "active" : "inactive" })
-      .eq("id", ambassador.user_id);
+      .eq("id", managedUserId);
 
     if (userStatusError) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "review-failed"));
@@ -1240,7 +1301,7 @@ export async function reviewAmbassadorAction(formData: FormData) {
     // Deactivating (or declining) revokes the user's live sessions; approving
     // lifts the ban so a restored ambassador can simply log in again.
     const accessError = await setUserPlatformAccess(
-      ambassador.user_id as string,
+      managedUserId,
       parsed.data.status === "approved"
     );
 
@@ -1249,7 +1310,7 @@ export async function reviewAmbassadorAction(formData: FormData) {
         await admin
           .from("profiles")
           .update({ status: previousUserStatus })
-          .eq("id", ambassador.user_id);
+          .eq("id", managedUserId);
       }
       redirect(appendSearchParam(parsed.data.returnTo, "error", "review-failed"));
     }
@@ -1261,14 +1322,14 @@ export async function reviewAmbassadorAction(formData: FormData) {
     .eq("id", parsed.data.ambassadorProfileId);
 
   if (error) {
-    if (ambassador.user_id && previousUserStatus) {
+    if (managedUserId && previousUserStatus) {
       await admin
         .from("profiles")
         .update({ status: previousUserStatus })
-        .eq("id", ambassador.user_id);
+        .eq("id", managedUserId);
       // Best-effort: put session access back in line with the restored status.
       await setUserPlatformAccess(
-        ambassador.user_id as string,
+        managedUserId,
         previousUserStatus === "active"
       );
     }
@@ -1519,6 +1580,8 @@ export async function deleteAmbassadorRecordAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
   }
 
+  const managedUserId = await ambassadorManagedUserId(ambassador.user_id as string | null);
+
   const [sessions, sourcedBookings, reports, payments] = await Promise.all([
     admin
       .from("booking_sessions")
@@ -1558,18 +1621,18 @@ export async function deleteAmbassadorRecordAction(formData: FormData) {
         throw archiveError;
       }
 
-      if (ambassador.user_id) {
+      if (managedUserId) {
         await admin
           .from("profiles")
           .update({ status: "inactive" })
-          .eq("id", ambassador.user_id);
+          .eq("id", managedUserId);
 
         // Archived ambassadors lose platform access immediately — revoke the
         // user's live sessions rather than waiting for their token to expire.
         // Profiles without a linked auth user (nullable since migration 0026)
         // have no sessions to revoke.
         const accessError = await setUserPlatformAccess(
-          ambassador.user_id as string,
+          managedUserId,
           false
         );
 
@@ -1577,10 +1640,10 @@ export async function deleteAmbassadorRecordAction(formData: FormData) {
           throw accessError;
         }
       }
-    } else if (ambassador.user_id) {
-      await clearNullableProfileReferences(ambassador.user_id as string);
+    } else if (managedUserId) {
+      await clearNullableProfileReferences(managedUserId);
       const { error: userDeleteError } = await admin.auth.admin.deleteUser(
-        ambassador.user_id as string
+        managedUserId
       );
 
       if (userDeleteError) {
@@ -1776,6 +1839,12 @@ export async function mergeSchoolAction(formData: FormData) {
     admin
       .from("presentation_reviews")
       .update({ school_id: parsed.data.targetSchoolId })
+      .eq("school_id", parsed.data.duplicateSchoolId),
+    // media_library.school_id has no ON DELETE action, so leftover rows would
+    // make the delete below fail after everything else has moved.
+    admin
+      .from("media_library")
+      .update({ school_id: parsed.data.targetSchoolId })
       .eq("school_id", parsed.data.duplicateSchoolId)
   ];
   const results = await Promise.all(reassignments);
@@ -1825,6 +1894,7 @@ export async function saveManualBookingAction(formData: FormData) {
     expectedStudentCount: formData.get("expectedStudentCount") || 0,
     actualStudentCount: formData.get("actualStudentCount") || undefined,
     internalNotes: String(formData.get("internalNotes") || "") || undefined,
+    recordOnly: formData.get("recordOnly") === "on",
     returnTo: fallbackReturnTo
   });
 
@@ -1888,8 +1958,15 @@ export async function saveManualBookingAction(formData: FormData) {
   // the feedback-logging queue and block the ambassador from ever submitting
   // the real report. Map that choice to completed_pending_report so the
   // session enters the normal report flow instead.
-  const effectiveStatus =
+  const requestedStatus =
     parsed.data.status === "report_submitted" ? "completed_pending_report" : parsed.data.status;
+  // A record-only booking in the past is history that was already reported
+  // and paid outside the platform: save it settled (like staff-logged
+  // feedback) so it never asks the ambassador for a report or creates a
+  // payment. Future record-only bookings follow the normal flow, silently.
+  const settlesAsHistory =
+    parsed.data.recordOnly && startsAt.getTime() <= Date.now() && requestedStatus !== "cancelled";
+  const effectiveStatus = settlesAsHistory ? "closed" : requestedStatus;
 
   const { data: booking, error: bookingError } = await admin
     .from("booking_requests")
@@ -1903,7 +1980,8 @@ export async function saveManualBookingAction(formData: FormData) {
       source: parsed.data.outreachAmbassadorId ? "ambassador" : "staff",
       ambassador_outreach_by: parsed.data.outreachAmbassadorId || null,
       staff_owner_id: actor.id,
-      internal_notes: parsed.data.internalNotes || null
+      internal_notes: parsed.data.internalNotes || null,
+      manual_email_only: parsed.data.recordOnly
     })
     .select("id, reference_code")
     .single();
@@ -1930,7 +2008,7 @@ export async function saveManualBookingAction(formData: FormData) {
       expected_student_count: parsed.data.expectedStudentCount,
       actual_student_count: parsed.data.actualStudentCount ?? null,
       internal_notes: parsed.data.internalNotes || null,
-      report_status: "not_submitted",
+      report_status: settlesAsHistory ? "reviewed" : "not_submitted",
       payment_status: "not_eligible"
     })
     .select("id")
@@ -1946,12 +2024,15 @@ export async function saveManualBookingAction(formData: FormData) {
     booking_session_id: session.id,
     new_status: effectiveStatus,
     changed_by: actor.id,
-    reason: "Manual staff entry"
+    reason: parsed.data.recordOnly ? "Manual staff entry (record only, no emails)" : "Manual staff entry"
   });
 
-  if (effectiveStatus === "confirmed") {
+  // Record-only bookings are also blocked at the email sender; skipping here
+  // just avoids queueing sends that would be suppressed.
+  if (!parsed.data.recordOnly && effectiveStatus === "confirmed") {
     scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "confirmed"));
   } else if (
+    !parsed.data.recordOnly &&
     (effectiveStatus === "tentative" || effectiveStatus === "applied") &&
     !parsed.data.assignedAmbassadorId
   ) {
@@ -1989,21 +2070,32 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-ambassador-booking"));
   }
 
+  // This form is for sessions an ambassador has arranged with a school, so
+  // the session must still be ahead. Logging past sessions here would let a
+  // report (and payment) follow for a session nobody at NZ Esports scheduled.
+  const requestedStart = new Date(nzDateTimeToIso(parsed.data.date, parsed.data.startTime));
+
+  if (Number.isNaN(requestedStart.getTime())) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-ambassador-booking"));
+  }
+
+  if (requestedStart.getTime() <= Date.now()) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-date-in-past"));
+  }
+
   const admin = getAdminClientOrThrow();
-  const [{ data: ambassadorProfile }, school, { data: presentation }] =
-    await Promise.all([
-      admin
-        .from("ambassador_profiles")
-        .select("id, status")
-        .eq("user_id", actor.id)
-        .maybeSingle(),
-      resolveManualBookingSchool(admin, parsed.data),
-      admin
-        .from("presentation_types")
-        .select("id, title, is_active")
-        .eq("id", parsed.data.presentationTypeId)
-        .maybeSingle()
-    ]);
+  const [{ data: ambassadorProfile }, { data: presentation }] = await Promise.all([
+    admin
+      .from("ambassador_profiles")
+      .select("id, status")
+      .eq("user_id", actor.id)
+      .maybeSingle(),
+    admin
+      .from("presentation_types")
+      .select("id, title, is_active")
+      .eq("id", parsed.data.presentationTypeId)
+      .maybeSingle()
+  ]);
 
   if (!ambassadorProfile || ambassadorProfile.status !== "approved") {
     redirect(
@@ -2011,12 +2103,17 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     );
   }
 
-  if (!school || school.status !== "active") {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-school-missing"));
-  }
-
   if (!presentation || !presentation.is_active) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-presentation-missing"));
+  }
+
+  // Resolved only after the checks above so a rejected request never leaves
+  // a school behind. Schools an ambassador adds go to staff review like any
+  // other school not created by staff.
+  const school = await resolveManualBookingSchool(admin, parsed.data, "pending_review");
+
+  if (!school || !["active", "pending_review"].includes(String(school.status))) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-school-missing"));
   }
 
   const { data: primaryContact } = await admin
@@ -2026,12 +2123,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     .order("is_primary", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const startsAt = new Date(nzDateTimeToIso(parsed.data.date, parsed.data.startTime));
-
-  if (Number.isNaN(startsAt.getTime())) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-ambassador-booking"));
-  }
-
+  const startsAt = requestedStart;
   const endsAt = new Date(startsAt.getTime() + parsed.data.durationMinutes * 60 * 1000);
   const status = parsed.data.confirmBooking ? "confirmed" : "ambassador_assigned";
   const wasSourcedByAmbassador = parsed.data.schoolSource === "sourced";
@@ -2080,6 +2172,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-session-save-failed"));
   }
 
+  const payoutRates = await loadPayoutRates();
   await Promise.all([
     admin.from("booking_status_history").insert({
       booking_request_id: booking.id,
@@ -2099,13 +2192,11 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
         sourced_by_ambassador: wasSourcedByAmbassador,
         status,
         ambassador_profile_id: ambassadorProfile.id,
-        delivery_payment_cents: AMBASSADOR_DELIVERY_PAYMENT_CENTS,
-        sourcing_bonus_cents: wasSourcedByAmbassador
-          ? AMBASSADOR_SOURCING_BONUS_CENTS
-          : 0,
+        delivery_payment_cents: payoutRates.deliveryCents,
+        sourcing_bonus_cents: wasSourcedByAmbassador ? payoutRates.sourcingBonusCents : 0,
         payment_amount_cents: wasSourcedByAmbassador
-          ? AMBASSADOR_BOOKED_PAYMENT_CENTS
-          : AMBASSADOR_DELIVERY_PAYMENT_CENTS
+          ? payoutRates.sourcedCents
+          : payoutRates.deliveryCents
       }
     })
   ]);
@@ -2206,7 +2297,7 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   if (
     !session.ends_at ||
     new Date(session.ends_at as string).getTime() > Date.now() ||
-    session.status === "cancelled" ||
+    !AMBASSADOR_REPORTABLE_SESSION_STATUSES.includes(String(session.status)) ||
     session.report_status !== "not_submitted"
   ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
@@ -2335,17 +2426,18 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     }
   }
 
-  const eligibleThreshold = 100;
+  const payoutRates = await loadPayoutRates();
+  const eligibleThreshold = payoutRates.eligibleThreshold;
   const isPaymentEligible = parsed.data.attendeeCount >= eligibleThreshold;
   const isAmbassadorSourced =
     bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
     ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
   const paymentStatus = isPaymentEligible ? "eligible" : "not_eligible";
   const eligibilityReason = isPaymentEligible
-    ? `Attendee count ${parsed.data.attendeeCount} meets threshold of ${eligibleThreshold}.${isAmbassadorSourced ? ` ${formatCurrency(AMBASSADOR_DELIVERY_PAYMENT_CENTS)} delivery fee + ${formatCurrency(AMBASSADOR_SOURCING_BONUS_CENTS)} sourcing bonus.` : ""}`
+    ? `Attendee count ${parsed.data.attendeeCount} meets threshold of ${eligibleThreshold}.${isAmbassadorSourced ? ` ${formatCurrency(payoutRates.deliveryCents)} delivery fee + ${formatCurrency(payoutRates.sourcingBonusCents)} sourcing bonus.` : ""}`
     : `Attendee count ${parsed.data.attendeeCount} below threshold of ${eligibleThreshold}.`;
 
-  await admin
+  const { data: updatedSession, error: sessionUpdateError } = await admin
     .from("booking_sessions")
     .update({
       report_status: "submitted",
@@ -2353,27 +2445,57 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       actual_student_count: parsed.data.attendeeCount,
       status: "report_submitted"
     })
-    .eq("id", parsed.data.bookingSessionId);
+    .eq("id", parsed.data.bookingSessionId)
+    .in("status", AMBASSADOR_REPORTABLE_SESSION_STATUSES)
+    .eq("report_status", "not_submitted")
+    .select("id")
+    .maybeSingle();
+
+  if (sessionUpdateError || !updatedSession) {
+    // The session moved on (or the write failed) after the checks above; drop
+    // the report so the ambassador sees an error instead of a half-recorded
+    // submission that blocks a retry.
+    await admin.from("ambassador_reports").delete().eq("id", report.id);
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
+  }
 
   if (isPaymentEligible) {
-    await admin.from("payments").insert({
+    const { error: paymentError } = await admin.from("payments").insert({
       booking_session_id: parsed.data.bookingSessionId,
       ambassador_profile_id: ambassadorProfile.id,
       status: "pending",
       eligibility_reason: eligibilityReason,
-      amount_cents: isAmbassadorSourced
-        ? AMBASSADOR_BOOKED_PAYMENT_CENTS
-        : AMBASSADOR_DELIVERY_PAYMENT_CENTS,
-      base_amount_cents: AMBASSADOR_DELIVERY_PAYMENT_CENTS,
-      sourcing_bonus_cents: isAmbassadorSourced ? AMBASSADOR_SOURCING_BONUS_CENTS : 0
+      amount_cents: isAmbassadorSourced ? payoutRates.sourcedCents : payoutRates.deliveryCents,
+      base_amount_cents: payoutRates.deliveryCents,
+      sourcing_bonus_cents: isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
     });
+
+    if (paymentError) {
+      console.error("[report] Payment record could not be created", {
+        bookingSessionId: parsed.data.bookingSessionId,
+        code: paymentError.code
+      });
+    }
   }
 
+  // Only roll the parent booking forward once every other session on it is
+  // finished too; a multi-session booking can still have upcoming sessions.
   if (session.booking_request_id) {
-    await admin
-      .from("booking_requests")
-      .update({ status: "report_submitted" })
-      .eq("id", session.booking_request_id);
+    const { data: siblingSessions } = await admin
+      .from("booking_sessions")
+      .select("id, status")
+      .eq("booking_request_id", session.booking_request_id);
+    const closesWholeBooking = (siblingSessions ?? []).every(
+      (sibling) =>
+        sibling.id === session.id || REPORT_TERMINAL_SESSION_STATUSES.has(String(sibling.status))
+    );
+
+    if (closesWholeBooking) {
+      await admin
+        .from("booking_requests")
+        .update({ status: "report_submitted" })
+        .eq("id", session.booking_request_id);
+    }
   }
 
   await admin.from("booking_activity_logs").insert({
@@ -2385,9 +2507,9 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       attendee_count: parsed.data.attendeeCount,
       payment_status: paymentStatus,
       sourced_by_ambassador: isAmbassadorSourced,
-      delivery_payment_cents: isPaymentEligible ? AMBASSADOR_DELIVERY_PAYMENT_CENTS : 0,
+      delivery_payment_cents: isPaymentEligible ? payoutRates.deliveryCents : 0,
       sourcing_bonus_cents:
-        isPaymentEligible && isAmbassadorSourced ? AMBASSADOR_SOURCING_BONUS_CENTS : 0
+        isPaymentEligible && isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
     }
   });
 
@@ -2621,24 +2743,22 @@ export async function logStaffFeedbackAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
   }
 
+  // A cancelled or declined session was never delivered, so it cannot be
+  // closed out with feedback.
+  if (["cancelled", "declined"].includes(String(session.status))) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
+  }
+
   const { data: siblingSessions } = session.booking_request_id
     ? await admin
         .from("booking_sessions")
         .select("id, status")
         .eq("booking_request_id", session.booking_request_id)
     : { data: [] };
-  const terminalSessionStatuses = new Set([
-    "report_submitted",
-    "payment_pending",
-    "paid",
-    "closed",
-    "cancelled",
-    "declined"
-  ]);
   const closesWholeBooking = (siblingSessions ?? []).every(
     (sibling) =>
       sibling.id === session.id ||
-      terminalSessionStatuses.has(String(sibling.status))
+      REPORT_TERMINAL_SESSION_STATUSES.has(String(sibling.status))
   );
 
   const submittedAt = new Date().toISOString();
@@ -3305,14 +3425,22 @@ export async function submitSchoolReviewAction(formData: FormData) {
 }
 
 // Public variant used by the emailed /feedback/[sessionId] link — no portal
-// login required. The unguessable session UUID acts as the capability token,
-// and the unique index on booking_session_id blocks duplicate submissions.
+// login required. The session UUID alone is not enough (ambassadors can see
+// it): the link's server-issued signature must match, so only someone holding
+// the school's email link can submit. The unique index on booking_session_id
+// blocks duplicate submissions.
 export async function submitPublicFeedbackAction(formData: FormData) {
   const sessionIdRaw = String(formData.get("bookingSessionId") || "");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || `/feedback/${sessionIdRaw}`),
-    "/"
-  );
+
+  if (!z.uuid().safeParse(sessionIdRaw).success) {
+    redirect("/");
+  }
+
+  if (!isValidFeedbackLinkToken(sessionIdRaw, String(formData.get("feedbackToken") || ""))) {
+    redirect(`/feedback/${sessionIdRaw}`);
+  }
+
+  const fallbackReturnTo = feedbackPath(sessionIdRaw);
   const parsed = parseSchoolReviewForm(formData, fallbackReturnTo);
 
   if (!parsed.success) {
@@ -3330,20 +3458,10 @@ export async function submitPublicFeedbackAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
   }
 
-  const feedbackEligibleStatuses = new Set([
-    "confirmed",
-    "ambassador_assigned",
-    "completed_pending_report",
-    "report_submitted",
-    "payment_pending",
-    "paid",
-    "closed"
-  ]);
-
   // Public links only open after sessions that genuinely went ahead.
   if (
     new Date(session.ends_at as string).getTime() > Date.now() ||
-    !feedbackEligibleStatuses.has(String(session.status))
+    !PUBLIC_FEEDBACK_ELIGIBLE_STATUSES.has(String(session.status))
   ) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-delivered"));
   }
@@ -3375,6 +3493,68 @@ export async function submitPublicFeedbackAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(appendSearchParam(parsed.data.returnTo, "submitted", "1"));
+}
+
+// "Send me a fresh link" on an unsigned or outdated feedback link. The new
+// link is emailed to the booking's own contact, never to whoever clicked, and
+// the page never reveals where it went.
+export async function requestFeedbackLinkAction(formData: FormData) {
+  const sessionId = String(formData.get("bookingSessionId") || "");
+
+  if (!z.uuid().safeParse(sessionId).success) {
+    redirect("/");
+  }
+
+  const done = `/feedback/${sessionId}?link=requested`;
+  const allowed = await allowPublicRequest("feedback-link", sessionId, 3);
+  const admin = createAdminClient();
+
+  if (!allowed || !admin) {
+    redirect(done);
+  }
+
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, booking_request_id, ends_at, status")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const { data: existingReview } = session
+    ? await admin
+        .from("presentation_reviews")
+        .select("id")
+        .eq("booking_session_id", sessionId)
+        .maybeSingle()
+    : { data: null };
+
+  if (
+    session?.booking_request_id &&
+    !existingReview &&
+    new Date(session.ends_at as string).getTime() <= Date.now() &&
+    PUBLIC_FEEDBACK_ELIGIBLE_STATUSES.has(String(session.status))
+  ) {
+    try {
+      await sendSchoolSessionEmails(session.booking_request_id as string, [sessionId], "feedback");
+    } catch (error) {
+      console.error("[feedback-link] Fresh link could not be sent", {
+        sessionId,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  redirect(done);
+}
+
+// Staff "copy feedback link": the signature is created server-side and only
+// for staff, so it never reaches the ambassador portal's session data.
+export async function getSignedFeedbackLinkAction(sessionId: string) {
+  await requirePortalAccess("staff");
+
+  if (!z.uuid().safeParse(sessionId).success) {
+    return null;
+  }
+
+  return feedbackUrl(sessionId);
 }
 
 const schoolProfileSchema = z.object({
@@ -3653,30 +3833,52 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-owned"));
   }
 
+  if (!NON_TERMINAL_SESSION_STATUSES.includes(String(booking.status))) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-cancellable"));
+  }
+
   const nextStatus = "cancelled";
   const noteParts = [parsed.data.notes].filter(Boolean);
-  const { data: activeSessions } = await admin
+  const { data: bookingSessions } = await admin
     .from("booking_sessions")
     .select(
       "id, status, assigned_ambassador_id, starts_at, ends_at, presentation_type_id"
     )
-    .eq("booking_request_id", parsed.data.bookingRequestId)
-    .not(
-      "status",
-      "in",
-      "(cancelled,declined,completed_pending_report,report_submitted,payment_pending,paid,closed)"
-    );
-  const { error } = await admin
-    .from("booking_requests")
-    .update({
-      status: nextStatus,
-      requested_different_time: false,
-      requested_time_notes: noteParts.join("\n") || null
-    })
-    .eq("id", parsed.data.bookingRequestId);
+    .eq("booking_request_id", parsed.data.bookingRequestId);
+  // A session that has already started may have been delivered; it stays
+  // for staff to resolve rather than being cancelled from the school portal.
+  const now = Date.now();
+  const activeSessions = (bookingSessions ?? []).filter(
+    (session) =>
+      NON_TERMINAL_SESSION_STATUSES.includes(String(session.status)) &&
+      (!session.starts_at || new Date(session.starts_at as string).getTime() > now)
+  );
+  const cancelsWholeBooking = (bookingSessions ?? []).every(
+    (session) =>
+      activeSessions.includes(session) ||
+      ["cancelled", "declined"].includes(String(session.status))
+  );
 
-  if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
+  if (!activeSessions.length && (bookingSessions ?? []).length) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-cancellable"));
+  }
+
+  if (cancelsWholeBooking) {
+    const { data: cancelledBooking, error } = await admin
+      .from("booking_requests")
+      .update({
+        status: nextStatus,
+        requested_different_time: false,
+        requested_time_notes: noteParts.join("\n") || null
+      })
+      .eq("id", parsed.data.bookingRequestId)
+      .eq("status", booking.status)
+      .select("id")
+      .maybeSingle();
+
+    if (error || !cancelledBooking) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
+    }
   }
 
   if (activeSessions?.length) {
@@ -3694,13 +3896,17 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
   }
 
   await admin.from("booking_status_history").insert([
-    {
-      booking_request_id: parsed.data.bookingRequestId,
-      old_status: booking.status,
-      new_status: nextStatus,
-      changed_by: actor.id,
-      reason: noteParts.join(" ") || "School cancelled booking"
-    },
+    ...(cancelsWholeBooking
+      ? [
+          {
+            booking_request_id: parsed.data.bookingRequestId,
+            old_status: booking.status,
+            new_status: nextStatus,
+            changed_by: actor.id,
+            reason: noteParts.join(" ") || "School cancelled booking"
+          }
+        ]
+      : []),
     ...(activeSessions ?? []).map((session) => ({
       booking_request_id: parsed.data.bookingRequestId,
       booking_session_id: session.id,
@@ -3731,8 +3937,18 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
 
   const { data: changeSchool } = await admin.from("schools").select("name")
     .eq("id", booking.school_id).maybeSingle();
+  // Late cancellations are allowed (plans change), but staff and the
+  // assigned ambassador need to hear about them straight away.
+  const lateSessions = activeSessions.filter(
+    (session) =>
+      session.starts_at &&
+      new Date(session.starts_at as string).getTime() - now < LATE_CANCELLATION_HOURS * 60 * 60 * 1000
+  );
+  const schoolLabel = (changeSchool?.name as string | null) ?? "A school";
   void notifyStaff({
-    title: `${(changeSchool?.name as string | null) ?? "A school"} cancelled a booking`,
+    title: lateSessions.length
+      ? `Late cancellation: ${schoolLabel} cancelled a session starting within ${LATE_CANCELLATION_HOURS} hours`
+      : `${schoolLabel} cancelled a booking`,
     body: parsed.data.notes ?? "The school cancelled its booking.",
     type: "booking_cancelled",
     relatedUrl: "/staff/bookings"
@@ -3763,6 +3979,47 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
       type: "booking_cancelled",
       relatedUrl: "/ambassador/upcoming"
     }).catch(() => {});
+  }
+
+  const lateAssignedSessions = lateSessions.filter((session) => session.assigned_ambassador_id);
+
+  if (lateAssignedSessions.length) {
+    const [{ data: lateAmbassadors }, { data: latePresentations }] = await Promise.all([
+      admin
+        .from("ambassador_profiles")
+        .select("id, display_name, profiles!ambassador_profiles_user_id_fkey(email, full_name)")
+        .in("id", lateAssignedSessions.map((session) => session.assigned_ambassador_id as string)),
+      admin
+        .from("presentation_types")
+        .select("id, title")
+        .in("id", lateAssignedSessions.map((session) => session.presentation_type_id as string))
+    ]);
+
+    for (const session of lateAssignedSessions) {
+      const ambassador = (lateAmbassadors ?? []).find(
+        (profile) => profile.id === session.assigned_ambassador_id
+      );
+      const ambassadorUser = relationOne(ambassador?.profiles) as
+        | { email?: string | null; full_name?: string | null }
+        | null;
+
+      if (!ambassadorUser?.email) {
+        continue;
+      }
+
+      const presentation = (latePresentations ?? []).find(
+        (item) => item.id === session.presentation_type_id
+      );
+      scheduleEmail(() => sendAmbassadorLateCancellationEmail({
+        ambassadorEmail: ambassadorUser.email as string,
+        ambassadorName:
+          ambassadorUser.full_name || (ambassador?.display_name as string | null) || "Ambassador",
+        schoolName: schoolLabel,
+        sessionDate: formatDateTime(session.starts_at as string),
+        presentationTitle: (presentation?.title as string | null) ?? "Presentation",
+        bookingSessionId: session.id as string
+      }));
+    }
   }
 
   await logAuditEvent(
@@ -3854,7 +4111,7 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
 
   const requestedAt = new Date().toISOString();
   const previousStatus = session.status as string;
-  const { error } = await admin
+  const { data: updatedSession, error } = await admin
     .from("booking_sessions")
     .update({
       status: "reschedule_requested",
@@ -3864,9 +4121,12 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
       reschedule_previous_status: previousStatus
     })
     .eq("id", parsed.data.bookingSessionId)
-    .eq("status", previousStatus);
+    .eq("status", previousStatus)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  // No row back means the session changed status since it was read.
+  if (error || !updatedSession) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
   }
 
@@ -4010,13 +4270,16 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     updatePayload.ends_at = finalEndsAt;
   }
 
-  const { error } = await admin
+  const { data: updatedSession, error } = await admin
     .from("booking_sessions")
     .update(updatePayload)
     .eq("id", parsed.data.bookingSessionId)
-    .eq("status", "reschedule_requested");
+    .eq("status", "reschedule_requested")
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  // No row back means someone else already resolved this request.
+  if (error || !updatedSession) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "reschedule-resolution-failed"));
   }
 
@@ -4316,6 +4579,12 @@ export async function assignAmbassadorAction(formData: FormData) {
 
   const previousAmbassadorId = (currentSession.assigned_ambassador_id as string | null) ?? null;
 
+  // Delivered and closed sessions keep their ambassador: changing it would
+  // put a finished session back into the open pool or move its payment.
+  if (!NON_TERMINAL_SESSION_STATUSES.includes(String(currentSession.status))) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assignable"));
+  }
+
   if (!parsed.data.ambassadorProfileId) {
     if (!previousAmbassadorId) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assigned"));
@@ -4338,6 +4607,7 @@ export async function assignAmbassadorAction(formData: FormData) {
       })
       .eq("id", parsed.data.bookingSessionId)
       .eq("assigned_ambassador_id", previousAmbassadorId)
+      .in("status", NON_TERMINAL_SESSION_STATUSES)
       .select("id")
       .maybeSingle();
 
@@ -4424,6 +4694,18 @@ export async function assignAmbassadorAction(formData: FormData) {
     revalidatePath("/ambassador");
     revalidatePath("/school");
     redirect(appendSearchParam(parsed.data.returnTo, "unassigned", "1"));
+  }
+
+  const { data: nextAmbassador } = await admin
+    .from("ambassador_profiles")
+    .select("id")
+    .eq("id", parsed.data.ambassadorProfileId)
+    .eq("status", "approved")
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (!nextAmbassador) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-approved"));
   }
 
   const replacingPendingWithdrawal =
@@ -5716,9 +5998,11 @@ async function sendPaymentApprovalToFinance({
       finance_email_last_attempt_at: attemptedAt,
       finance_email_error: sent
         ? null
-        : "error" in emailResult
-          ? emailResult.error
-          : "Brevo email delivery is not configured.",
+        : emailResult.status === "suppressed_manual_only"
+          ? "Held back: this booking is record only (no emails). Use Resend to send the invoice to finance."
+          : "error" in emailResult
+            ? emailResult.error
+            : "Brevo email delivery is not configured.",
       sent_to_finance_at: sent ? attemptedAt : null,
       sent_to_email: financeEmail,
       updated_by: actorId
@@ -5913,6 +6197,7 @@ const paymentsSettingSchema = z.object({
   currency: z.string().trim().toUpperCase().length(3),
   financeEmail: z.string().email(),
   defaultAmountDollars: z.coerce.number().min(0),
+  sourcedAmountDollars: z.coerce.number().min(0),
   eligibleAttendeeThreshold: z.coerce.number().int().min(0)
 });
 
@@ -5924,6 +6209,7 @@ export async function savePlatformSettingsAction(formData: FormData) {
   );
   const section = String(formData.get("section") || "");
   let settingValue: Record<string, unknown> | null = null;
+  let financeEmailChange: { from: string; to: string } | null = null;
 
   if (section === "booking_defaults") {
     const parsed = bookingDefaultsSettingSchema.safeParse({
@@ -5952,15 +6238,29 @@ export async function savePlatformSettingsAction(formData: FormData) {
       currency: String(formData.get("currency") || ""),
       financeEmail: String(formData.get("financeEmail") || ""),
       defaultAmountDollars: formData.get("defaultAmountDollars") || 0,
+      sourcedAmountDollars: formData.get("sourcedAmountDollars") || 0,
       eligibleAttendeeThreshold: formData.get("eligibleAttendeeThreshold") || 0
     });
 
     if (parsed.success) {
-      const { defaultAmountDollars, ...rest } = parsed.data;
+      const { defaultAmountDollars, sourcedAmountDollars, ...rest } = parsed.data;
+      // Approved invoices, including ambassadors' bank details and the
+      // one-click "mark paid" link, go to this address. Staff run payments
+      // day to day, but only a super admin may redirect where they are sent.
+      const currentFinanceEmail = (await getPaymentSettings()).financeEmail;
+
+      if (rest.financeEmail.trim().toLowerCase() !== currentFinanceEmail.trim().toLowerCase()) {
+        if (actor.role !== "super_admin") {
+          redirect(appendSearchParam(returnTo, "error", "finance-email-super-admin-only"));
+        }
+
+        financeEmailChange = { from: currentFinanceEmail, to: rest.financeEmail };
+      }
 
       settingValue = {
         ...rest,
-        defaultAmountCents: Math.round(defaultAmountDollars * 100)
+        defaultAmountCents: Math.round(defaultAmountDollars * 100),
+        sourcedAmountCents: Math.round(sourcedAmountDollars * 100)
       };
     }
   }
@@ -5998,6 +6298,26 @@ export async function savePlatformSettingsAction(formData: FormData) {
   }
 
   await logAuditEvent(actor.id, "settings.updated", "setting", section);
+
+  if (financeEmailChange) {
+    const change = financeEmailChange;
+    await logAuditEvent(actor.id, "settings.finance_email_changed", "setting", section);
+    const { data: superAdmins } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("role", "super_admin")
+      .eq("status", "active");
+
+    for (const superAdmin of superAdmins ?? []) {
+      void notifyUser(superAdmin.id as string, {
+        title: "Finance email address changed",
+        body: `${actor.fullName} changed where payment invoices are sent from ${change.from} to ${change.to}.`,
+        type: "settings_finance_email_changed",
+        relatedUrl: "/staff/settings"
+      }).catch(() => {});
+    }
+  }
+
   updateTag(PUBLIC_CONTENT_TAG);
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -6375,12 +6695,26 @@ export async function retryFinancePaymentEmailAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "finance-email-not-retryable"));
   }
 
-  const emailSent = await sendPaymentApprovalToFinance({
-    paymentId: payment.id as string,
-    confirmationToken: confirmation.token,
-    financeEmail: paymentSettings.financeEmail,
-    actorId: actor.id
-  });
+  // A staff member clicking Resend is a deliberate manual send, so it goes
+  // out even for a record-only booking (whose automatic emails are held).
+  const { data: paymentSession } = await admin
+    .from("booking_sessions")
+    .select("booking_request_id")
+    .eq("id", payment.booking_session_id)
+    .maybeSingle();
+  const sendToFinance = () =>
+    sendPaymentApprovalToFinance({
+      paymentId: payment.id as string,
+      confirmationToken: confirmation.token,
+      financeEmail: paymentSettings.financeEmail,
+      actorId: actor.id
+    });
+  const emailSent = paymentSession?.booking_request_id
+    ? await emailDeliveryContext.run(
+        { ...emailDeliveryContext.getStore(), manualBookingId: paymentSession.booking_request_id as string },
+        sendToFinance
+      )
+    : await sendToFinance();
 
   await admin.from("booking_activity_logs").insert({
     booking_session_id: payment.booking_session_id,

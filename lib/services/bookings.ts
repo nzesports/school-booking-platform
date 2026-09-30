@@ -67,15 +67,24 @@ export async function submitBookingRequest(input: BookingRequestInput) {
 
   const usesLinkedSchool =
     linkedIdentity && linkedIdentity.schoolName.trim().toLowerCase() === input.schoolName.trim().toLowerCase();
-  const { data: existingSchool } = usesLinkedSchool
-    ? { data: { id: linkedIdentity.schoolId } }
+  // Case-insensitive exact name match: escape LIKE wildcards so a submitted
+  // name can only ever match the school it spells out.
+  const { data: existingSchool, error: existingSchoolError } = usesLinkedSchool
+    ? { data: { id: linkedIdentity.schoolId }, error: null }
     : await admin
     .from("schools")
     .select("id")
-    .ilike("name", input.schoolName)
+    .ilike("name", input.schoolName.trim().replace(/[\\%_]/g, "\\$&"))
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
+  if (existingSchoolError) {
+    throw existingSchoolError;
+  }
+
   let schoolId = existingSchool?.id as string | undefined;
+  const isNewSchool = !schoolId;
 
   if (!schoolId) {
     const { data: createdSchool, error: schoolError } = await admin
@@ -112,8 +121,14 @@ export async function submitBookingRequest(input: BookingRequestInput) {
           email: input.contactEmail,
           phone: input.contactPhone,
           position: input.contactPosition || null,
-          is_primary: !usesLinkedSchool,
-          can_access_portal: !usesLinkedSchool,
+          // Only the person who created a brand-new school becomes its primary
+          // portal contact. A contact typed into the public form for an
+          // existing school the submitter is not signed in to is unverified:
+          // signup never links it, so naming a school here cannot grant
+          // access to that school's portal.
+          is_primary: isNewSchool,
+          can_access_portal: isNewSchool,
+          unverified: !isNewSchool && !usesLinkedSchool,
           marketing_consent: input.marketingConsent
         })
         .select("id")
@@ -295,6 +310,8 @@ export async function getBookingContactDefaults(userId: string) {
   } satisfies BookingContactDefaults;
 }
 
+const CONFIRMATION_REFERENCE_WINDOW_MS = 60 * 60 * 1000;
+
 export async function getBookingConfirmation(bookingId: string) {
   const admin = createAdminClient();
 
@@ -304,14 +321,20 @@ export async function getBookingConfirmation(bookingId: string) {
 
   const { data } = await admin
     .from("booking_requests")
-    .select("id, reference_code, submitted_by_user_id")
+    .select("id, reference_code, submitted_by_user_id, created_at")
     .eq("id", bookingId)
     .maybeSingle();
+
+  // The reference plus the contact email unlocks /manage-booking, and booking
+  // IDs are not secret for long, so only reveal it just after submission. The
+  // booking-received email carries it permanently.
+  const isFreshSubmission =
+    Date.now() - new Date(String(data?.created_at ?? 0)).getTime() < CONFIRMATION_REFERENCE_WINDOW_MS;
 
   return data
     ? {
         id: data.id as string,
-        referenceCode: data.reference_code as string,
+        referenceCode: isFreshSubmission ? (data.reference_code as string) : null,
         submittedByUserId: (data.submitted_by_user_id as string | null) ?? null
       }
     : null;

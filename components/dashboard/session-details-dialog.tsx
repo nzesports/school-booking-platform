@@ -20,7 +20,7 @@ import { createPortal } from "react-dom";
 import { BookingEmailsPanel } from "@/components/dashboard/booking-emails-panel";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 
-import { revokeBookingGuestAccessAction } from "@/app/portal/actions";
+import { getSignedFeedbackLinkAction, revokeBookingGuestAccessAction } from "@/app/portal/actions";
 import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
@@ -97,7 +97,13 @@ export function SessionDetailsButton({
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
 
   const copyFeedbackLink = async () => {
-    const feedbackUrl = `${window.location.origin}/feedback/${session.id}`;
+    // Signed on the server: an unsigned /feedback/<id> link no longer opens
+    // the form, so the school can't be impersonated by anyone who knows the id.
+    const feedbackUrl = await getSignedFeedbackLinkAction(session.id);
+
+    if (!feedbackUrl) {
+      return;
+    }
 
     try {
       await navigator.clipboard.writeText(feedbackUrl);
@@ -502,7 +508,7 @@ export function SessionDetailsButton({
                       Share school feedback form
                     </p>
                     <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
-                      Anyone with this link can submit feedback after the session. No login is required.
+                      Only send this link to the school. Anyone with it can submit feedback on behalf of the school after the session, with no login.
                     </p>
                   </div>
                   <Button

@@ -49,6 +49,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import type { PaymentRecord } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
 import { getAmbassadorPortalData, loadUserNotifications } from "@/lib/services/portal";
+import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { formatCurrency, formatShortDate } from "@/lib/utils";
 
 const navItems = [
@@ -76,7 +77,16 @@ export default async function AmbassadorPortalPage({
   }
 
   const actor = await requirePortalAccess("ambassador");
-  const portal = await getAmbassadorPortalData(actor.id);
+  const [portal, paymentSettings] = await Promise.all([
+    getAmbassadorPortalData(actor.id),
+    getPaymentSettings()
+  ]);
+  const sourcedCents = Math.max(paymentSettings.sourcedAmountCents, paymentSettings.defaultAmountCents);
+  const payoutLabels = {
+    delivery: formatCurrency(paymentSettings.defaultAmountCents),
+    sourcingBonus: formatCurrency(sourcedCents - paymentSettings.defaultAmountCents),
+    sourced: formatCurrency(sourcedCents)
+  };
   const notifications = await loadUserNotifications(actor.id);
   const ownedSessions = portal.assignedSessions;
   const now = new Date();
@@ -113,7 +123,7 @@ export default async function AmbassadorPortalPage({
       (resource.category === "resource" && Boolean(resource.presentationTypeId))
   );
   const materialsConsentAcceptedAt = portal.ambassador.details?.materialsConsentAcceptedAt;
-  const notice = getAmbassadorNotice(resolvedSearchParams);
+  const notice = getAmbassadorNotice(resolvedSearchParams, payoutLabels.sourced);
   const reportRatings = portal.reports.flatMap((report) =>
     [report.teacherResponseRating, report.studentEngagementRating].filter(
       (rating): rating is number => typeof rating === "number" && rating > 0
@@ -211,6 +221,7 @@ export default async function AmbassadorPortalPage({
               )}
               action={saveAmbassadorBookingAction}
               triggerLabel="Submit sourced booking"
+              payoutLabels={payoutLabels}
               triggerClassName="min-h-[44px] rounded-[14px] border-[#d8c8f4] bg-[#f8f5ff] px-4 text-[#6941c6] shadow-[0_10px_24px_rgba(105,65,198,0.10)] hover:border-[#c5afea] hover:bg-[#f1edfd]"
               returnTo="/ambassador/bookings?tab=sourced"
             />
@@ -383,7 +394,7 @@ export default async function AmbassadorPortalPage({
                     0
                   )
                 )}
-                detail="Additional $50 school-sourcing payments"
+                detail={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
               />
             </div>
             <Card className="rounded-[26px]">
@@ -595,7 +606,8 @@ function InvoiceStatusBadge({
 }
 
 function getAmbassadorNotice(
-  searchParams: Record<string, string | string[] | undefined>
+  searchParams: Record<string, string | string[] | undefined>,
+  sourcedPaymentLabel: string
 ): { tone: "success" | "error"; message: string } | null {
   const submitted = readSearchParam(searchParams, "submitted");
   const applied = readSearchParam(searchParams, "applied");
@@ -615,7 +627,7 @@ function getAmbassadorNotice(
   if (created === "ambassador-booking") {
     return {
       tone: "success",
-      message: "Booking logged and assigned to you. It is flagged as Ambassador Booked for the $300 payment rate."
+      message: `Booking logged and assigned to you. It is flagged as Ambassador Booked for the ${sourcedPaymentLabel} payment rate.`
     };
   }
 
@@ -659,6 +671,13 @@ function getAmbassadorNotice(
     return {
       tone: "error",
       message: "Check the booking details and try again. All required fields need a valid value."
+    };
+  }
+
+  if (error === "booking-date-in-past") {
+    return {
+      tone: "error",
+      message: "Bookings can only be logged for sessions that haven't started yet. Contact staff to record a session that has already happened."
     };
   }
 

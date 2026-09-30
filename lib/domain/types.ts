@@ -252,6 +252,8 @@ export interface BookingSessionView {
 export interface BookingRequestView {
   id: string;
   referenceCode?: string;
+  // Logged as "record only": no emails of any kind are sent for it.
+  recordOnly?: boolean;
   schoolName: string;
   primaryContactPosition?: string;
   primaryContactName: string;

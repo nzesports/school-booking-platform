@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import type { ProfileStatus, Role } from "@/lib/domain/types";
 import { config } from "@/lib/env";
+import { safeLocalPath } from "@/lib/safe-redirect";
 
 const getCreateClient = async () => (await import("@/lib/supabase/server")).createClient();
 const getCreateAdminClient = async () =>
@@ -61,7 +62,7 @@ export function portalPathForRole(role: Role) {
 }
 
 export function sanitizePublicAuthReturnPath(path?: string | null) {
-  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+  if (!path || safeLocalPath(path, "") !== path) {
     return "/";
   }
 

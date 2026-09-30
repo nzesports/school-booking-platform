@@ -84,6 +84,32 @@ const BOOKING_CANCELLED_STATUSES = new Set(["cancelled", "declined"]);
 
 type RegionSummary = { id: string; name: string; slug: string; isActive: boolean };
 
+const nzYearMonthFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Pacific/Auckland",
+  year: "numeric",
+  month: "numeric"
+});
+
+// The server renders in UTC, so bucket every date by its calendar year and
+// (zero-based) month in New Zealand rather than the host's local time.
+function nzYearMonth(value: string | Date) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return { year: Number.NaN, month: Number.NaN };
+  }
+
+  const parts = nzYearMonthFormatter.formatToParts(date);
+  const part = (type: "year" | "month") =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+
+  return { year: part("year"), month: part("month") - 1 };
+}
+
+function nzYear(value: string | Date) {
+  return nzYearMonth(value).year;
+}
+
 export function OperationsAnalytics({
   basePath,
   range,
@@ -130,15 +156,15 @@ export function OperationsAnalytics({
   calendarHref?: string;
 }) {
   const now = new Date();
-  const year = now.getFullYear();
+  const year = nzYear(now);
   const allSessions = bookings.flatMap((booking) => booking.sessions);
   const availableAnalyticsYears = Array.from(
     new Set([
       year,
-      ...bookings.map((booking) => new Date(booking.createdAt).getFullYear()),
-      ...allSessions.map((session) => new Date(session.startsAt).getFullYear()),
+      ...bookings.map((booking) => nzYear(booking.createdAt)),
+      ...allSessions.map((session) => nzYear(session.startsAt)),
       ...reports.map((report) =>
-        new Date(report.sessionStartsAt ?? report.submittedAt).getFullYear()
+        nzYear(report.sessionStartsAt ?? report.submittedAt)
       )
     ])
   )
@@ -193,17 +219,17 @@ export function OperationsAnalytics({
   const studentsReachedRange = countStudentsReached(rangeReports, deliveredRangeSessions);
 
   const analyticsYearBookings = bookings.filter(
-    (booking) => new Date(booking.createdAt).getFullYear() === selectedAnalyticsYear
+    (booking) => nzYear(booking.createdAt) === selectedAnalyticsYear
   );
   const currentYearBookings = bookings.filter(
-    (booking) => new Date(booking.createdAt).getFullYear() === year
+    (booking) => nzYear(booking.createdAt) === year
   );
   const activity = buildYearlyActivity(bookings, allSessions, selectedAnalyticsYear);
   const sources = buildSourceBreakdown(analyticsYearBookings);
   const bookingStatuses = buildBookingStatusBreakdown(analyticsYearBookings);
   const previousYearSources = buildSourceBreakdown(
     bookings.filter(
-      (booking) => new Date(booking.createdAt).getFullYear() === selectedAnalyticsYear - 1
+      (booking) => nzYear(booking.createdAt) === selectedAnalyticsYear - 1
     )
   );
   const studentSeries = buildYearlyStudentSeries(reports, allSessions, selectedAnalyticsYear);
@@ -217,7 +243,7 @@ export function OperationsAnalytics({
     allSessions
       .filter(
         (session) =>
-          new Date(session.startsAt).getFullYear() === selectedAnalyticsYear &&
+          nzYear(session.startsAt) === selectedAnalyticsYear &&
           isDeliveredSession(session, now)
       )
       .map((session) => session.schoolName)
@@ -228,7 +254,7 @@ export function OperationsAnalytics({
   const ambassadorFunnel = buildAmbassadorFunnel(currentYearBookings, now);
   const sessionsAssignedThisYear = allSessions.filter(
     (session) =>
-      new Date(session.startsAt).getFullYear() === year &&
+      nzYear(session.startsAt) === year &&
       session.assignedAmbassadorName &&
       !isCancelledSession(session)
   ).length;
@@ -236,7 +262,7 @@ export function OperationsAnalytics({
   const impact = buildMonthlyImpact(reports, allSessions, now);
   const feedback = buildFeedbackSummary(rangeReports, rangeReviews);
   const coverage = buildYearGroupCoverage(
-    allSessions.filter((session) => new Date(session.startsAt).getFullYear() === year)
+    allSessions.filter((session) => nzYear(session.startsAt) === year)
   );
   const upcomingSessions = allSessions
     .filter((session) => isFutureSession(session, now))
@@ -1492,8 +1518,8 @@ function buildBookingPipeline(
 }
 
 function monthOf(value: string, year: number) {
-  const date = new Date(value);
-  return date.getFullYear() === year ? date.getMonth() : null;
+  const date = nzYearMonth(value);
+  return date.year === year ? date.month : null;
 }
 
 function buildYearlyActivity(
@@ -1509,7 +1535,7 @@ function buildYearlyActivity(
     const month = monthOf(booking.createdAt, year);
     if (month !== null) {
       bookingCounts[month] += 1;
-    } else if (new Date(booking.createdAt).getFullYear() === year - 1) {
+    } else if (nzYear(booking.createdAt) === year - 1) {
       lastYearActivity += 1;
     }
   }
@@ -1522,7 +1548,7 @@ function buildYearlyActivity(
     const month = monthOf(session.startsAt, year);
     if (month !== null) {
       sessionCounts[month] += 1;
-    } else if (new Date(session.startsAt).getFullYear() === year - 1) {
+    } else if (nzYear(session.startsAt) === year - 1) {
       lastYearActivity += 1;
     }
   }
@@ -1642,7 +1668,7 @@ function buildPaymentSummary(payments: PaymentRecord[], year: number) {
   const paidThisYear = payments.filter(
     (payment) =>
       payment.status === "paid" &&
-      new Date(payment.paidAt ?? payment.createdAt).getFullYear() === year
+      nzYear(payment.paidAt ?? payment.createdAt) === year
   );
   const outstanding = payments.filter((payment) =>
     ["pending", "eligible", "approved"].includes(payment.status)
@@ -1697,10 +1723,11 @@ function buildAmbassadorFunnel(yearBookings: BookingRequestView[], now: Date) {
 }
 
 function buildMonthlyImpact(reports: ReportSummary[], sessions: BookingSessionView[], now: Date) {
+  const current = nzYearMonth(now);
   const inMonth = (value: string, monthsBack: number) => {
-    const date = new Date(value);
-    const target = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
-    return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth();
+    const date = nzYearMonth(value);
+    const target = new Date(Date.UTC(current.year, current.month - monthsBack, 1));
+    return date.year === target.getUTCFullYear() && date.month === target.getUTCMonth();
   };
   const deliveredIn = (monthsBack: number) =>
     sessions.filter((session) => isDeliveredSession(session, now) && inMonth(session.startsAt, monthsBack));

@@ -892,6 +892,7 @@ export default async function StaffPortalPage({
             settings={portal.settings}
             action={savePlatformSettingsAction}
             returnTo="/staff/settings"
+            canEditFinanceEmail={actor.role === "super_admin"}
             notice={
               readSearchParam(resolvedSearchParams, "saved") === "settings"
                 ? { tone: "success", message: "Settings saved." }
@@ -899,7 +900,9 @@ export default async function StaffPortalPage({
                   ? { tone: "error", message: "Those settings didn't look right — please check the fields and try again." }
                   : readSearchParam(resolvedSearchParams, "error") === "settings-save-failed"
                     ? { tone: "error", message: "Saving failed — please try again." }
-                    : null
+                    : readSearchParam(resolvedSearchParams, "error") === "finance-email-super-admin-only"
+                      ? { tone: "error", message: "Only a super admin can change the finance email address." }
+                      : null
             }
           />
         ) : null}
