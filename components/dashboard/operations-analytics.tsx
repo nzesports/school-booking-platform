@@ -243,8 +243,12 @@ export function OperationsAnalytics({
     .filter((session) => isFutureSession(session, now))
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 
-  const bookingsHref = (view: string) => {
+  const bookingsHref = (view: string, metric?: string) => {
     const searchParams = new URLSearchParams({ status: view, range });
+
+    if (metric) {
+      searchParams.set("metric", metric);
+    }
 
     if (customRange) {
       searchParams.set("from", customRange.from);
@@ -699,7 +703,7 @@ export function OperationsAnalytics({
             </p>
             {studentReachRange.sessionsMissingNumber > 0 ? (
               <Link
-                href={bookingsHref("past")}
+                href={bookingsHref("all", "missing-students")}
                 className="mt-3 inline-flex w-fit rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#9a5a00]"
               >
                 {studentReachRange.sessionsMissingNumber} completed{" "}
@@ -1131,37 +1135,54 @@ function DonutChart({
   segments: Array<{ label: string; value: number; color: string; percent: number }>;
 }) {
   const radius = 62;
-  const circumference = 2 * Math.PI * radius;
+  const center = 90;
   const visibleSegments = segments.filter((segment) => segment.value > 0);
+  // Each slice is its own arc path. Dashed circles leave a notch where the
+  // last slice meets the circle's start point, so they aren't used here.
+  const pointAt = (fraction: number) => {
+    const angle = fraction * 2 * Math.PI - Math.PI / 2;
+    return {
+      x: center + radius * Math.cos(angle),
+      y: center + radius * Math.sin(angle)
+    };
+  };
   const arcs = visibleSegments.map((segment, index) => {
     const precedingValue = visibleSegments
       .slice(0, index)
       .reduce((sum, preceding) => sum + preceding.value, 0);
+    const startFraction = total > 0 ? precedingValue / total : 0;
+    const endFraction = total > 0 ? (precedingValue + segment.value) / total : 0;
+    const start = pointAt(startFraction);
+    const end = pointAt(endFraction);
 
     return {
       ...segment,
-      length: total > 0 ? (segment.value / total) * circumference : 0,
-      offset: total > 0 ? (precedingValue / total) * circumference : 0
+      isFullCircle: endFraction - startFraction >= 0.9999,
+      path: `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${
+        endFraction - startFraction > 0.5 ? 1 : 0
+      } 1 ${end.x} ${end.y}`
     };
   });
 
   return (
     <div className="relative mx-auto h-44 w-44">
-      <svg viewBox="0 0 180 180" className="h-full w-full -rotate-90">
-        <circle cx="90" cy="90" r={radius} fill="none" stroke="#edf2f9" strokeWidth="26" />
-        {arcs.map((arc) => (
-          <circle
-            key={arc.label}
-            cx="90"
-            cy="90"
-            r={radius}
-            fill="none"
-            stroke={arc.color}
-            strokeWidth="26"
-            strokeDasharray={`${arc.length} ${circumference - arc.length}`}
-            strokeDashoffset={-arc.offset}
-          />
-        ))}
+      <svg viewBox="0 0 180 180" className="h-full w-full">
+        <circle cx={center} cy={center} r={radius} fill="none" stroke="#edf2f9" strokeWidth="26" />
+        {arcs.map((arc) =>
+          arc.isFullCircle ? (
+            <circle
+              key={arc.label}
+              cx={center}
+              cy={center}
+              r={radius}
+              fill="none"
+              stroke={arc.color}
+              strokeWidth="26"
+            />
+          ) : (
+            <path key={arc.label} d={arc.path} fill="none" stroke={arc.color} strokeWidth="26" />
+          )
+        )}
       </svg>
       <div className="absolute inset-0 grid place-content-center text-center">
         <p className="text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">

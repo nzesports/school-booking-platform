@@ -71,6 +71,7 @@ export function SessionDetailsButton({
   updateStatusAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
+  updateStudentCountsAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -80,6 +81,8 @@ export function SessionDetailsButton({
   updateStatusAction?: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction?: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction?: (formData: FormData) => void | Promise<void>;
+  // Staff/admin only: lets the student numbers on this session be corrected.
+  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
   returnTo?: string;
 }) {
   const [tab, setTab] = useState<"details" | "emails">("details");
@@ -223,11 +226,60 @@ export function SessionDetailsButton({
                   </p>
                   <p className="text-sm text-[color:var(--text-soft)]">
                     {session.actualStudentCount !== undefined
-                      ? "Final attendance"
+                      ? `Final attendance · ${session.expectedStudentCount} expected`
                       : "School booking estimate"}
                   </p>
                 </DetailTile>
               </div>
+
+              {updateStudentCountsAction ? (
+                <form
+                  action={updateStudentCountsAction}
+                  className="mt-5 grid gap-3 border-t border-slate-200/70 pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+                >
+                  <input type="hidden" name="sessionId" value={session.id} />
+                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                      Expected students
+                    </span>
+                    <input
+                      name="expectedStudentCount"
+                      type="number"
+                      min={0}
+                      max={10000}
+                      step={1}
+                      defaultValue={session.expectedStudentCount > 0 ? session.expectedStudentCount : ""}
+                      placeholder="e.g. 120"
+                      className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                      Actual students
+                    </span>
+                    <input
+                      name="actualStudentCount"
+                      type="number"
+                      min={0}
+                      max={10000}
+                      step={1}
+                      defaultValue={session.actualStudentCount ?? ""}
+                      placeholder="Optional"
+                      className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]"
+                    />
+                  </label>
+                  <PendingSubmitButton type="submit" pendingLabel="Saving...">
+                    Save student numbers
+                  </PendingSubmitButton>
+                  {session.reportStatus === "submitted" || session.reportStatus === "reviewed" ? (
+                    <p className="text-xs text-[color:var(--text-soft)] sm:col-span-3">
+                      This session has an ambassador report, so the report&apos;s attendance is
+                      shown as the actual figure.
+                    </p>
+                  ) : null}
+                </form>
+              ) : null}
 
               <div className="mt-5 grid gap-5 border-t border-slate-200/70 pt-5 md:grid-cols-2">
                 <DetailTile

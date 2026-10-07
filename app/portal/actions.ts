@@ -434,6 +434,19 @@ const removeBookingInternalNoteSchema = z.object({
   returnTo: z.string().min(1)
 });
 
+// Blank inputs clear the number (stored as null).
+const optionalStudentCount = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? null : value),
+  z.coerce.number().int().min(0).max(10000).nullable()
+);
+
+const updateSessionStudentCountsSchema = z.object({
+  sessionId: z.uuid(),
+  expectedStudentCount: optionalStudentCount,
+  actualStudentCount: optionalStudentCount,
+  returnTo: z.string().min(1)
+});
+
 // Sessions in these states are still "in flight" and safe to rewrite when the
 // parent booking is cancelled or declined. Delivered/terminal sessions
 // (completed_pending_report, report_submitted, payment_pending, paid, closed,
@@ -5342,6 +5355,77 @@ export async function removeBookingInternalNoteAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(appendSearchParam(parsed.data.returnTo, "removed", "note"));
+}
+
+// Lets staff fill in or correct the student numbers on an existing session,
+// e.g. completed bookings imported without a count.
+export async function updateSessionStudentCountsAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/bookings"),
+    "/staff/bookings"
+  );
+  const parsed = updateSessionStudentCountsSchema.safeParse({
+    sessionId: String(formData.get("sessionId") || ""),
+    expectedStudentCount: String(formData.get("expectedStudentCount") ?? "").trim(),
+    actualStudentCount: String(formData.get("actualStudentCount") ?? "").trim(),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-student-count"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, booking_request_id, expected_student_count, actual_student_count")
+    .eq("id", parsed.data.sessionId)
+    .maybeSingle();
+
+  if (!session) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+  }
+
+  const { error } = await admin
+    .from("booking_sessions")
+    .update({
+      expected_student_count: parsed.data.expectedStudentCount,
+      actual_student_count: parsed.data.actualStudentCount
+    })
+    .eq("id", parsed.data.sessionId);
+
+  if (error) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "student-count-update-failed"));
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.sessionId,
+    action: "booking.student_counts_updated",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: {
+      expectedStudentCount: {
+        from: session.expected_student_count,
+        to: parsed.data.expectedStudentCount
+      },
+      actualStudentCount: {
+        from: session.actual_student_count,
+        to: parsed.data.actualStudentCount
+      }
+    }
+  });
+
+  await logAuditEvent(
+    actor.id,
+    "booking.student_counts_updated",
+    "booking_session",
+    parsed.data.sessionId
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(appendSearchParam(parsed.data.returnTo, "updated", "students"));
 }
 
 export async function prepareResourceUploadAction(input: { name: string; size: number }) {

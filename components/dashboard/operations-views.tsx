@@ -9,7 +9,8 @@ import {
   mergeSchoolAction,
   resolveSessionRescheduleAction,
   resolveSessionWithdrawalAction,
-  updateBookingStatusAction
+  updateBookingStatusAction,
+  updateSessionStudentCountsAction
 } from "@/app/portal/actions";
 import { BookingsExplorer } from "@/components/dashboard/bookings-explorer";
 import { SchoolsExplorer } from "@/components/dashboard/schools-explorer";
@@ -72,6 +73,10 @@ export function BookingLifecyclePanel({
   const isPending = (session: BookingSessionView) =>
     !isCompleted(session) && !isCancelled(session) && !isConfirmed(session);
   const hasReport = (status: string) => ["submitted", "reviewed"].includes(status);
+  // Same rule as the dashboard's "no student number" flag.
+  const isMissingStudents = (session: BookingSessionView) =>
+    isCompleted(session) &&
+    !(Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0) > 0);
   const metricBookings = metric === "all" ? periodBookings : periodBookings.map(booking => ({
     ...booking,
     sessions: booking.sessions.filter(session => {
@@ -81,6 +86,7 @@ export function BookingLifecyclePanel({
       if (metric === "confirmed") return isConfirmed(session);
       if (metric === "reports") return hasReport(session.reportStatus);
       if (metric === "missing-reports") return isCompleted(session) && !hasReport(session.reportStatus);
+      if (metric === "missing-students") return isMissingStudents(session);
       return true;
     })
   })).filter(booking => booking.sessions.length);
@@ -157,6 +163,18 @@ export function BookingLifecyclePanel({
         />
       </div>
 
+      {metric === "missing-students" ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#f3dcae] bg-[#fff8ea] px-4 py-3 text-sm text-[#7a4a00]">
+          <p>
+            Showing {sessions.filter(isMissingStudents).length} completed{" "}
+            {sessions.filter(isMissingStudents).length === 1 ? "session" : "sessions"} with no
+            student number. Open Details to add it.
+          </p>
+          <ButtonLink href={metricHref("all")} variant="secondary">
+            Show all bookings
+          </ButtonLink>
+        </div>
+      ) : null}
       {activeView !== "all" ? (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[color:var(--text-soft)]">
           <p>Showing {activeView === "current" ? "bookings needing attention" : `${activeView} bookings`} in both views.</p>
@@ -185,6 +203,7 @@ export function BookingLifecyclePanel({
         assignAmbassadorAction={assignAmbassadorAction}
         resolveWithdrawalAction={resolveSessionWithdrawalAction}
         resolveRescheduleAction={resolveSessionRescheduleAction}
+        updateStudentCountsAction={updateSessionStudentCountsAction}
         initialQuery={initialQuery}
         initialBookingId={initialBookingId}
       />

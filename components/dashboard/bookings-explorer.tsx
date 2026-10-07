@@ -309,6 +309,7 @@ export function BookingsExplorer({
   assignAmbassadorAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
+  updateStudentCountsAction,
   initialQuery,
   initialBookingId,
   metric = "all"
@@ -327,6 +328,7 @@ export function BookingsExplorer({
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
+  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
   initialQuery?: string;
   initialBookingId?: string;
   metric?: string;
@@ -885,6 +887,7 @@ export function BookingsExplorer({
                             updateStatusAction={updateStatusAction}
                             resolveWithdrawalAction={resolveWithdrawalAction}
                             resolveRescheduleAction={resolveRescheduleAction}
+                            updateStudentCountsAction={updateStudentCountsAction}
                             returnTo={cardReturnTo}
                           />
                         ))}
@@ -993,6 +996,7 @@ export function BookingsExplorer({
                                   updateStatusAction={updateStatusAction}
                                   resolveWithdrawalAction={resolveWithdrawalAction}
                                   resolveRescheduleAction={resolveRescheduleAction}
+                                  updateStudentCountsAction={updateStudentCountsAction}
                                   returnTo={cardReturnTo}
                                 />
                               </td>
@@ -1092,6 +1096,7 @@ function CompactSessionCard({
   updateStatusAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
+  updateStudentCountsAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -1101,6 +1106,7 @@ function CompactSessionCard({
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
+  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
   returnTo: string;
 }) {
   return (
@@ -1181,6 +1187,7 @@ function CompactSessionCard({
           updateStatusAction={updateStatusAction}
           resolveWithdrawalAction={resolveWithdrawalAction}
           resolveRescheduleAction={resolveRescheduleAction}
+          updateStudentCountsAction={updateStudentCountsAction}
           returnTo={returnTo}
         />
       </div>
