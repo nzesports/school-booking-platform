@@ -43,15 +43,20 @@ import type {
   SchoolFeedbackSummary
 } from "@/lib/domain/types";
 import {
+  averageReportRating,
+  bookingActivityDate,
   bookingInRange,
   buildYearGroupCoverage,
   isCancelledSession,
   isCompletedBooking,
   isDeliveredSession,
   isFutureSession,
+  nzYearMonth,
+  reportActivityDate,
   reportInRange,
   reviewInRange,
   sessionInRange,
+  summarizeStudentReach,
   type DashboardCustomRange,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
@@ -84,28 +89,6 @@ const BOOKING_COMPLETED_STATUSES = new Set([
 const BOOKING_CANCELLED_STATUSES = new Set(["cancelled", "declined"]);
 
 type RegionSummary = { id: string; name: string; slug: string; isActive: boolean };
-
-const nzYearMonthFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Pacific/Auckland",
-  year: "numeric",
-  month: "numeric"
-});
-
-// The server renders in UTC, so bucket every date by its calendar year and
-// (zero-based) month in New Zealand rather than the host's local time.
-function nzYearMonth(value: string | Date) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return { year: Number.NaN, month: Number.NaN };
-  }
-
-  const parts = nzYearMonthFormatter.formatToParts(date);
-  const part = (type: "year" | "month") =>
-    Number(parts.find((entry) => entry.type === type)?.value);
-
-  return { year: part("year"), month: part("month") - 1 };
-}
 
 function nzYear(value: string | Date) {
   return nzYearMonth(value).year;
@@ -162,11 +145,9 @@ export function OperationsAnalytics({
   const availableAnalyticsYears = Array.from(
     new Set([
       year,
-      ...bookings.map((booking) => nzYear(booking.createdAt)),
+      ...bookings.map((booking) => nzYear(bookingActivityDate(booking))),
       ...allSessions.map((session) => nzYear(session.startsAt)),
-      ...reports.map((report) =>
-        nzYear(report.sessionStartsAt ?? report.submittedAt)
-      )
+      ...reports.map((report) => nzYear(reportActivityDate(report)))
     ])
   )
     .filter((value) => Number.isFinite(value) && value >= 2000 && value <= year)
@@ -217,38 +198,31 @@ export function OperationsAnalytics({
   );
 
   const pipeline = buildBookingPipeline(rangeBookings, rangeSessions, now);
-  const studentsReachedRange = countStudentsReached(rangeReports, deliveredRangeSessions);
+  const studentReachRange = summarizeStudentReach(rangeReports, deliveredRangeSessions);
 
   const analyticsYearBookings = bookings.filter(
-    (booking) => nzYear(booking.createdAt) === selectedAnalyticsYear
+    (booking) => nzYear(bookingActivityDate(booking)) === selectedAnalyticsYear
   );
   const currentYearBookings = bookings.filter(
-    (booking) => nzYear(booking.createdAt) === year
+    (booking) => nzYear(bookingActivityDate(booking)) === year
   );
   const activity = buildYearlyActivity(bookings, allSessions, selectedAnalyticsYear);
   const sources = buildSourceBreakdown(analyticsYearBookings);
   const bookingStatuses = buildBookingStatusBreakdown(analyticsYearBookings);
   const previousYearSources = buildSourceBreakdown(
     bookings.filter(
-      (booking) => nzYear(booking.createdAt) === selectedAnalyticsYear - 1
+      (booking) => nzYear(bookingActivityDate(booking)) === selectedAnalyticsYear - 1
     )
   );
-  const studentSeries = buildYearlyStudentSeries(reports, allSessions, selectedAnalyticsYear);
-  const yearStudentsTotal = studentSeries.reduce((total, point) => total + point.value, 0);
+  const yearStudents = buildYearlyStudentSeries(allSessions, selectedAnalyticsYear, now);
+  const studentSeries = yearStudents.series;
+  const yearStudentsTotal = yearStudents.total;
   const lastYearStudentsTotal = buildYearlyStudentSeries(
-    reports,
     allSessions,
-    selectedAnalyticsYear - 1
-  ).reduce((total, point) => total + point.value, 0);
-  const yearSchoolsReached = new Set(
-    allSessions
-      .filter(
-        (session) =>
-          nzYear(session.startsAt) === selectedAnalyticsYear &&
-          isDeliveredSession(session, now)
-      )
-      .map((session) => session.schoolName)
-  ).size;
+    selectedAnalyticsYear - 1,
+    now
+  ).total;
+  const yearSchoolsReached = yearStudents.schoolsReached;
 
   const paymentSummary = buildPaymentSummary(payments, year);
   const regionCoverage = buildRegionCoverage(approvedAmbassadors, regions);
@@ -279,6 +253,17 @@ export function OperationsAnalytics({
 
     return `${basePath}/bookings?${searchParams.toString()}`;
   };
+  // Carry the selected period through so the feedback page shows the same numbers.
+  const feedbackHref = (tab: "school" | "ambassador") => {
+    const searchParams = new URLSearchParams({ tab, range });
+
+    if (customRange) {
+      searchParams.set("from", customRange.from);
+      searchParams.set("to", customRange.to);
+    }
+
+    return `${basePath}/feedback?${searchParams.toString()}`;
+  };
 
   return (
     <div className="grid gap-6">
@@ -298,9 +283,9 @@ export function OperationsAnalytics({
           },
           {
             icon: <UsersRound className="h-5 w-5 text-[#246bff]" />,
-            value: studentsReachedRange,
+            value: studentReachRange.reached,
             label: "students reached",
-            href: `${basePath}/reports`
+            href: bookingsHref("past")
           },
           {
             icon: <UserCheck className="h-5 w-5 text-[color:var(--green)]" />,
@@ -483,7 +468,8 @@ export function OperationsAnalytics({
           <div>
             <MonthlyBarChart series={studentSeries} />
             <ChartFootnote icon={<UsersRound className="h-4 w-4 text-[#246bff]" />}>
-              Yearly trend (Jan – Dec {selectedAnalyticsYear})
+              Actual students on completed bookings, or expected where none was recorded (Jan – Dec{" "}
+              {selectedAnalyticsYear})
             </ChartFootnote>
           </div>
         </div>
@@ -644,7 +630,7 @@ export function OperationsAnalytics({
 
           <ImpactCard title="How we're performing">
             <div className="mt-3 grid gap-4">
-              <Link href={`${basePath}/feedback`} className="group grid gap-1">
+              <Link href={feedbackHref("school")} className="group grid gap-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
                   School feedback
                 </p>
@@ -655,7 +641,7 @@ export function OperationsAnalytics({
                     : "No school reviews yet"}
                 </p>
               </Link>
-              <Link href={`${basePath}/reports`} className="group grid gap-1">
+              <Link href={feedbackHref("ambassador")} className="group grid gap-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
                   Ambassador sessions
                 </p>
@@ -680,20 +666,47 @@ export function OperationsAnalytics({
           </ImpactCard>
 
           <ImpactCard title={`Student reach — ${periodLabel.toLowerCase()}`} tone="green">
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <p className="text-4xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
-                {studentsReachedRange.toLocaleString("en-NZ")}
-              </p>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eaf8ee] text-[color:var(--green)]">
-                <UsersRound className="h-5 w-5" />
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+                  Expected
+                </p>
+                <p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  {studentReachRange.expected.toLocaleString("en-NZ")}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+                  Actual
+                </p>
+                <p className="mt-1 text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">
+                  {studentReachRange.reached.toLocaleString("en-NZ")}
+                </p>
               </div>
             </div>
+            {studentReachRange.expected > 0 ? (
+              <span className="mt-3 inline-flex w-fit rounded-full bg-[#eaf8ee] px-3 py-1 text-xs font-semibold text-[#1d6f35]">
+                {formatSignedDelta(studentReachRange.reached - studentReachRange.expected)} vs expected
+              </span>
+            ) : null}
             <p className="mt-2 text-sm text-[color:var(--text-soft)]">
-              Students across {new Set(deliveredRangeSessions.map((session) => session.schoolName)).size || 0}{" "}
-              {new Set(deliveredRangeSessions.map((session) => session.schoolName)).size === 1
-                ? "school"
-                : "schools"}
+              Actual recorded for {studentReachRange.actualRecordedCount} of{" "}
+              {studentReachRange.deliveredSessionCount} completed{" "}
+              {studentReachRange.deliveredSessionCount === 1 ? "session" : "sessions"} across{" "}
+              {studentReachRange.schoolsReached}{" "}
+              {studentReachRange.schoolsReached === 1 ? "school" : "schools"}; the rest count their
+              expected number.
             </p>
+            {studentReachRange.sessionsMissingNumber > 0 ? (
+              <Link
+                href={bookingsHref("past")}
+                className="mt-3 inline-flex w-fit rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#9a5a00]"
+              >
+                {studentReachRange.sessionsMissingNumber} completed{" "}
+                {studentReachRange.sessionsMissingNumber === 1 ? "session has" : "sessions have"} no
+                student number
+              </Link>
+            ) : null}
           </ImpactCard>
         </div>
       </Card>
@@ -1511,7 +1524,7 @@ function buildBookingPipeline(
 
   return {
     newBookings: rangeBookings.filter((booking) => {
-      const createdAt = new Date(booking.createdAt).getTime();
+      const createdAt = new Date(bookingActivityDate(booking)).getTime();
       return createdAt >= sevenDaysAgo && createdAt <= now.getTime();
     }).length,
     needsReview: needsReview.length,
@@ -1538,10 +1551,10 @@ function buildYearlyActivity(
   let lastYearActivity = 0;
 
   for (const booking of bookings) {
-    const month = monthOf(booking.createdAt, year);
+    const month = monthOf(bookingActivityDate(booking), year);
     if (month !== null) {
       bookingCounts[month] += 1;
-    } else if (nzYear(booking.createdAt) === year - 1) {
+    } else if (nzYear(bookingActivityDate(booking)) === year - 1) {
       lastYearActivity += 1;
     }
   }
@@ -1625,43 +1638,28 @@ function buildBookingStatusBreakdown(yearBookings: BookingRequestView[]) {
 }
 
 function buildYearlyStudentSeries(
-  reports: ReportSummary[],
   sessions: BookingSessionView[],
-  year: number
+  year: number,
+  now: Date
 ) {
+  const yearDeliveredSessions = sessions.filter(
+    (session) => nzYear(session.startsAt) === year && isDeliveredSession(session, now)
+  );
+  // Same students-reached figure as the glance strip, split by month.
+  const summary = summarizeStudentReach([], yearDeliveredSessions);
   const counts = Array.from({ length: 12 }, () => 0);
-  // Reports carry verified attendance; sessions without a report fall back to their own counts.
-  const reportedSessionIds = new Set<string>();
 
-  for (const report of reports) {
-    const month = monthOf(report.sessionStartsAt ?? report.submittedAt, year);
-    if (month !== null) {
-      counts[month] += Number(report.attendeeCount ?? 0);
-    }
+  for (const session of yearDeliveredSessions) {
+    counts[nzYearMonth(session.startsAt).month] += Number(
+      session.actualStudentCount ?? session.expectedStudentCount ?? 0
+    );
   }
 
-  for (const report of reports) {
-    if (report.sessionStartsAt) {
-      reportedSessionIds.add(`${report.schoolName}|${report.sessionStartsAt}`);
-    }
-  }
-
-  for (const session of sessions) {
-    if (!isDeliveredSession(session)) {
-      continue;
-    }
-
-    if (reportedSessionIds.has(`${session.schoolName}|${session.startsAt}`)) {
-      continue;
-    }
-
-    const month = monthOf(session.startsAt, year);
-    if (month !== null) {
-      counts[month] += Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0);
-    }
-  }
-
-  return MONTH_LABELS.map((label, index) => ({ label, value: counts[index] }));
+  return {
+    series: MONTH_LABELS.map((label, index) => ({ label, value: counts[index] })),
+    total: summary.reached,
+    schoolsReached: summary.schoolsReached
+  };
 }
 
 const outstandingPaymentLabels: Record<string, string> = {
@@ -1752,33 +1750,18 @@ function buildFeedbackSummary(reports: ReportSummary[], reviews: SchoolFeedbackS
     .map((review) => review.rating)
     .filter((rating): rating is number => typeof rating === "number" && Number.isFinite(rating));
   // Ambassador side: the mean of each report's category ratings.
-  const ambassadorRatings = reports
-    .map((report) => {
-      const values = [
-        report.attendanceRating,
-        report.studentEngagementRating,
-        report.teacherResponseRating,
-        report.presentationEnergyRating
-      ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-
-      return values.length > 0
-        ? values.reduce((total, value) => total + value, 0) / values.length
-        : null;
-    })
-    .filter((value): value is number => value !== null);
+  const ambassadorRatings = averageReportRating(reports);
   const average = (values: number[]) =>
     values.length > 0
       ? Math.round((values.reduce((total, value) => total + value, 0) / values.length) * 10) / 10
       : 0;
-  const allRatings = [...schoolRatings, ...ambassadorRatings];
 
   return {
-    rating: average(allRatings),
-    reviewCount: allRatings.length,
     schoolRating: average(schoolRatings),
     schoolCount: schoolRatings.length,
-    ambassadorRating: average(ambassadorRatings),
-    ambassadorCount: ambassadorRatings.length
+    ambassadorRating:
+      ambassadorRatings.rating === null ? 0 : Math.round(ambassadorRatings.rating * 10) / 10,
+    ambassadorCount: ambassadorRatings.count
   };
 }
 
@@ -1794,15 +1777,4 @@ function RatingStars({ rating }: { rating: number }) {
 
 function formatSignedDelta(delta: number) {
   return `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toLocaleString("en-NZ")}`;
-}
-
-function countStudentsReached(reports: ReportSummary[], deliveredSessions: BookingSessionView[]) {
-  if (reports.length > 0) {
-    return reports.reduce((total, report) => total + Number(report.attendeeCount ?? 0), 0);
-  }
-
-  return deliveredSessions.reduce(
-    (total, session) => total + Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0),
-    0
-  );
 }

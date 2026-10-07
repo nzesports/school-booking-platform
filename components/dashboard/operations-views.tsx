@@ -19,12 +19,15 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 import type {
   AmbassadorProfile,
   BookingRequestView,
+  BookingSessionView,
   PresentationType,
   School
 } from "@/lib/domain/types";
 import {
   buildSchoolDeliverySummaries,
   filterBookingsByLifecycle,
+  isCancelledSession,
+  isDeliveredSession,
   sessionInRange,
   type BookingLifecycleView,
   type DashboardCustomRange,
@@ -60,20 +63,24 @@ export function BookingLifecyclePanel({
     ...booking,
     sessions: booking.sessions.filter(session => sessionInRange(session, range, now, customRange))
   })).filter(booking => booking.sessions.length > 0);
-  const isCompleted = (status: string) => ["completed_pending_report", "report_submitted", "payment_pending", "paid", "closed"].includes(status);
-  const isCancelled = (status: string) => ["cancelled", "declined"].includes(status);
-  const isConfirmed = (status: string) => status === "confirmed";
-  const isPending = (status: string) => !isCompleted(status) && !isCancelled(status) && !isConfirmed(status);
+  // Same delivered rule as the dashboard: a delivered-capable status whose
+  // session has ended. Confirmed means confirmed/assigned and still to come.
+  const isCompleted = (session: BookingSessionView) => isDeliveredSession(session, now);
+  const isCancelled = (session: BookingSessionView) => isCancelledSession(session);
+  const isConfirmed = (session: BookingSessionView) =>
+    ["confirmed", "ambassador_assigned"].includes(session.status) && !isCompleted(session);
+  const isPending = (session: BookingSessionView) =>
+    !isCompleted(session) && !isCancelled(session) && !isConfirmed(session);
   const hasReport = (status: string) => ["submitted", "reviewed"].includes(status);
   const metricBookings = metric === "all" ? periodBookings : periodBookings.map(booking => ({
     ...booking,
     sessions: booking.sessions.filter(session => {
-      if (metric === "completed") return isCompleted(session.status);
-      if (metric === "cancelled") return isCancelled(session.status);
-      if (metric === "pending") return isPending(session.status);
-      if (metric === "confirmed") return isConfirmed(session.status);
+      if (metric === "completed") return isCompleted(session);
+      if (metric === "cancelled") return isCancelled(session);
+      if (metric === "pending") return isPending(session);
+      if (metric === "confirmed") return isConfirmed(session);
       if (metric === "reports") return hasReport(session.reportStatus);
-      if (metric === "missing-reports") return isCompleted(session.status) && !hasReport(session.reportStatus);
+      if (metric === "missing-reports") return isCompleted(session) && !hasReport(session.reportStatus);
       return true;
     })
   })).filter(booking => booking.sessions.length);
@@ -85,10 +92,10 @@ export function BookingLifecyclePanel({
   };
   const sessions = periodBookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
-  const completedCount = sessions.filter(session => isCompleted(session.status)).length;
-  const cancelledCount = sessions.filter(session => isCancelled(session.status)).length;
-  const confirmedCount = sessions.filter(session => isConfirmed(session.status)).length;
-  const pendingCount = sessions.filter(session => isPending(session.status)).length;
+  const completedCount = sessions.filter(isCompleted).length;
+  const cancelledCount = sessions.filter(isCancelled).length;
+  const confirmedCount = sessions.filter(isConfirmed).length;
+  const pendingCount = sessions.filter(isPending).length;
 
   return (
     <div className="grid gap-5">
@@ -113,7 +120,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#eef8f1] hover:bg-[#eaf8ee]"
           label="Completed"
           value={String(completedCount)}
-          info="Marked as completed"
+          info="Delivered sessions whose date has passed"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#7c3aed]"

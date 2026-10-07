@@ -83,6 +83,28 @@ const nzDatePartsFormatter = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23"
 });
 
+const nzYearMonthFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Pacific/Auckland",
+  year: "numeric",
+  month: "numeric"
+});
+
+// The server renders in UTC, so bucket every date by its calendar year and
+// (zero-based) month in New Zealand rather than the host's local time.
+export function nzYearMonth(value: string | Date) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return { year: Number.NaN, month: Number.NaN };
+  }
+
+  const parts = nzYearMonthFormatter.formatToParts(date);
+  const part = (type: "year" | "month") =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+
+  return { year: part("year"), month: part("month") - 1 };
+}
+
 export function readDashboardRange(value?: string | string[] | null): DashboardRange {
   const range = Array.isArray(value) ? value[0] : value;
   if (range && /^year:\d{4}$/.test(range)) return range as DashboardRange;
@@ -273,6 +295,13 @@ export function sessionInRange(
   return sessionTime >= start.getTime() && sessionTime < end.getTime();
 }
 
+// A report belongs to the date its session was delivered, not the date it was
+// filed: late reports and historical imports are submitted long afterwards,
+// and every students-reached figure buckets sessions by their start date.
+export function reportActivityDate(report: ReportSummary) {
+  return report.sessionStartsAt ?? report.deliveredAt ?? report.submittedAt;
+}
+
 export function reportInRange(
   report: ReportSummary,
   range: DashboardRange,
@@ -285,8 +314,75 @@ export function reportInRange(
     return true;
   }
 
-  const reportTime = new Date(report.submittedAt).getTime();
+  const reportTime = new Date(reportActivityDate(report)).getTime();
   return reportTime >= start.getTime() && reportTime < end.getTime();
+}
+
+// Each report's mean category rating, averaged across reports. Shared by the
+// dashboard and the feedback page so both show the same overall score.
+export function averageReportRating(reports: ReportSummary[]) {
+  const reportRatings = reports
+    .map((report) => {
+      const values = [
+        report.attendanceRating,
+        report.studentEngagementRating,
+        report.teacherResponseRating,
+        report.presentationEnergyRating
+      ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+      return values.length > 0
+        ? values.reduce((total, value) => total + value, 0) / values.length
+        : null;
+    })
+    .filter((value): value is number => value !== null);
+
+  return {
+    rating:
+      reportRatings.length > 0
+        ? reportRatings.reduce((total, value) => total + value, 0) / reportRatings.length
+        : null,
+    count: reportRatings.length
+  };
+}
+
+// Student reach, all taken from delivered booking sessions:
+// - reached (the headline): each session's actual student count where the
+//   team recorded one, otherwise its expected count.
+// - expected: the expected student count on every session, for comparison.
+// - reported: attendance ambassadors entered in their session reports.
+// Pass reports and delivered sessions scoped to the same period.
+export function summarizeStudentReach(
+  reports: ReportSummary[],
+  deliveredSessions: BookingSessionView[]
+) {
+  const reportedSessionIds = new Set(
+    reports.map((report) => report.bookingSessionId).filter(Boolean)
+  );
+  const expectedOf = (session: BookingSessionView) => Number(session.expectedStudentCount ?? 0);
+  const reachedOf = (session: BookingSessionView) =>
+    Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0);
+  const sum = (sessions: BookingSessionView[], value: (session: BookingSessionView) => number) =>
+    sessions.reduce((total, session) => total + value(session), 0);
+
+  return {
+    reached: sum(deliveredSessions, reachedOf),
+    expected: sum(deliveredSessions, expectedOf),
+    reported: reports.reduce((total, report) => total + Number(report.attendeeCount ?? 0), 0),
+    // Like-for-like: what the bookings expected for the sessions with a report.
+    expectedForReportedSessions: sum(
+      deliveredSessions.filter((session) => reportedSessionIds.has(session.id)),
+      expectedOf
+    ),
+    actualRecordedCount: deliveredSessions.filter(
+      (session) => session.actualStudentCount !== undefined
+    ).length,
+    deliveredSessionCount: deliveredSessions.length,
+    reportCount: reports.length,
+    sessionsMissingNumber: deliveredSessions.filter((session) => !(reachedOf(session) > 0)).length,
+    schoolsReached: new Set(
+      deliveredSessions.map((session) => session.schoolId ?? session.schoolName)
+    ).size
+  };
 }
 
 export function reviewInRange(
@@ -305,6 +401,24 @@ export function reviewInRange(
   return reviewTime >= start.getTime() && reviewTime < end.getTime();
 }
 
+// When a booking counts as "booked". Record-only backlog bookings are typed in
+// after the fact, so they are dated by their first session instead of the day
+// they were entered; otherwise a backlog catch-up reads as a surge of new bookings.
+export function bookingActivityDate(booking: BookingRequestView) {
+  if (!booking.recordOnly) {
+    return booking.createdAt;
+  }
+
+  const firstSessionStart = booking.sessions
+    .map((session) => session.startsAt)
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
+
+  return firstSessionStart &&
+    new Date(firstSessionStart).getTime() < new Date(booking.createdAt).getTime()
+    ? firstSessionStart
+    : booking.createdAt;
+}
+
 function bookingCreatedInRange(
   booking: BookingRequestView,
   range: DashboardRange,
@@ -317,7 +431,7 @@ function bookingCreatedInRange(
     return true;
   }
 
-  const createdTime = new Date(booking.createdAt).getTime();
+  const createdTime = new Date(bookingActivityDate(booking)).getTime();
   return createdTime >= start.getTime() && createdTime < end.getTime();
 }
 
@@ -333,7 +447,7 @@ export function bookingInRange(
     return true;
   }
 
-  const createdTime = new Date(booking.createdAt).getTime();
+  const createdTime = new Date(bookingActivityDate(booking)).getTime();
   return (
     (createdTime >= start.getTime() && createdTime < end.getTime()) ||
     booking.sessions.some((session) => sessionInRange(session, range, now, customRange))
@@ -727,10 +841,7 @@ export function buildPresentationPerformance(
       presentation,
       deliveredCount: delivered.length,
       upcomingCount: presentationSessions.filter((session) => isFutureSession(session)).length,
-      totalAttendees: presentationReports.reduce(
-        (total, report) => total + report.attendeeCount,
-        0
-      ),
+      totalAttendees: summarizeStudentReach(presentationReports, delivered).reached,
       avgTeacherRating: average(
         presentationReports
           .map((report) => report.teacherResponseRating)

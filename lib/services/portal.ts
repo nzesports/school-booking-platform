@@ -39,6 +39,7 @@ import { loadSessionRescheduleHistory } from "@/lib/services/session-change-hist
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isFutureSession } from "@/lib/services/dashboard-insights";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
@@ -1330,7 +1331,8 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
   }));
   const upcomingSessions = bookings
     .flatMap((booking) => booking.sessions)
-    .filter((session) => new Date(session.startsAt).getTime() >= Date.now())
+    .filter((session) => isFutureSession(session))
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
     .slice(0, 8);
 
   return {
@@ -1444,7 +1446,8 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
   const schoolReviews = mapSchoolReviews(data);
   const upcomingSessions = bookings
     .flatMap((booking) => booking.sessions)
-    .filter((session) => new Date(session.startsAt).getTime() >= Date.now())
+    .filter((session) => isFutureSession(session))
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
     .slice(0, 8);
 
   return {

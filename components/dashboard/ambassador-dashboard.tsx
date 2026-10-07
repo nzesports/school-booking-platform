@@ -35,6 +35,7 @@ import type {
   ReportSummary,
   TrainingModule
 } from "@/lib/domain/types";
+import { nzYearMonth, summarizeStudentReach } from "@/lib/services/dashboard-insights";
 import type { ResourceRecord } from "@/lib/services/portal";
 import { colourWithAlpha } from "@/lib/presentation-colors";
 import { MONTH_ABBREVIATIONS, formatCurrency, formatDate, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
@@ -70,10 +71,9 @@ export function AmbassadorDashboard({
   withdrawApplicationAction: FormAction;
   requestWithdrawalAction: FormAction;
 }) {
-  const studentsReached = reports.reduce((total, report) => total + report.attendeeCount, 0);
-  const schoolsReached = new Set(
-    reports.map((report) => report.schoolId ?? report.schoolName.trim().toLowerCase())
-  ).size;
+  const reach = summarizeStudentReach(reports, completedSessions);
+  const studentsReached = reach.reached;
+  const schoolsReached = reach.schoolsReached;
   const reportDueSessions = completedSessions.filter(
     (session) => session.reportStatus === "not_submitted"
   );
@@ -105,7 +105,7 @@ export function AmbassadorDashboard({
           </div>
         </div>
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          <ImpactMetric icon={<UsersRound className="h-5 w-5" />} tone="green" label="Students reached" value={studentsReached.toLocaleString("en-NZ")} info="From submitted reports" />
+          <ImpactMetric icon={<UsersRound className="h-5 w-5" />} tone="green" label="Students reached" value={studentsReached.toLocaleString("en-NZ")} info="From the student numbers on your completed sessions (actual where recorded, otherwise expected)" />
           <ImpactMetric icon={<School2 className="h-5 w-5" />} tone="blue" label="Schools presented to" value={schoolsReached.toLocaleString("en-NZ")} info="Distinct schools reported" />
           <ImpactMetric icon={<Presentation className="h-5 w-5" />} tone="violet" label="Presentations completed" value={completedSessions.length.toLocaleString("en-NZ")} detail={`${reportDueSessions.length} report${reportDueSessions.length === 1 ? "" : "s"} still due`} />
           <ImpactMetric icon={<CalendarCheck2 className="h-5 w-5" />} tone="amber" label="Upcoming" value={upcomingSessions.length.toLocaleString("en-NZ")} info="Confirmed school sessions" />
@@ -378,14 +378,13 @@ function EarningsBreakdownRow({
 }
 
 export function EarningsYearChart({ payments }: { payments: PaymentRecord[] }) {
-  const now = new Date();
-  const currentYear = now.getFullYear();
+  // Bucket by New Zealand calendar month; this renders on a UTC server.
+  const currentYear = nzYearMonth(new Date()).year;
   const months = Array.from({ length: 11 }, (_, index) => {
-    const date = new Date(currentYear, index + 1, 1);
-    const month = date.getMonth();
+    const month = index + 1;
     const amountCents = payments.reduce((total, payment) => {
-      const paymentDate = new Date(payment.createdAt);
-      return paymentDate.getFullYear() === currentYear && paymentDate.getMonth() === month
+      const paymentDate = nzYearMonth(payment.createdAt);
+      return paymentDate.year === currentYear && paymentDate.month === month
         ? total + payment.amountCents
         : total;
     }, 0);

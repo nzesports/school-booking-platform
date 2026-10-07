@@ -8,7 +8,8 @@ import {
 import type { ReactNode } from "react";
 
 import { dataTableHeadingClassName } from "@/components/dashboard/data-table";
-import type { ReportSummary } from "@/lib/domain/types";
+import type { BookingSessionView, ReportSummary } from "@/lib/domain/types";
+import { averageReportRating, summarizeStudentReach } from "@/lib/services/dashboard-insights";
 import { cn } from "@/lib/utils";
 
 function average(values: number[]) {
@@ -19,8 +20,18 @@ function percentage(part: number, whole: number) {
   return whole > 0 ? Math.round((part / whole) * 100) : null;
 }
 
-export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
-  const totalAttendees = reports.reduce((total, report) => total + report.attendeeCount, 0);
+export function ReportsOverview({
+  reports,
+  deliveredSessions = [],
+  periodLabel
+}: {
+  reports: ReportSummary[];
+  // Delivered sessions in the same period, used to compare reported
+  // attendance with the student numbers on the bookings.
+  deliveredSessions?: BookingSessionView[];
+  periodLabel?: string;
+}) {
+  const studentReach = summarizeStudentReach(reports, deliveredSessions);
   const ratingRows = [
     {
       label: "Attendance",
@@ -45,10 +56,7 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
       )
     }
   ];
-  const overallValues = ratingRows
-    .map((row) => row.value)
-    .filter((value): value is number => value !== null);
-  const overall = average(overallValues);
+  const overall = averageReportRating(reports).rating;
 
   const withCompeted = reports.filter((r) => r.studentsCompetedInEsports !== undefined);
   const competedPct = percentage(
@@ -68,7 +76,9 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
   return (
     <section className="surface-panel rounded-[28px] p-5 md:p-6">
       <h2 className={dataTableHeadingClassName}>
-        Across all reports
+        {periodLabel && periodLabel !== "All time"
+          ? `Across all reports · ${periodLabel}`
+          : "Across all reports"}
       </h2>
 
       <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -81,8 +91,13 @@ export function ReportsOverview({ reports }: { reports: ReportSummary[] }) {
         <OverviewTile
           icon={<UsersRound className="h-5 w-5" />}
           iconClassName="bg-[#ece9ff] text-[#5b4fc0]"
-          label="Students reached"
-          value={totalAttendees.toLocaleString("en-NZ")}
+          label="Students reported"
+          value={studentReach.reported.toLocaleString("en-NZ")}
+          detail={
+            studentReach.expectedForReportedSessions > 0
+              ? `Bookings expected ${studentReach.expectedForReportedSessions.toLocaleString("en-NZ")} for these sessions`
+              : undefined
+          }
         />
         <OverviewTile
           icon={<Trophy className="h-5 w-5" />}
@@ -163,12 +178,14 @@ function OverviewTile({
   icon,
   iconClassName,
   label,
-  value
+  value,
+  detail
 }: {
   icon: ReactNode;
   iconClassName: string;
   label: string;
   value: string;
+  detail?: string;
 }) {
   return (
     <div className="flex items-center gap-3.5 rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-4">
@@ -180,6 +197,9 @@ function OverviewTile({
         <p className="truncate text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
           {value}
         </p>
+        {detail ? (
+          <p className="mt-0.5 text-[11px] leading-4 text-[color:var(--text-soft)]">{detail}</p>
+        ) : null}
       </div>
     </div>
   );

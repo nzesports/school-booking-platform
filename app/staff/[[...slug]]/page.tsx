@@ -75,7 +75,8 @@ import {
   dashboardRangeOptions,
   readBookingLifecycleView,
   readDashboardCustomRange,
-  readDashboardRange
+  readDashboardRange,
+  isDeliveredSession
 } from "@/lib/services/dashboard-insights";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getStaffPortalData } from "@/lib/services/portal";
@@ -121,6 +122,18 @@ export default async function StaffPortalPage({
   if (route === "resources") {
     redirect("/staff/training");
   }
+  if (route === "reports") {
+    // Ambassador reports live on the feedback page's ambassador tab, which has
+    // the date-range picker. Keep notices and filters from the old URL.
+    const reportsSearchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(resolvedSearchParams)) {
+      for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+        reportsSearchParams.append(key, item);
+      }
+    }
+    reportsSearchParams.set("tab", "ambassador");
+    redirect(`/staff/feedback?${reportsSearchParams.toString()}`);
+  }
   const actor = await requirePortalAccess("staff");
   const portal = await getStaffPortalData(actor.id);
   const customRange = readDashboardCustomRange(
@@ -130,7 +143,7 @@ export default async function StaffPortalPage({
   const requestedDashboardRange =
     route === "bookings" && !resolvedSearchParams.range
       ? "year"
-      : !resolvedSearchParams.range && (route === "reports" || route === "feedback")
+      : !resolvedSearchParams.range && route === "feedback"
         ? "all"
         : !resolvedSearchParams.range && route === ""
           ? "year"
@@ -245,6 +258,11 @@ export default async function StaffPortalPage({
     feedbackSearchParams.set("to", customRange.to);
   }
   const feedbackReturnTo = `/staff/feedback?${feedbackSearchParams.toString()}`;
+  const feedbackTab =
+    readSearchParam(resolvedSearchParams, "tab") === "ambassador" ? "ambassador" : "school";
+  const reportsReturnSearchParams = new URLSearchParams(feedbackSearchParams);
+  reportsReturnSearchParams.set("tab", "ambassador");
+  const reportsReturnTo = `/staff/feedback?${reportsReturnSearchParams.toString()}`;
 
   const headline =
     route === ""
@@ -503,7 +521,7 @@ export default async function StaffPortalPage({
           </div>
         ) : null}
 
-        {route === "reports" || route === "feedback" ? (
+        {route === "feedback" ? (
           <div className="grid gap-4">
             {reportNotice ? (
               <NoticeBanner tone={reportNotice.tone}>{reportNotice.message}</NoticeBanner>
@@ -514,8 +532,12 @@ export default async function StaffPortalPage({
               reviewAction={markReportReviewedAction}
               feedbackDecisionAction={reviewSchoolFeedbackAction}
               returnTo={feedbackReturnTo}
-              reportsReturnTo="/staff/reports"
-              initialTab={route === "reports" ? "ambassador" : "school"}
+              reportsReturnTo={reportsReturnTo}
+              initialTab={feedbackTab}
+              deliveredSessions={filteredDashboard.sessions.filter((session) =>
+                isDeliveredSession(session)
+              )}
+              periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
             />
           </div>
         ) : null}

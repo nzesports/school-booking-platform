@@ -94,7 +94,8 @@ import {
   dashboardRangeOptions,
   readBookingLifecycleView,
   readDashboardCustomRange,
-  readDashboardRange
+  readDashboardRange,
+  isDeliveredSession
 } from "@/lib/services/dashboard-insights";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getAdminPortalData } from "@/lib/services/portal";
@@ -157,6 +158,18 @@ export default async function AdminPortalPage({
 
   if (route === "resources") {
     redirect("/admin/training");
+  }
+  if (route === "reports") {
+    // Ambassador reports live on the feedback page's ambassador tab, which has
+    // the date-range picker. Keep notices and filters from the old URL.
+    const reportsSearchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(resolvedSearchParams)) {
+      for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+        reportsSearchParams.append(key, item);
+      }
+    }
+    reportsSearchParams.set("tab", "ambassador");
+    redirect(`/admin/feedback?${reportsSearchParams.toString()}`);
   }
   const actor = await requirePortalAccess("super_admin");
   const portal = await getAdminPortalData(actor.id);
@@ -329,6 +342,11 @@ export default async function AdminPortalPage({
     feedbackSearchParams.set("presentation", presentationFilterId);
   }
   const feedbackReturnTo = `/admin/feedback?${feedbackSearchParams.toString()}`;
+  const feedbackTab =
+    readSearchParam(resolvedSearchParams, "tab") === "ambassador" ? "ambassador" : "school";
+  const reportsReturnSearchParams = new URLSearchParams(feedbackSearchParams);
+  reportsReturnSearchParams.set("tab", "ambassador");
+  const reportsReturnTo = `/admin/feedback?${reportsReturnSearchParams.toString()}`;
   const reportedSessionIds = new Set(
     portal.reports.map((report) => report.bookingSessionId).filter(Boolean)
   );
@@ -616,21 +634,23 @@ export default async function AdminPortalPage({
           </div>
         ) : null}
 
-        {route === "reports" || route === "feedback" ? (
+        {route === "feedback" ? (
           <div className="grid gap-4">
             {reportNotice ? (
               <NoticeBanner tone={reportNotice.tone}>{reportNotice.message}</NoticeBanner>
             ) : null}
             <FeedbackHub
-              reports={route === "feedback" ? filteredDashboard.reports : portal.reports}
-              schoolReviews={
-                route === "feedback" ? filteredDashboard.schoolReviews : portal.schoolReviews
-              }
+              reports={filteredDashboard.reports}
+              schoolReviews={filteredDashboard.schoolReviews}
               reviewAction={markReportReviewedAction}
               feedbackDecisionAction={reviewSchoolFeedbackAction}
               returnTo={feedbackReturnTo}
-              reportsReturnTo="/admin/reports"
-              initialTab={route === "reports" ? "ambassador" : "school"}
+              reportsReturnTo={reportsReturnTo}
+              initialTab={feedbackTab}
+              deliveredSessions={filteredDashboard.sessions.filter((session) =>
+                isDeliveredSession(session)
+              )}
+              periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
               showAmbassadorColumn
               presentationFilterId={presentationFilterId}
             />
@@ -1112,7 +1132,7 @@ export default async function AdminPortalPage({
                         "Presentation",
                         "Delivered",
                         "Upcoming",
-                        "Attendees",
+                        "Students",
                         "Teacher rating",
                         "School rating",
                         "Reviews"

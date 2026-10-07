@@ -17,7 +17,7 @@ import { ReportDetailsButton } from "@/components/dashboard/report-details-dialo
 import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { ReportSummary, SchoolFeedbackSummary } from "@/lib/domain/types";
+import type { BookingSessionView, ReportSummary, SchoolFeedbackSummary } from "@/lib/domain/types";
 import { cn, formatDateTime, formatShortDate } from "@/lib/utils";
 
 type FeedbackTab = "school" | "ambassador";
@@ -34,10 +34,14 @@ export function FeedbackHub({
   reportsReturnTo,
   initialTab = "school",
   showAmbassadorColumn = false,
-  presentationFilterId
+  presentationFilterId,
+  deliveredSessions = [],
+  periodLabel
 }: {
   reports: ReportSummary[];
   schoolReviews: SchoolFeedbackSummary[];
+  deliveredSessions?: BookingSessionView[];
+  periodLabel?: string;
   reviewAction: (formData: FormData) => void | Promise<void>;
   feedbackDecisionAction: (formData: FormData) => void | Promise<void>;
   returnTo: string;
@@ -57,6 +61,16 @@ export function FeedbackHub({
   const visibleReports = presentationFilterId
     ? reports.filter((report) => report.presentationTypeId === presentationFilterId)
     : reports;
+  const visibleDeliveredSessions = presentationFilterId
+    ? deliveredSessions.filter((session) => session.presentationTypeId === presentationFilterId)
+    : deliveredSessions;
+  const selectTab = (value: FeedbackTab) => {
+    setTab(value);
+    // Keep the tab in the URL so changing the date range reopens the same tab.
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set("tab", value);
+    window.history.replaceState(null, "", `?${searchParams.toString()}`);
+  };
   const normalizedSchoolQuery = schoolQuery.trim().toLowerCase();
   const matchingReviews = normalizedSchoolQuery
     ? visibleReviews.filter((review) =>
@@ -122,7 +136,7 @@ export function FeedbackHub({
           <button
             key={option.value}
             type="button"
-            onClick={() => setTab(option.value)}
+            onClick={() => selectTab(option.value)}
             className={cn(
               "inline-flex min-h-[40px] items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition",
               option.value === tab
@@ -147,7 +161,7 @@ export function FeedbackHub({
 
       {tab === "school" ? (
         <div className="grid gap-5">
-          <SchoolFeedbackOverview reviews={visibleReviews} />
+          <SchoolFeedbackOverview reviews={visibleReviews} periodLabel={periodLabel} />
           <DataTable
             title="School feedback submissions"
             columns={["School", "Presentation", "Submitted", "Rating", "Show on website", "Submission"]}
@@ -218,7 +232,11 @@ export function FeedbackHub({
         </div>
       ) : (
         <div className="grid gap-5">
-          <ReportsOverview reports={visibleReports} />
+          <ReportsOverview
+            reports={visibleReports}
+            deliveredSessions={visibleDeliveredSessions}
+            periodLabel={periodLabel}
+          />
           <DataTable
             title="Ambassador session reports"
             headerContent={
@@ -415,7 +433,13 @@ function ShowOnWebsiteToggle({
   );
 }
 
-function SchoolFeedbackOverview({ reviews }: { reviews: SchoolFeedbackSummary[] }) {
+function SchoolFeedbackOverview({
+  reviews,
+  periodLabel
+}: {
+  reviews: SchoolFeedbackSummary[];
+  periodLabel?: string;
+}) {
   const ratings = reviews
     .map((review) => review.rating)
     .filter((rating): rating is number => typeof rating === "number");
@@ -454,7 +478,9 @@ function SchoolFeedbackOverview({ reviews }: { reviews: SchoolFeedbackSummary[] 
   return (
     <section className="surface-panel rounded-[28px] p-5 md:p-6">
       <h2 className={dataTableHeadingClassName}>
-        Across all school feedback
+        {periodLabel && periodLabel !== "All time"
+          ? `Across all school feedback · ${periodLabel}`
+          : "Across all school feedback"}
       </h2>
 
       <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-5">

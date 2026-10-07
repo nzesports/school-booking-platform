@@ -17,6 +17,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { SecondaryTabs, type SecondaryTabItem } from "@/components/ui/secondary-tabs";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
+import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
 
 export type AmbassadorBookingsTab =
   | "open"
@@ -65,12 +66,13 @@ export function AmbassadorBookingsWorkspace({
   const availableSessions = openSessions.filter(
     (session) => session.myApplicationStatus !== "applied"
   );
-  const now = new Date(nowIso).getTime();
+  const now = new Date(nowIso);
   const sourcedSessions = sourcedBookings.flatMap((booking) => booking.sessions);
-  const isCompletedSession = (session: BookingSessionView) =>
-    new Date(session.endsAt).getTime() <= now && session.status !== "cancelled";
-  const upcomingSourcedSessions = sourcedSessions.filter(
-    (session) => !isCompletedSession(session) && session.status !== "cancelled"
+  // Shared delivered/upcoming rules, so past tentative or declined sessions
+  // don't appear as completed.
+  const isCompletedSession = (session: BookingSessionView) => isDeliveredSession(session, now);
+  const upcomingSourcedSessions = sourcedSessions.filter((session) =>
+    isFutureSession(session, now)
   );
   const allCompletedSessions = Array.from(
     new Map(

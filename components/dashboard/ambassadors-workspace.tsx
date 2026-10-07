@@ -28,6 +28,7 @@ import { AmbassadorDeleteDialog } from "@/components/dashboard/ambassador-delete
 import { AmbassadorNotesPanel } from "@/components/dashboard/ambassador-notes-panel";
 import { AmbassadorProfileTabs } from "@/components/dashboard/ambassador-profile-tabs";
 import type { AmbassadorNote } from "@/lib/services/ambassador-notes";
+import { isDeliveredSession } from "@/lib/services/dashboard-insights";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
@@ -91,7 +92,6 @@ type ProfileProps = Omit<WorkspaceProps, "ambassadors" | "status" | "query" | "s
   deleteNoteAction: (formData: FormData) => void | Promise<void>;
 };
 
-const deliveredStatuses = new Set(["completed_pending_report", "closed"]);
 const outstandingPaymentStatuses = new Set(["pending", "approved"]);
 
 const listStatuses: Array<{
@@ -223,7 +223,7 @@ export function AmbassadorsWorkspace({
   const sourcedSchoolsByAmbassador = new Map<string, Set<string>>();
 
   for (const session of bookings.flatMap((booking) => booking.sessions)) {
-    if (session.assignedAmbassadorId && deliveredStatuses.has(session.status)) {
+    if (session.assignedAmbassadorId && isDeliveredSession(session)) {
       deliveredByAmbassador.set(session.assignedAmbassadorId, [
         ...(deliveredByAmbassador.get(session.assignedAmbassadorId) ?? []),
         session
@@ -684,7 +684,7 @@ export function AmbassadorProfileWorkspace({
   const deliveredSessions = allSessions
     .filter(
       (session) =>
-        session.assignedAmbassadorId === ambassador.id && deliveredStatuses.has(session.status)
+        session.assignedAmbassadorId === ambassador.id && isDeliveredSession(session)
     )
     .sort((left, right) => new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime());
   const ambassadorReports = reports
@@ -1163,7 +1163,7 @@ export function AmbassadorProfileWorkspace({
                   {ambassadorReports
                     .reduce((total, report) => total + report.attendeeCount, 0)
                     .toLocaleString("en-NZ")}{" "}
-                  students reached
+                  students reported
                 </SummaryChip>
                 <SummaryChip icon={Star}>
                   {ambassadorReports.filter((report) => report.bookingSessionId && reviewsBySessionId.has(report.bookingSessionId)).length}{" "}

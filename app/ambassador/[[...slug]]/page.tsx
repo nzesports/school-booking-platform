@@ -49,6 +49,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { PaymentRecord } from "@/lib/domain/types";
 import { requirePortalAccess } from "@/lib/services/auth";
+import {
+  averageReportRating,
+  isDeliveredSession,
+  isFutureSession
+} from "@/lib/services/dashboard-insights";
 import { getAmbassadorPortalData, loadUserNotifications } from "@/lib/services/portal";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { formatCurrency, formatDate, formatShortDate, formatTime } from "@/lib/utils";
@@ -91,18 +96,17 @@ export default async function AmbassadorPortalPage({
   const notifications = await loadUserNotifications(actor.id);
   const ownedSessions = portal.assignedSessions;
   const now = new Date();
-  const upcomingSessions = ownedSessions.filter(
-    (session) => new Date(session.startsAt).getTime() > now.getTime() && session.status !== "cancelled"
-  );
-  const completedSessions = ownedSessions.filter(
-    (session) => new Date(session.endsAt).getTime() <= now.getTime() && session.status !== "cancelled"
-  );
-  const nextReportSession = completedSessions.find(
-    (session) => session.reportStatus === "not_submitted"
-  );
+  // Same delivered/upcoming rules as the admin dashboard, so declined or
+  // never-confirmed sessions don't count as presentations completed.
+  const upcomingSessions = ownedSessions.filter((session) => isFutureSession(session, now));
+  const completedSessions = ownedSessions.filter((session) => isDeliveredSession(session, now));
+  // Mirrors the statuses submitAmbassadorReportAction accepts.
   const reportableSessions = completedSessions.filter(
-    (session) => session.reportStatus === "not_submitted"
+    (session) =>
+      session.reportStatus === "not_submitted" &&
+      (session.status === "confirmed" || session.status === "completed_pending_report")
   );
+  const nextReportSession = reportableSessions[0];
   const ambassadorPayments = portal.payments;
   const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
   const paymentSessionLabel = (bookingSessionId: string) => {
@@ -125,11 +129,7 @@ export default async function AmbassadorPortalPage({
   );
   const materialsConsentAcceptedAt = portal.ambassador.details?.materialsConsentAcceptedAt;
   const notice = getAmbassadorNotice(resolvedSearchParams, payoutLabels.sourced);
-  const reportRatings = portal.reports.flatMap((report) =>
-    [report.teacherResponseRating, report.studentEngagementRating].filter(
-      (rating): rating is number => typeof rating === "number" && rating > 0
-    )
-  );
+  const reportRating = averageReportRating(portal.reports);
   const profileStats = {
     schoolVisits: completedSessions.length,
     invoicesGeneratedCount: ambassadorPayments.filter(
@@ -139,11 +139,8 @@ export default async function AmbassadorPortalPage({
       .map((payment) => payment.invoiceGeneratedAt)
       .filter((date): date is string => Boolean(date))
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0],
-    ratingAverage:
-      reportRatings.length > 0
-        ? reportRatings.reduce((total, rating) => total + rating, 0) / reportRatings.length
-        : null,
-    ratingCount: portal.reports.length
+    ratingAverage: reportRating.rating,
+    ratingCount: reportRating.count
   };
   const selectedOpenSession = route.startsWith("open-bookings/")
     ? portal.openSessions.find((session) => session.id === slug?.[1]) ?? null

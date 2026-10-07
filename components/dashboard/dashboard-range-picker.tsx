@@ -2,6 +2,7 @@
 
 import { CalendarRange, ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -25,8 +26,24 @@ export function DashboardRangePicker({
   const [from, setFrom] = useState(customRange?.from ?? "");
   const [to, setTo] = useState(customRange?.to ?? "");
   const ref = useRef<HTMLDivElement>(null);
+  // Pages can switch tabs client-side (e.g. feedback); keep that tab when the
+  // range changes instead of falling back to the page's default tab.
+  const activeTab = useSearchParams().get("tab");
+  const withActiveTab = (href: string) => {
+    if (!activeTab) {
+      return href;
+    }
+
+    const url = new URL(href, "http://range.local");
+    if (!url.searchParams.has("tab")) {
+      url.searchParams.set("tab", activeTab);
+    }
+    return `${url.pathname}${url.search}`;
+  };
   const customOption = options.find((option) => option.value === "custom");
-  const standardOptions = options.filter((option) => option.value !== "custom");
+  const standardOptions = options
+    .filter((option) => option.value !== "custom")
+    .map((option) => ({ ...option, href: withActiveTab(option.href) }));
   const customDatesValid = Boolean(from && to && from <= to);
 
   const applyCustomRange = () => {
@@ -34,7 +51,7 @@ export function DashboardRangePicker({
       return;
     }
 
-    const url = new URL(customOption.href, window.location.origin);
+    const url = new URL(withActiveTab(customOption.href), window.location.origin);
     url.searchParams.set("range", "custom");
     url.searchParams.set("from", from);
     url.searchParams.set("to", to);

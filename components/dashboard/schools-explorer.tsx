@@ -25,25 +25,10 @@ import { StatusPill } from "@/components/dashboard/bookings-explorer";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import type { BookingRequestView, School } from "@/lib/domain/types";
+import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
-const completedSessionStatuses = new Set([
-  "completed_pending_report",
-  "report_submitted",
-  "payment_pending",
-  "paid",
-  "closed"
-]);
-const upcomingSessionStatuses = new Set([
-  "requested",
-  "tentative",
-  "applied",
-  "ambassador_assigned",
-  "confirmed",
-  "withdrawal_requested",
-  "reschedule_requested"
-]);
 const schoolTableColumns = [
   { label: "School", width: "20%" },
   { label: "Contact", width: "17%" },
@@ -666,12 +651,9 @@ function SchoolBookingsDialog({
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
   const sessions = sorted.flatMap((booking) => booking.sessions);
-  const deliveredSessions = sessions.filter((session) =>
-    completedSessionStatuses.has(session.status)
-  );
-  const upcomingSessions = sessions.filter((session) =>
-    upcomingSessionStatuses.has(session.status)
-  );
+  // Same rules as the schools table row, so the dialog never disagrees with it.
+  const deliveredSessions = sessions.filter((session) => isDeliveredSession(session));
+  const upcomingSessions = sessions.filter((session) => isFutureSession(session));
 
   return (
     <BookingDialogShell

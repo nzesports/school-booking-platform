@@ -51,7 +51,11 @@ import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { getAuthenticatedPortalUser, requirePortalAccess } from "@/lib/services/auth";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
-import { isDeliveredSession } from "@/lib/services/dashboard-insights";
+import {
+  isCancelledSession,
+  isDeliveredSession,
+  isFutureSession
+} from "@/lib/services/dashboard-insights";
 import { getSchoolPortalData, loadUserNotifications } from "@/lib/services/portal";
 import { cn, formatShortDate, formatTime, formatWeekdayDate } from "@/lib/utils";
 import { StatusBadge, schoolBookingStatusLabel } from "@/components/ui/status-badge";
@@ -151,19 +155,18 @@ export default async function SchoolPortalPage({
   ]);
   const activeBookings = schoolBookings.filter((booking) => activeStatuses.has(booking.status));
   const upcomingRows = sessionRows
-    .filter(
-      (row) =>
-        new Date(row.session.startsAt).getTime() > now.getTime() &&
-        row.session.status !== "cancelled"
-    )
+    .filter((row) => isFutureSession(row.session, now))
     .sort(
       (a, b) => new Date(a.session.startsAt).getTime() - new Date(b.session.startsAt).getTime()
     );
   const completedRows = sessionRows.filter((row) => row.isDelivered);
+  // Still awaiting approval: not cancelled/declined, not yet confirmed, and
+  // not a past request that never went ahead.
   const tentativeRows = sessionRows.filter(
     (row) =>
       !row.isDelivered &&
-      row.session.status !== "cancelled" &&
+      !isCancelledSession(row.session) &&
+      isFutureSession(row.session, now) &&
       row.session.status !== "confirmed" &&
       row.session.status !== "ambassador_assigned"
   );
