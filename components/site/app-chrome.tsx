@@ -149,7 +149,12 @@ export function AppChrome({
             action={bookingAction}
           >
             <SiteHeader />
-            <div className="relative z-10">{children}</div>
+            {/* flex-1 keeps the footer at the bottom of short pages. A page
+                marked data-fill-height also stretches to fill that space
+                (e.g. to centre a single card); other pages are unaffected. */}
+            <div className="relative z-10 flex-1 has-[>[data-fill-height]]:flex has-[>[data-fill-height]]:flex-col">
+              {children}
+            </div>
             <SiteFooter
               compact={isAuthRoute}
               subscribeAction={subscribeAction}

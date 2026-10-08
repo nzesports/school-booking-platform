@@ -170,7 +170,11 @@ export function AmbassadorOpenBookingsExplorer({
 
         return (
           (!normalized || searchText.includes(normalized)) &&
-          (region === "all" || session.regionSlug === region) &&
+          // Online sessions can be delivered from anywhere, so they show
+          // under every region.
+          (region === "all" ||
+            session.regionSlug === region ||
+            session.deliveryMode === "online") &&
           (presentation === "all" || session.presentationTitle === presentation)
         );
       })

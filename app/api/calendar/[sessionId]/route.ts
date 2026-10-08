@@ -33,7 +33,18 @@ export async function GET(
   const presentation = relationOne(session.presentation_types);
   const school = relationOne(session.schools);
   const title = presentation?.title ?? "NZ Esports school presentation";
-  const location = [school?.name, session.location_address || school?.address, school?.city].filter(Boolean).join(", ");
+  // Online sessions: this link is reachable by session id alone, so it names
+  // the video call without exposing the meeting link (that is emailed to the
+  // school). An error just means the 0050 migration isn't applied yet.
+  const { data: delivery } = await admin
+    .from("booking_sessions")
+    .select("delivery_mode")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const location =
+    delivery?.delivery_mode === "online"
+      ? "Online (video call) — link in your confirmation email"
+      : [school?.name, session.location_address || school?.address, school?.city].filter(Boolean).join(", ");
   const startsAt = session.starts_at as string;
   const endsAt =
     (session.ends_at as string | null) ??

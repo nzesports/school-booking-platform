@@ -6,10 +6,12 @@ import {
   assignAmbassadorAction,
   bulkUpdateBookingStatusAction,
   bulkDeleteBookingsAction,
+  createSessionTeamsLinkAction,
   mergeSchoolAction,
   resolveSessionRescheduleAction,
   resolveSessionWithdrawalAction,
   updateBookingStatusAction,
+  updateSessionMeetingLinkAction,
   updateSessionStudentCountsAction
 } from "@/app/portal/actions";
 import { BookingsExplorer } from "@/components/dashboard/bookings-explorer";
@@ -204,6 +206,8 @@ export function BookingLifecyclePanel({
         resolveWithdrawalAction={resolveSessionWithdrawalAction}
         resolveRescheduleAction={resolveSessionRescheduleAction}
         updateStudentCountsAction={updateSessionStudentCountsAction}
+        updateMeetingLinkAction={updateSessionMeetingLinkAction}
+        createTeamsLinkAction={createSessionTeamsLinkAction}
         initialQuery={initialQuery}
         initialBookingId={initialBookingId}
       />

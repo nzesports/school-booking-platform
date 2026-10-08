@@ -124,3 +124,193 @@ export async function syncOutlookCalendarEvent(
 export async function createOutlookCalendarEvent(input: CalendarEventInput) {
   return syncOutlookCalendarEvent(input);
 }
+
+// Teams meetings are created as an Outlook event on the shared calendar with
+// isOnlineMeeting set; Microsoft then returns the meeting's join link. Anyone
+// can join from a web browser, without a Teams account.
+export type TeamsFailureCode = "signin" | "permission" | "licence" | "other";
+
+type TeamsMeetingResult =
+  | { status: "created"; eventId: string; joinUrl: string; lobbyBypassed: boolean }
+  | { status: "unconfigured" }
+  | { status: "failed"; code: TeamsFailureCode };
+
+function graphCalendarBase() {
+  const userId = encodeURIComponent(config.microsoftUserId as string);
+  const calendarPath = config.microsoftCalendarId
+    ? `calendars/${encodeURIComponent(config.microsoftCalendarId)}`
+    : "calendar";
+  return { userId, eventsUrl: `https://graph.microsoft.com/v1.0/users/${userId}/${calendarPath}/events` };
+}
+
+// Classifies a Graph error so staff see a cause they can act on.
+async function classifyGraphError(response: Response): Promise<TeamsFailureCode> {
+  const text = await response.text();
+  let code = "";
+  try {
+    code = String((JSON.parse(text) as { error?: { code?: string } }).error?.code ?? "");
+  } catch {
+    code = "";
+  }
+
+  if (response.status === 401 || response.status === 403 || /Access|Authorization|Forbidden/i.test(code)) {
+    return "permission";
+  }
+
+  if (/OnlineMeeting|TeamsForBusiness|ProviderNotSupported/i.test(`${code} ${text}`)) {
+    return "licence";
+  }
+
+  console.error("[teams] Microsoft Graph error", { status: response.status, code });
+  return "other";
+}
+
+async function readJoinUrl(token: string, eventUrl: string) {
+  // Microsoft fills in the join link asynchronously; give it a moment.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`${eventUrl}?$select=id,isOnlineMeeting,onlineMeeting`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        onlineMeeting?: { joinUrl?: string | null } | null;
+      };
+      const joinUrl = payload.onlineMeeting?.joinUrl;
+
+      if (joinUrl) {
+        return joinUrl;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+  }
+
+  return null;
+}
+
+// Best effort: let everyone skip the lobby and present, so the school and the
+// ambassador (who join as guests) aren't left waiting for someone to admit
+// them. Needs the OnlineMeetings.ReadWrite.All permission and a Teams
+// application access policy; without them the meeting still works, but
+// guests may wait in the lobby depending on the organisation's Teams policy.
+async function openTeamsLobby(token: string, userId: string, joinUrl: string) {
+  try {
+    const lookup = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${userId}/onlineMeetings?$filter=${encodeURIComponent(`JoinWebUrl eq '${joinUrl.replace(/'/g, "''")}'`)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!lookup.ok) {
+      return false;
+    }
+
+    const meeting = ((await lookup.json()) as { value?: Array<{ id: string }> }).value?.[0];
+
+    if (!meeting) {
+      return false;
+    }
+
+    const update = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${userId}/onlineMeetings/${encodeURIComponent(meeting.id)}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lobbyBypassSettings: { scope: "everyone", isDialInBypassEnabled: true },
+          allowedPresenters: "everyone"
+        })
+      }
+    );
+
+    return update.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function createOrUpdateTeamsMeeting(
+  input: CalendarEventInput,
+  externalEventId?: string | null
+): Promise<TeamsMeetingResult> {
+  if (!config.isMicrosoftGraphConfigured) {
+    return { status: "unconfigured" };
+  }
+
+  let token: string;
+
+  try {
+    token = await getGraphToken();
+  } catch {
+    return { status: "failed", code: "signin" };
+  }
+
+  const { userId, eventsUrl } = graphCalendarBase();
+  const eventFields = {
+    subject: input.title,
+    body: { contentType: "HTML", content: input.description },
+    start: { dateTime: toGraphNzDateTime(input.startsAt), timeZone: "Pacific/Auckland" },
+    end: { dateTime: toGraphNzDateTime(input.endsAt), timeZone: "Pacific/Auckland" },
+    location: { displayName: input.location },
+    isOnlineMeeting: true,
+    onlineMeetingProvider: "teamsForBusiness"
+  };
+
+  // Reuse the session's calendar event so each session keeps one meeting.
+  let eventId = externalEventId ?? null;
+  let response = eventId
+    ? await fetch(`${eventsUrl}/${encodeURIComponent(eventId)}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(eventFields)
+      })
+    : null;
+
+  if (!response || response.status === 404) {
+    response = await fetch(eventsUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(eventFields)
+    });
+    eventId = null;
+  }
+
+  if (!response.ok) {
+    return { status: "failed", code: await classifyGraphError(response) };
+  }
+
+  if (!eventId) {
+    eventId = ((await response.json()) as { id: string }).id;
+  }
+
+  const joinUrl = await readJoinUrl(token, `${eventsUrl}/${encodeURIComponent(eventId)}`);
+
+  // The event exists but Microsoft gave it no Teams meeting: almost always a
+  // calendar account without a Teams licence.
+  if (!joinUrl) {
+    return { status: "failed", code: "licence" };
+  }
+
+  return {
+    status: "created",
+    eventId,
+    joinUrl,
+    lobbyBypassed: await openTeamsLobby(token, userId, joinUrl)
+  };
+}
+
+export async function deleteOutlookCalendarEvent(externalEventId: string) {
+  if (!config.isMicrosoftGraphConfigured) {
+    return false;
+  }
+
+  const token = await getGraphToken();
+  const { eventsUrl } = graphCalendarBase();
+  const response = await fetch(`${eventsUrl}/${encodeURIComponent(externalEventId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  return response.ok || response.status === 404;
+}
+

@@ -18,6 +18,8 @@ export type BookingReceiptDetails = {
   schoolNotes?: string;
   referenceCode: string;
   sessions: BookingReceiptSession[];
+  // Booked through the private online booking link (video call, no venue).
+  online?: boolean;
 };
 
 function escapeHtml(value: string) {
@@ -35,8 +37,8 @@ export function buildBookingReceipt(details: BookingReceiptDetails) {
       ${row("Presentation", session.presentationTitle)}
       ${row("Date", formatWeekdayDate(session.startsAt))}
       ${row("Time", `${formatTime(session.startsAt)} – ${formatTime(session.endsAt)} (New Zealand time)`)}
-      ${row("School / location", details.schoolName)}
-      ${row("Region", session.regionName)}
+      ${row("School / location", details.online ? `${details.schoolName} (online)` : details.schoolName)}
+      ${row(details.online ? "Delivery" : "Region", session.regionName)}
       ${row("Year groups", session.yearLevels)}
       ${row("Expected students", String(session.expectedStudentCount))}
     </table>`).join("");
@@ -52,6 +54,8 @@ export function buildBookingReceipt(details: BookingReceiptDetails) {
     </table>
     ${sessions}
     <p style="font-size:12px;line-height:1.5;font-style:italic;">Cancel or reschedule without an account at <a href="${escapeHtml(siteUrl)}/manage-booking">Manage booking</a>. Enter your booking reference and the email address used for the booking to view your details and make changes in your browser. Changes within 24 hours must be arranged with the team.</p>
-    <p>The exact venue address and room will be confirmed with your school.</p>
+    <p>${details.online
+      ? "This is an online session. We'll email you the video-call link once your session is confirmed."
+      : "The exact venue address and room will be confirmed with your school."}</p>
     ${details.schoolNotes ? `<h3>School notes</h3><p style="white-space:pre-line;">${escapeHtml(details.schoolNotes)}</p>` : ""}`;
 }

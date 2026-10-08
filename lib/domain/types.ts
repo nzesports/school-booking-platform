@@ -216,6 +216,11 @@ export interface BookingSessionView {
   schoolRollSize?: number;
   schoolAddress?: string;
   locationAddress?: string;
+  // Online sessions are booked via the private online booking link (or logged
+  // by staff); they have no region and staff add a video-call link.
+  // Undefined means in person.
+  deliveryMode?: "in_person" | "online";
+  meetingUrl?: string;
   contactName?: string;
   contactEmail?: string;
   contactPosition?: string;
@@ -290,6 +295,8 @@ export interface BookingRequestInput {
   marketingConsent: boolean;
   sessions: BookingSessionDraft[];
   submittedByUserId?: string;
+  // "online" for the private online booking link: no region, video call.
+  deliveryMode?: "in_person" | "online";
 }
 
 export interface BookingContactDefaults {

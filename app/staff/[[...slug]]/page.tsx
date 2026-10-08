@@ -62,6 +62,8 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ManualSchoolDialog } from "@/components/dashboard/manual-school-dialog";
 import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialog";
+import { OnlineBookingLinkDialog } from "@/components/dashboard/online-booking-link-dialog";
+import { sessionUpdateNotice } from "@/components/dashboard/session-update-notices";
 import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -78,6 +80,7 @@ import {
   readDashboardRange,
   isDeliveredSession
 } from "@/lib/services/dashboard-insights";
+import { getOnlineBookingUrl } from "@/lib/services/online-booking-link";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getStaffPortalData } from "@/lib/services/portal";
 import {
@@ -136,6 +139,7 @@ export default async function StaffPortalPage({
   }
   const actor = await requirePortalAccess("staff");
   const portal = await getStaffPortalData(actor.id);
+  const onlineBookingUrl = route === "bookings" ? await getOnlineBookingUrl() : null;
   const customRange = readDashboardCustomRange(
     resolvedSearchParams.from,
     resolvedSearchParams.to
@@ -326,6 +330,11 @@ export default async function StaffPortalPage({
         customRange={route === "" || route === "feedback" || route === "bookings" ? customRange : undefined}
         headerAction={
           route === "bookings" ? (
+            <>
+            <OnlineBookingLinkDialog
+              url={onlineBookingUrl}
+              returnTo={`/staff/bookings?status=${activeBookingView}&range=${dashboardRange}`}
+            />
             <ManualBookingDialog
               key={readSearchParam(resolvedSearchParams, "reference") || "new-booking"}
               basePath="/staff"
@@ -337,6 +346,7 @@ export default async function StaffPortalPage({
               range="all"
               action={saveManualBookingAction}
             />
+            </>
           ) : route === "schools" ? (
             <ManualSchoolDialog
               regions={portal.regions
@@ -1140,6 +1150,11 @@ function getAmbassadorNotice(searchParams: Record<string, string | string[] | un
 }
 
 function getStaffContentNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const sessionNotice = sessionUpdateNotice(searchParams);
+  if (sessionNotice) {
+    return sessionNotice;
+  }
+
   if (readSearchParam(searchParams, "deleted") === "bookings") {
     const count = Number(readSearchParam(searchParams, "deletedCount")) || 0;
     return {

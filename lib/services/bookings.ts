@@ -44,7 +44,9 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     };
   }
 
-  const regionSlug = input.regionSlug;
+  const isOnline = input.deliveryMode === "online";
+  // Online sessions have no region.
+  const regionSlug = isOnline ? "" : input.regionSlug;
   const schoolSlug = slugify(input.schoolName);
   const now = new Date().toISOString();
 
@@ -52,7 +54,12 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   const [regionsResult, presentationsResult, linkedIdentity] = await Promise.all([
     admin.from("regions").select("id, slug, name")
       .in("slug", [...new Set([regionSlug, ...input.sessions.map((session) => session.regionSlug)])]),
+    // Only presentations offered on the public form can be booked, even if a
+    // request names another slug directly.
     admin.from("presentation_types").select("id, slug, title")
+      .eq("is_active", true)
+      .eq("is_public", true)
+      .neq("slug", "careers")
       .in("slug", [...new Set(input.sessions.map((session) => session.presentationSlug))]),
     input.submittedByUserId ? loadLinkedSchoolIdentity(input.submittedByUserId) : null
   ]);
@@ -171,8 +178,13 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   const sessionRows = input.sessions.map((session) => ({
     booking_request_id: bookingRequest.id,
     school_id: schoolId,
-    region_id: (regions.get(session.regionSlug)?.id as string | undefined) ?? null,
+    region_id: isOnline
+      ? null
+      : ((regions.get(session.regionSlug)?.id as string | undefined) ?? null),
     presentation_type_id: presentations.get(session.presentationSlug)!.id as string,
+    // Only written for online bookings, so the public form keeps working even
+    // before the 0050 migration is applied (the column defaults to in_person).
+    ...(isOnline ? { delivery_mode: "online" } : {}),
     status: "tentative",
     starts_at: nzDateTimeToIso(session.date, session.startTime),
     ends_at: nzDateTimeToIso(session.date, session.endTime),
@@ -188,7 +200,8 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     action: "booking_request.submitted",
     actor_type: "school",
     details: {
-      source: "public_form",
+      source: isOnline ? "online_booking_link" : "public_form",
+      delivery_mode: isOnline ? "online" : "in_person",
       school_name: input.schoolName,
       submitted_by_user_id: input.submittedByUserId ?? null
     }
@@ -202,9 +215,12 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     referenceCode: (bookingRequest.reference_code as string | null) ?? undefined,
     contactPhone: input.contactPhone,
     schoolNotes: input.schoolNotes,
+    online: isOnline,
     sessions: input.sessions.map((session, index) => ({
       presentationTitle: presentations.get(session.presentationSlug)!.title as string,
-      regionName: (regions.get(session.regionSlug)?.name as string | undefined) ?? titleCase(session.regionSlug),
+      regionName: isOnline
+        ? "Online (video call)"
+        : (regions.get(session.regionSlug)?.name as string | undefined) ?? titleCase(session.regionSlug),
       startsAt: sessionRows[index].starts_at,
       endsAt: sessionRows[index].ends_at,
       yearLevels: session.yearLevels,
@@ -212,7 +228,7 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     }))
   }));
   void notifyStaff({
-    title: `New booking request from ${input.schoolName}`,
+    title: `New ${isOnline ? "online " : ""}booking request from ${input.schoolName}`,
     body: `${input.contactName} submitted ${input.sessions.length} requested session${input.sessions.length === 1 ? "" : "s"}.`,
     type: "booking_request_submitted",
     relatedUrl: `/staff/bookings?status=all&range=all&booking=${bookingRequest.id}#booking-${bookingRequest.id}`

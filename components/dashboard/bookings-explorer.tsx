@@ -37,6 +37,7 @@ import { createPortal } from "react-dom";
 
 import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
+import type { SessionDialogAction } from "@/components/dashboard/session-update-notices";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
 import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
@@ -310,6 +311,8 @@ export function BookingsExplorer({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   updateStudentCountsAction,
+  updateMeetingLinkAction,
+  createTeamsLinkAction,
   initialQuery,
   initialBookingId,
   metric = "all"
@@ -328,7 +331,9 @@ export function BookingsExplorer({
   assignAmbassadorAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
-  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
+  updateStudentCountsAction?: SessionDialogAction;
+  updateMeetingLinkAction?: SessionDialogAction;
+  createTeamsLinkAction?: SessionDialogAction;
   initialQuery?: string;
   initialBookingId?: string;
   metric?: string;
@@ -367,6 +372,7 @@ export function BookingsExplorer({
   const [regionFilter, setRegionFilter] = useState("all");
   const [presentationFilter, setPresentationFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [page, setPage] = useState(
     initialBookingIndex >= 0 ? Math.floor(initialBookingIndex / PAGE_SIZE) + 1 : 1
   );
@@ -418,14 +424,18 @@ export function BookingsExplorer({
       (regionFilter === "all" || booking.regionSlug === regionFilter) &&
       (presentationFilter === "all" ||
         booking.sessions.some((session) => session.presentationTitle === presentationFilter)) &&
-      (statusFilter === "all" || schoolBookingStatus(booking.status) === statusFilter)
+      (statusFilter === "all" || schoolBookingStatus(booking.status) === statusFilter) &&
+      (deliveryFilter === "all" ||
+        (deliveryFilter === "online"
+          ? booking.sessions.some((session) => session.deliveryMode === "online")
+          : !booking.sessions.some((session) => session.deliveryMode === "online")))
     );
   };
 
   const filtered = useMemo(
     () => bookings.filter(matchesFilters),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bookings, query, regionFilter, presentationFilter, statusFilter]
+    [bookings, query, regionFilter, presentationFilter, statusFilter, deliveryFilter]
   );
 
   const calendarSessions = useMemo(
@@ -456,7 +466,11 @@ export function BookingsExplorer({
     ([value]) => !selectedHaveFutureSessions || !COMPLETION_STATUSES.has(value)
   );
   const hasActiveFilters =
-    query !== "" || regionFilter !== "all" || presentationFilter !== "all" || statusFilter !== "all";
+    query !== "" ||
+    regionFilter !== "all" ||
+    presentationFilter !== "all" ||
+    statusFilter !== "all" ||
+    deliveryFilter !== "all";
 
   const isExpanded = (bookingId: string) =>
     expanded[bookingId] ?? activeHash === `#booking-${bookingId}`;
@@ -539,6 +553,19 @@ export function BookingsExplorer({
             ]}
           />
           <ToolbarSelect
+            label="Delivery"
+            value={deliveryFilter}
+            onChange={(value) => {
+              setDeliveryFilter(value);
+              setPage(1);
+            }}
+            options={[
+              { value: "all", label: "In person & online" },
+              { value: "in_person", label: "In person" },
+              { value: "online", label: "Online" }
+            ]}
+          />
+          <ToolbarSelect
             label="Status"
             value={statusFilter}
             onChange={(value) => {
@@ -558,6 +585,7 @@ export function BookingsExplorer({
               setRegionFilter("all");
               setPresentationFilter("all");
               setStatusFilter("all");
+              setDeliveryFilter("all");
               setPage(1);
             }}
             className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! font-semibold! text-[color:var(--navy)] transition disabled:opacity-40"
@@ -698,7 +726,9 @@ export function BookingsExplorer({
                 ? booking.regionSlug
                 : primarySession?.regionSlug;
             const locationLabel =
-              locationSlug === "other" || locationSlug === "other-request-region"
+              primarySession?.deliveryMode === "online"
+                ? "Online (video call)"
+                : locationSlug === "other" || locationSlug === "other-request-region"
                 ? sessionLocation && !/^new zealand$/i.test(sessionLocation)
                   ? sessionLocation
                   : "Other location"
@@ -888,6 +918,8 @@ export function BookingsExplorer({
                             resolveWithdrawalAction={resolveWithdrawalAction}
                             resolveRescheduleAction={resolveRescheduleAction}
                             updateStudentCountsAction={updateStudentCountsAction}
+                            updateMeetingLinkAction={updateMeetingLinkAction}
+                            createTeamsLinkAction={createTeamsLinkAction}
                             returnTo={cardReturnTo}
                           />
                         ))}
@@ -997,6 +1029,8 @@ export function BookingsExplorer({
                                   resolveWithdrawalAction={resolveWithdrawalAction}
                                   resolveRescheduleAction={resolveRescheduleAction}
                                   updateStudentCountsAction={updateStudentCountsAction}
+                                  updateMeetingLinkAction={updateMeetingLinkAction}
+                                  createTeamsLinkAction={createTeamsLinkAction}
                                   returnTo={cardReturnTo}
                                 />
                               </td>
@@ -1097,6 +1131,8 @@ function CompactSessionCard({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   updateStudentCountsAction,
+  updateMeetingLinkAction,
+  createTeamsLinkAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -1106,7 +1142,9 @@ function CompactSessionCard({
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
-  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
+  updateStudentCountsAction?: SessionDialogAction;
+  updateMeetingLinkAction?: SessionDialogAction;
+  createTeamsLinkAction?: SessionDialogAction;
   returnTo: string;
 }) {
   return (
@@ -1188,6 +1226,8 @@ function CompactSessionCard({
           resolveWithdrawalAction={resolveWithdrawalAction}
           resolveRescheduleAction={resolveRescheduleAction}
           updateStudentCountsAction={updateStudentCountsAction}
+          updateMeetingLinkAction={updateMeetingLinkAction}
+          createTeamsLinkAction={createTeamsLinkAction}
           returnTo={returnTo}
         />
       </div>

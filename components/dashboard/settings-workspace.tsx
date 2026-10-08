@@ -1,5 +1,5 @@
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
-import { CalendarClock, CircleDollarSign, Mail } from "lucide-react";
+import { CalendarClock, CircleDollarSign, Mail, Video } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -49,13 +49,16 @@ export function SettingsWorkspace({
   action,
   returnTo,
   notice,
-  canEditFinanceEmail
+  canEditFinanceEmail,
+  testTeamsAction
 }: {
   settings: Array<{ key: string; value: string }>;
   action: (formData: FormData) => void | Promise<void>;
   returnTo: string;
   notice?: { tone: "success" | "error"; message: string } | null;
   canEditFinanceEmail: boolean;
+  // Super admins only: checks the Microsoft Teams connection.
+  testTeamsAction?: () => void | Promise<void>;
 }) {
   const parsed = parseSettings(settings);
   const bookingDefaults = parsed.booking_defaults;
@@ -234,6 +237,33 @@ export function SettingsWorkspace({
           </Field>
         </div>
       </SettingsCard>
+
+      {testTeamsAction ? (
+        <Card className="rounded-[28px]">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e8f1fd] text-[#1e4fae]">
+                <Video className="h-5 w-5" />
+              </span>
+              <div className="flex items-center gap-2">
+                <p className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                  Microsoft Teams
+                </p>
+                <InfoTooltip label="Microsoft Teams">
+                  Staff can create Teams links for online sessions from the booking details. This
+                  test creates a Teams meeting on the shared Microsoft calendar, checks a join link
+                  comes back, then deletes it.
+                </InfoTooltip>
+              </div>
+            </div>
+            <form action={testTeamsAction}>
+              <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Testing...">
+                Test Microsoft connection
+              </PendingSubmitButton>
+            </form>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

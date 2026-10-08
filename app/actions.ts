@@ -15,6 +15,7 @@ import {
 } from "@/lib/services/availability";
 import { loadAvailabilityConfig } from "@/lib/services/availability-server";
 import { BookingConfigurationError, submitBookingRequest } from "@/lib/services/bookings";
+import { isValidOnlineBookingToken } from "@/lib/services/online-booking-link";
 import { allowPublicRequest, publicClientAddress } from "@/lib/services/public-rate-limit";
 
 // Accepts "9:00" as well as "09:00" and normalises to HH:MM.
@@ -30,14 +31,15 @@ const bookingSchema = z.object({
   contactEmail: z.string().email().max(254),
   contactPhone: z.string().trim().min(5).max(50),
   contactPosition: z.string().trim().max(200).optional(),
-  regionSlug: z.string().min(1).max(100),
+  // Required for in-person bookings (checked below); online bookings have none.
+  regionSlug: z.string().max(100),
   schoolNotes: z.string().max(5000).optional(),
   marketingConsent: z.boolean(),
   sessions: z
     .array(
       z.object({
         presentationSlug: z.string().min(1).max(200),
-        regionSlug: z.string().min(1).max(100),
+        regionSlug: z.string().max(100),
         // Strict formats: nzDateTimeToIso throws on anything else, after the
         // booking row has already been inserted.
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -74,19 +76,46 @@ export async function submitBookingRequestAction(
   _previousState: BookingFormState,
   formData: FormData
 ): Promise<BookingFormState> {
+  return handleBookingSubmission(formData, "in_person");
+}
+
+// The private online booking link staff share with schools. It is never
+// linked from the website; the signed token proves the visitor was given it.
+export async function submitOnlineBookingRequestAction(
+  _previousState: BookingFormState,
+  formData: FormData
+): Promise<BookingFormState> {
+  if (!(await isValidOnlineBookingToken(String(formData.get("onlineBookingToken") || "")))) {
+    return {
+      error:
+        "This online booking link is no longer active. Please contact the NZ Esports team for a new link."
+    };
+  }
+
+  return handleBookingSubmission(formData, "online");
+}
+
+async function handleBookingSubmission(
+  formData: FormData,
+  deliveryMode: "in_person" | "online"
+): Promise<BookingFormState> {
+  const isOnline = deliveryMode === "online";
+
   if (String(formData.get("website2") || "").trim()) {
     redirect("/booking/confirmation/received");
   }
 
   const count = Number(formData.get("sessionsCount") || 0);
   const firstSessionRegion = String(formData.get("session-0-regionSlug") || "");
-  const customRegions = Array.from(
-    new Set(
-      Array.from({ length: count }, (_, index) =>
-        String(formData.get(`session-${index}-customRegion`) || "").trim()
-      ).filter(Boolean)
-    )
-  );
+  const customRegions = isOnline
+    ? []
+    : Array.from(
+        new Set(
+          Array.from({ length: count }, (_, index) =>
+            String(formData.get(`session-${index}-customRegion`) || "").trim()
+          ).filter(Boolean)
+        )
+      );
   const schoolNotes = [
     String(formData.get("schoolNotes") || "").trim(),
     customRegions.length > 0 ? `Requested region: ${customRegions.join(", ")}` : ""
@@ -138,6 +167,13 @@ export async function submitBookingRequestAction(
     return { error: "Please review every session detail before sending your request." };
   }
 
+  if (
+    !isOnline &&
+    (!parsed.data.regionSlug || parsed.data.sessions.some((session) => !session.regionSlug))
+  ) {
+    return { error: "Please review every session detail before sending your request." };
+  }
+
   // Every submission emails the address given, so cap how often one visitor
   // or one address can trigger that.
   const [ipAllowed, emailAllowed] = await Promise.all([
@@ -184,7 +220,8 @@ export async function submitBookingRequestAction(
   try {
     booking = await submitBookingRequest({
       ...parsed.data,
-      submittedByUserId: user?.role === "school" ? user.id : undefined
+      submittedByUserId: user?.role === "school" ? user.id : undefined,
+      deliveryMode
     });
   } catch (error) {
     if (error instanceof BookingConfigurationError) {

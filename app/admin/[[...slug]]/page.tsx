@@ -37,6 +37,8 @@ import {
   markReportReviewedAction,
   reviewAmbassadorAction,
   reviewSchoolFeedbackAction,
+  rotateOnlineBookingLinkAction,
+  testMicrosoftTeamsAction,
   saveManualBookingAction,
   saveEmailTemplateAction,
   sendTestEmailAction,
@@ -79,6 +81,8 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ManualSchoolDialog } from "@/components/dashboard/manual-school-dialog";
 import { ManualBookingDialog } from "@/components/dashboard/manual-booking-dialog";
+import { OnlineBookingLinkDialog } from "@/components/dashboard/online-booking-link-dialog";
+import { sessionUpdateNotice } from "@/components/dashboard/session-update-notices";
 import { LogFeedbackDialog } from "@/components/dashboard/log-feedback-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -97,6 +101,7 @@ import {
   readDashboardRange,
   isDeliveredSession
 } from "@/lib/services/dashboard-insights";
+import { getOnlineBookingUrl } from "@/lib/services/online-booking-link";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
 import { getAdminPortalData } from "@/lib/services/portal";
 import { cn, formatDateTime, formatShortDate, titleCase } from "@/lib/utils";
@@ -173,6 +178,7 @@ export default async function AdminPortalPage({
   }
   const actor = await requirePortalAccess("super_admin");
   const portal = await getAdminPortalData(actor.id);
+  const onlineBookingUrl = route === "bookings" ? await getOnlineBookingUrl() : null;
   const customRange = readDashboardCustomRange(
     resolvedSearchParams.from,
     resolvedSearchParams.to
@@ -456,6 +462,12 @@ export default async function AdminPortalPage({
         customRange={route === "" || route === "feedback" || route === "bookings" ? customRange : undefined}
         headerAction={
           route === "bookings" ? (
+            <>
+            <OnlineBookingLinkDialog
+              url={onlineBookingUrl}
+              returnTo={`/admin/bookings?status=${activeBookingView}&range=${dashboardRange}`}
+              replaceAction={rotateOnlineBookingLinkAction}
+            />
             <ManualBookingDialog
               key={readSearchParam(resolvedSearchParams, "reference") || "new-booking"}
               basePath="/admin"
@@ -467,6 +479,7 @@ export default async function AdminPortalPage({
               range="all"
               action={saveManualBookingAction}
             />
+            </>
           ) : route === "schools" ? (
             <ManualSchoolDialog
               regions={portal.regions
@@ -2066,14 +2079,16 @@ export default async function AdminPortalPage({
             action={savePlatformSettingsAction}
             returnTo="/admin/settings"
             canEditFinanceEmail
+            testTeamsAction={testMicrosoftTeamsAction}
             notice={
-              readSearchParam(resolvedSearchParams, "saved") === "settings"
+              teamsTestNotice(readSearchParam(resolvedSearchParams, "teams"), readSearchParam(resolvedSearchParams, "teamsCleanup")) ??
+              (readSearchParam(resolvedSearchParams, "saved") === "settings"
                 ? { tone: "success", message: "Settings saved." }
                 : readSearchParam(resolvedSearchParams, "error") === "invalid-settings"
                   ? { tone: "error", message: "Those settings didn't look right — please check the fields and try again." }
                   : readSearchParam(resolvedSearchParams, "error") === "settings-save-failed"
                     ? { tone: "error", message: "Saving failed — please try again." }
-                    : null
+                    : null)
             }
           />
         ) : null}
@@ -2187,6 +2202,36 @@ function SectionHeading({
       ) : null}
     </div>
   );
+}
+
+function teamsTestNotice(
+  result: string | undefined,
+  cleanup: string | undefined
+): { tone: "success" | "error"; message: string } | null {
+  const cleanupNote =
+    cleanup === "failed" ? " The test meeting couldn't be deleted, so remove it from the shared calendar." : "";
+
+  switch (result) {
+    case "ok":
+      return { tone: "success", message: `Microsoft Teams is connected. Staff can create Teams links for online sessions.${cleanupNote}` };
+    case "ok-lobby":
+      return {
+        tone: "success",
+        message: `Microsoft Teams is connected and links can be created. The site couldn't open the lobby automatically (that needs the OnlineMeetings.ReadWrite.All permission), so depending on your Teams settings, schools and ambassadors may wait in the lobby until someone from NZ Esports admits them.${cleanupNote}`
+      };
+    case "unconfigured":
+      return { tone: "error", message: "Microsoft isn't connected on this site. Add the MICROSOFT_GRAPH_* settings in Vercel." };
+    case "signin":
+      return { tone: "error", message: "Couldn't sign in to Microsoft. Check the MICROSOFT_GRAPH_* settings in Vercel (the client secret may have expired)." };
+    case "permission":
+      return { tone: "error", message: "Microsoft refused the request. In Microsoft Entra, grant the app the Calendars.ReadWrite application permission (admin consent)." };
+    case "licence":
+      return { tone: "error", message: "The shared calendar account can't create Teams meetings. Give that Microsoft account a Teams licence." };
+    case "other":
+      return { tone: "error", message: "Microsoft returned an unexpected error. Try again in a moment." };
+    default:
+      return null;
+  }
 }
 
 function readSearchParam(
@@ -2384,6 +2429,11 @@ function getUsersNotice(searchParams: Record<string, string | string[] | undefin
 }
 
 function getContentNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const sessionNotice = sessionUpdateNotice(searchParams);
+  if (sessionNotice) {
+    return sessionNotice;
+  }
+
   if (readSearchParam(searchParams, "deleted") === "bookings") {
     const count = Number(readSearchParam(searchParams, "deletedCount")) || 0;
     return {

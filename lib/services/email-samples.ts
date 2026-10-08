@@ -39,6 +39,9 @@ export const EMAIL_SAMPLE_VALUES: Record<string, string> = {
   ambassadorName: "Aroha Ngata",
   sessionAddress: "12 Example Street, Auckland",
   reviewUrl: `${siteUrl}/feedback/sample`,
+  meetingUrl: "https://teams.microsoft.com/l/meetup-join/sample",
+  meetingButton:
+    '<p><a href="https://teams.microsoft.com/l/meetup-join/sample" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Join the video call</a></p>',
   siteUrl,
   portalUrl: `${siteUrl}/ambassador`,
   loginUrl: `${siteUrl}/login`,

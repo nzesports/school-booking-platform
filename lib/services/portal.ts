@@ -290,19 +290,31 @@ async function loadPlatformDataUncached() {
         .order("id", { ascending: true })
         .range(from, to)
     ),
-    loadBookingSessions(bookingSessionSelectWithWithdrawals).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "";
+    // Online-session columns (0050) are optional so the portal keeps working
+    // if the code ships before that migration is applied.
+    loadBookingSessions(`${bookingSessionSelectWithWithdrawals}, delivery_mode, meeting_url`)
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "";
 
-      if (
-        message.includes("withdrawal_reason") ||
-        message.includes("withdrawal_requested_at") ||
-        message.includes("reschedule_")
-      ) {
-        return loadBookingSessions(bookingSessionSelectBase);
-      }
+        if (message.includes("delivery_mode") || message.includes("meeting_url")) {
+          return loadBookingSessions(bookingSessionSelectWithWithdrawals);
+        }
 
-      throw error;
-    }),
+        throw error;
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "";
+
+        if (
+          message.includes("withdrawal_reason") ||
+          message.includes("withdrawal_requested_at") ||
+          message.includes("reschedule_")
+        ) {
+          return loadBookingSessions(bookingSessionSelectBase);
+        }
+
+        throw error;
+      }),
     fetchAllRows("presentation_types", (from, to) =>
       admin.from("presentation_types").select("*").order("id", { ascending: true }).range(from, to)
     ),
@@ -682,8 +694,15 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       presentationSlug: (presentation?.slug as string | undefined) ?? "presentation",
       presentationTitle: (presentation?.title as string | undefined) ?? "Presentation",
       presentationAccentColor: (presentation?.accent_color as string | undefined) ?? undefined,
-      regionSlug: (region?.slug as string | undefined) ?? "unassigned",
-      regionName: (region?.name as string | undefined) ?? undefined,
+      // Online sessions have no region; every region label shows "Online".
+      regionSlug:
+        withdrawalFields.delivery_mode === "online"
+          ? "online"
+          : (region?.slug as string | undefined) ?? "unassigned",
+      regionName:
+        withdrawalFields.delivery_mode === "online"
+          ? "Online"
+          : (region?.name as string | undefined) ?? undefined,
       schoolId: (session.school_id as string | null) ?? undefined,
       schoolName: (school?.name as string | undefined) ?? "School",
       schoolRollSize: school?.roll_size === null || school?.roll_size === undefined
@@ -691,6 +710,8 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
         : Number(school.roll_size),
       schoolAddress: schoolAddress || undefined,
       locationAddress: (session.location_address as string | null) ?? undefined,
+      deliveryMode: withdrawalFields.delivery_mode === "online" ? "online" : "in_person",
+      meetingUrl: (withdrawalFields.meeting_url as string | null | undefined) ?? undefined,
       contactName: (sharedContact?.full_name as string | undefined) ?? undefined,
       contactEmail: (sharedContact?.email as string | undefined) ?? undefined,
       contactPosition: (sharedContact?.position as string | undefined) ?? undefined,

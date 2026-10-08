@@ -56,7 +56,9 @@ export function BookingModalHost({
   presentations,
   regions,
   availabilityConfig,
-  action
+  action,
+  mode = "in_person",
+  hiddenFields
 }: {
   request: {
     id: number;
@@ -72,6 +74,10 @@ export function BookingModalHost({
   regions: Region[];
   availabilityConfig?: AvailabilityConfig;
   action: (state: BookingFormState, formData: FormData) => Promise<BookingFormState>;
+  // "online": the private online booking link. No region; video call instead.
+  mode?: "in_person" | "online";
+  // Extra fields posted with the request (e.g. the online link token).
+  hiddenFields?: Record<string, string>;
 }) {
   useEffect(() => {
     if (!request) {
@@ -113,6 +119,8 @@ export function BookingModalHost({
       initialTime={request.time}
       initialSessions={request.sessions}
       onClose={onClose}
+      mode={mode}
+      hiddenFields={hiddenFields}
     />
   );
 }
@@ -128,7 +136,9 @@ function BookingModalFlow({
   initialDate,
   initialTime,
   initialSessions,
-  onClose
+  onClose,
+  mode,
+  hiddenFields
 }: {
   presentations: PresentationType[];
   regions: Region[];
@@ -141,7 +151,14 @@ function BookingModalFlow({
   initialTime?: string;
   initialSessions?: HeroBookingDraftSession[];
   onClose: () => void;
+  mode: "in_person" | "online";
+  hiddenFields?: Record<string, string>;
 }) {
+  const isOnline = mode === "online";
+  const hasRegion = (session: HeroBookingDraftSession) =>
+    isOnline ||
+    (Boolean(session.regionSlug) &&
+      (!isOtherRegionSlug(session.regionSlug) || Boolean(session.customRegion?.trim())));
   const dates = nextBookableDates(BOOKING_WINDOW_DAYS, availabilityConfig);
   const firstDate =
     dates.includes(initialDate ?? "") && initialDate ? initialDate : dates[0] ?? "";
@@ -180,8 +197,7 @@ function BookingModalFlow({
       Boolean(session.presentationSlug) &&
       Boolean(session.date) &&
       Boolean(session.startTime) &&
-      Boolean(session.regionSlug) &&
-      (!isOtherRegionSlug(session.regionSlug) || Boolean(session.customRegion?.trim()))
+      hasRegion(session)
   );
 
   const [step, setStep] = useState<BookingStep>(
@@ -249,21 +265,26 @@ function BookingModalFlow({
       Boolean(session.presentationSlug) &&
       Boolean(session.date) &&
       Boolean(session.startTime) &&
-      Boolean(session.regionSlug) &&
-      (!isOtherRegionSlug(session.regionSlug) || Boolean(session.customRegion?.trim()))
+      hasRegion(session)
   );
 
   return (
     <BookingDialogShell
       title={
         step === "plan"
-          ? "Book your school presentation"
+          ? isOnline
+            ? "Book an online session"
+            : "Book your school presentation"
           : "Review and send your booking request"
       }
       description={
         step === "plan"
-          ? undefined
-          : "We'll check availability and confirm the session details with your school before anything is final."
+          ? isOnline
+            ? "Online sessions are delivered by video call. We'll email you the link once your session is confirmed."
+            : undefined
+          : isOnline
+            ? "We'll check availability, confirm the session with your school and email you the video-call link."
+            : "We'll check availability and confirm the session details with your school before anything is final."
       }
       onClose={onClose}
       headerAside={<BookingStepProgress currentStep={step === "plan" ? 1 : 2} />}
@@ -408,57 +429,69 @@ function BookingModalFlow({
                       </div>
                     </PlannerField>
 
-                    <PlannerField
-                      icon={<MapPin className="h-4 w-4" />}
-                      label="Region"
-                      className="sm:col-span-2 xl:col-span-1"
-                    >
-                      <div>
-                        <Select
-                          className="h-[56px] text-base"
-                          value={session.regionSlug}
-                          onChange={(event) =>
-                            setSessions((current) =>
-                              current.map((item) =>
-                                item.id === session.id
-                                  ? {
-                                      ...item,
-                                      regionSlug: event.target.value,
-                                      customRegion: isOtherRegionSlug(event.target.value)
-                                        ? item.customRegion ?? ""
-                                        : ""
-                                    }
-                                  : item
-                              )
-                            )
-                          }
-                        >
-                          <option value="">Select your region</option>
-                          {regions.map((item) => (
-                            <option key={item.id} value={item.slug}>
-                              {regionDisplayName(item)}
-                            </option>
-                          ))}
-                        </Select>
-                        {isOtherRegionSlug(session.regionSlug) ? (
-                          <Input
-                            className="mt-2 h-[56px] text-base"
-                            value={session.customRegion ?? ""}
-                            placeholder="Type your region"
-                            aria-label="Type your region"
+                    {isOnline ? (
+                      <PlannerField
+                        icon={<MonitorPlay className="h-4 w-4" />}
+                        label="Delivery"
+                        className="sm:col-span-2 xl:col-span-1"
+                      >
+                        <p className="flex min-h-[56px] items-center rounded-[16px] border border-[rgba(164,202,227,0.55)] bg-white/80 px-4 text-base font-semibold text-[color:var(--navy)]">
+                          Online (video call)
+                        </p>
+                      </PlannerField>
+                    ) : (
+                      <PlannerField
+                        icon={<MapPin className="h-4 w-4" />}
+                        label="Region"
+                        className="sm:col-span-2 xl:col-span-1"
+                      >
+                        <div>
+                          <Select
+                            className="h-[56px] text-base"
+                            value={session.regionSlug}
                             onChange={(event) =>
                               setSessions((current) =>
                                 current.map((item) =>
                                   item.id === session.id
-                                    ? { ...item, customRegion: event.target.value }
+                                    ? {
+                                        ...item,
+                                        regionSlug: event.target.value,
+                                        customRegion: isOtherRegionSlug(event.target.value)
+                                          ? item.customRegion ?? ""
+                                          : ""
+                                      }
                                     : item
                                 )
                               )
                             }
-                          />
-                        ) : null}
-                      </div>
-                    </PlannerField>
+                          >
+                            <option value="">Select your region</option>
+                            {regions.map((item) => (
+                              <option key={item.id} value={item.slug}>
+                                {regionDisplayName(item)}
+                              </option>
+                            ))}
+                          </Select>
+                          {isOtherRegionSlug(session.regionSlug) ? (
+                            <Input
+                              className="mt-2 h-[56px] text-base"
+                              value={session.customRegion ?? ""}
+                              placeholder="Type your region"
+                              aria-label="Type your region"
+                              onChange={(event) =>
+                                setSessions((current) =>
+                                  current.map((item) =>
+                                    item.id === session.id
+                                      ? { ...item, customRegion: event.target.value }
+                                      : item
+                                  )
+                                )
+                              }
+                            />
+                          ) : null}
+                        </div>
+                      </PlannerField>
+                    )}
                   </div>
                 </div>
               );
@@ -549,12 +582,22 @@ function BookingModalFlow({
           onSubmit={() => {
             storeGuestBookingDefaults({
               ...contactDetails,
-              regionSlug: reviewSessions[0]?.regionSlug ?? ""
+              // Online bookings have no region; keep the school's saved one.
+              regionSlug: isOnline
+                ? contactDetails.regionSlug
+                : reviewSessions[0]?.regionSlug ?? ""
             });
           }}
         >
           <input type="hidden" name="sessionsCount" value={reviewSessions.length} />
-          <input type="hidden" name="regionSlug" value={reviewSessions[0]?.regionSlug ?? ""} />
+          <input
+            type="hidden"
+            name="regionSlug"
+            value={isOnline ? "" : reviewSessions[0]?.regionSlug ?? ""}
+          />
+          {Object.entries(hiddenFields ?? {}).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
 
           <section className="rounded-[28px] border border-[rgba(164,202,227,0.55)] bg-[linear-gradient(180deg,rgba(243,249,255,0.95),rgba(255,255,255,0.96))] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] md:p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -626,9 +669,9 @@ function BookingModalFlow({
                         value={`${formatTimeLabel(session.startTime)} - ${formatTimeLabel(addTenMinutes(session.startTime))}`}
                       />
                       <SummaryItem
-                        icon={<MapPin className="h-5 w-5" />}
-                        label="Region"
-                        value={regionName}
+                        icon={isOnline ? <MonitorPlay className="h-5 w-5" /> : <MapPin className="h-5 w-5" />}
+                        label={isOnline ? "Delivery" : "Region"}
+                        value={isOnline ? "Online (video call)" : regionName}
                       />
                       <div className="px-0 py-4 md:px-6">
                         <div className="flex items-start gap-3 text-[color:var(--navy)]">
@@ -680,12 +723,12 @@ function BookingModalFlow({
                     <input
                       type="hidden"
                       name={`session-${index}-regionSlug`}
-                      value={session.regionSlug}
+                      value={isOnline ? "" : session.regionSlug}
                     />
                     <input
                       type="hidden"
                       name={`session-${index}-customRegion`}
-                      value={customRegion}
+                      value={isOnline ? "" : customRegion}
                     />
                     <input type="hidden" name={`session-${index}-date`} value={session.date} />
                     <input

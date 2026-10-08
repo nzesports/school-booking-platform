@@ -145,6 +145,7 @@ export async function sendBookingRequestReceivedEmail(opts: {
   contactPhone: string;
   schoolNotes?: string;
   sessions: BookingReceiptSession[];
+  online?: boolean;
 }) {
   const contactName = escapeHtml(opts.contactName);
   const schoolName = escapeHtml(opts.schoolName);
@@ -162,7 +163,7 @@ export async function sendBookingRequestReceivedEmail(opts: {
     presentationTitle: opts.sessions.map((session) => session.presentationTitle).join("; "),
     sessionDate: opts.sessions.map((session) => formatLongDate(session.startsAt)).join("; "),
     sessionTime: opts.sessions.map((session) => `${formatTime(session.startsAt)} – ${formatTime(session.endsAt)} (NZ time)`).join("; "),
-    sessionAddress: opts.schoolName,
+    sessionAddress: opts.online ? "Online (video call)" : opts.schoolName,
     regionName: opts.sessions.map((session) => session.regionName).join("; ")
   }, { bookingSummary });
   const result = await sendTransactionalEmail({
@@ -201,6 +202,8 @@ function calendarLinksBlock(opts: {
   referenceCode?: string;
   yearLevels?: string;
   expectedStudentCount?: number | null;
+  deliveryMode?: "in_person" | "online";
+  meetingUrl?: string | null;
 }) {
   if (!opts.sessionStartsAt) {
     return "";
@@ -214,7 +217,10 @@ function calendarLinksBlock(opts: {
     {
       title: `${opts.presentationTitle} — NZ Esports presentation`,
       description: bookingCalendarDescription({ ...opts, manageUrl: `${config.siteUrl}/manage-booking` }),
-      location: opts.schoolName,
+      location:
+        opts.deliveryMode === "online"
+          ? opts.meetingUrl || "Online (video call)"
+          : opts.schoolName,
       startsAt: opts.sessionStartsAt,
       endsAt
     },
@@ -648,6 +654,112 @@ export async function sendAmbassadorAssignedEmail(opts: {
     recipientType: "ambassador"
   });
   return result;
+}
+
+// Sent to the school when staff add or change the video-call link on an
+// online session that is already confirmed.
+export async function sendMeetingLinkEmail(opts: SchoolEmailDetails & {
+  contactEmail: string;
+  contactName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  bookingId?: string;
+  referenceCode?: string;
+  bookingSessionId?: string;
+  sessionStartsAt?: string;
+  sessionEndsAt?: string;
+}) {
+  const details = buildSchoolEmailDetails(opts);
+  const meetingUrl = opts.meetingUrl ?? "";
+  const calendarLinks = calendarLinksBlock(opts);
+  const template = await renderSchoolTemplate(details,
+    "school_meeting_link",
+    {
+      contactName: opts.contactName,
+      schoolName: opts.schoolName,
+      sessionDate: opts.sessionDate,
+      presentationTitle: opts.presentationTitle,
+      meetingUrl,
+      bookingId: opts.referenceCode ?? "",
+      bookingSessionId: opts.bookingSessionId ?? ""
+    },
+    { calendarLinks, meetingButton: meetingButton(meetingUrl) }
+  );
+  const result = await sendSchoolSessionEmail({
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
+    templateKey: "school_meeting_link",
+    recipientEmail: opts.contactEmail,
+    subject: template?.subject ?? `Your video-call link for ${opts.presentationTitle}`,
+    html:
+      template ? template.html + (template.htmlPlaceholders.includes("calendarLinks") ? "" : `<p>${calendarLinks}</p>`) :
+      `
+      <p>Hi ${escapeHtml(opts.contactName)},</p>
+      <p>Here's the video-call link for your online <strong>${escapeHtml(opts.presentationTitle)}</strong>
+      session for <strong>${escapeHtml(opts.schoolName)}</strong> on <strong>${escapeHtml(opts.sessionDate)}</strong>.</p>
+      ${meetingButton(meetingUrl)}
+      <p>It opens in a web browser, so you don't need a special account or app. We recommend joining a few minutes early to check your screen and sound.</p>
+      ${calendarLinks ? `<p>${calendarLinks}</p>` : ""}
+    `
+  }, details);
+
+  await logEmail(result, {
+    bookingRequestId: opts.bookingId,
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "school"
+  });
+  return result;
+}
+
+// The assigned ambassador gets the same link so it's in their inbox too.
+export async function sendAmbassadorMeetingLinkEmail(opts: {
+  ambassadorEmail: string;
+  ambassadorName: string;
+  schoolName: string;
+  sessionDate: string;
+  presentationTitle: string;
+  meetingUrl: string;
+  bookingSessionId: string;
+}) {
+  const template = await renderTemplate("ambassador_meeting_link", {
+    ambassadorName: opts.ambassadorName,
+    schoolName: opts.schoolName,
+    sessionDate: opts.sessionDate,
+    presentationTitle: opts.presentationTitle,
+    meetingUrl: opts.meetingUrl,
+    bookingSessionId: opts.bookingSessionId
+  }, { meetingButton: meetingButton(opts.meetingUrl) });
+  const result = await sendTransactionalEmail({
+    bookingSessionId: opts.bookingSessionId,
+    templateKey: "ambassador_meeting_link",
+    recipientEmail: opts.ambassadorEmail,
+    subject: template?.subject ?? `Video-call link: ${opts.presentationTitle} with ${opts.schoolName}`,
+    html:
+      template?.html ??
+      `
+      <p>Hi ${escapeHtml(opts.ambassadorName)},</p>
+      <p>Here's the video-call link for your online <strong>${escapeHtml(opts.presentationTitle)}</strong>
+      session with <strong>${escapeHtml(opts.schoolName)}</strong> on <strong>${escapeHtml(opts.sessionDate)}</strong>.</p>
+      ${meetingButton(opts.meetingUrl)}
+      <p>The school has been sent the same link.</p>
+    `
+  });
+
+  await logEmail(result, {
+    bookingSessionId: opts.bookingSessionId,
+    recipientType: "ambassador"
+  });
+  return result;
+}
+
+function meetingButton(meetingUrl: string) {
+  if (!meetingUrl) {
+    return "";
+  }
+
+  const href = escapeHtml(meetingUrl);
+  return `<p><a href="${href}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Join the video call</a></p><p style="font-size:12px;line-height:1.5;">Or copy this link: <a href="${href}">${href}</a></p>`;
 }
 
 // Only sent for cancellations inside the 24-hour window, when the ambassador

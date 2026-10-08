@@ -18,7 +18,11 @@ import {
   PLATFORM_DATA_TAG,
   PUBLIC_CONTENT_TAG
 } from "@/lib/services/cache-tags";
-import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
+import {
+  createTeamsMeetingForSession,
+  syncSessionToCalendar
+} from "@/lib/services/calendar-triggers";
+import { createOrUpdateTeamsMeeting, deleteOutlookCalendarEvent } from "@/lib/services/calendar";
 import {
   sendAmbassadorApprovedEmail,
   sendAmbassadorAssignedEmail,
@@ -46,8 +50,20 @@ import {
 } from "@/lib/services/storage";
 import { emailDeliveryContext } from "@/lib/services/email-delivery-context";
 import { statusEmailEvent } from "@/lib/services/status-email-choice";
-import { sendSchoolSessionEmails, sendSchoolStatusChangeEmails } from "@/lib/services/school-session-email";
+import {
+  sessionActionResult,
+  type SessionActionState
+} from "@/components/dashboard/session-update-notices";
+import {
+  sendMeetingLinkNotifications,
+  sendSchoolSessionEmails,
+  sendSchoolStatusChangeEmails
+} from "@/lib/services/school-session-email";
 import { feedbackPath, feedbackUrl, isValidFeedbackLinkToken } from "@/lib/services/feedback-links";
+import {
+  getOnlineBookingLinkVersion,
+  ONLINE_BOOKING_LINK_SETTING_KEY
+} from "@/lib/services/online-booking-link";
 import { allowPublicRequest } from "@/lib/services/public-rate-limit";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -166,6 +182,15 @@ const manualBookingSchema = z.object({
   // Record only: no emails of any kind for this booking, and a past session
   // is saved as already reported and settled (used to backlog history).
   recordOnly: z.boolean().default(false),
+  // Online sessions have no region and can carry a video-call link.
+  deliveryMode: z.enum(["in_person", "online"]).default("in_person"),
+  meetingUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .url()
+    .refine((value) => value.startsWith("https://"))
+    .optional(),
   returnTo: z.string().min(1)
 }).superRefine((value, context) => {
   if (!value.schoolId && (!value.schoolName || !value.newSchoolRegionId)) {
@@ -440,11 +465,19 @@ const optionalStudentCount = z.preprocess(
   z.coerce.number().int().min(0).max(10000).nullable()
 );
 
+// Video-call links must be https; blank clears the link.
+const updateSessionMeetingLinkSchema = z.object({
+  sessionId: z.uuid(),
+  meetingUrl: z.union([
+    z.literal(""),
+    z.string().trim().max(2000).url().refine((value) => value.startsWith("https://"))
+  ])
+});
+
 const updateSessionStudentCountsSchema = z.object({
   sessionId: z.uuid(),
   expectedStudentCount: optionalStudentCount,
-  actualStudentCount: optionalStudentCount,
-  returnTo: z.string().min(1)
+  actualStudentCount: optionalStudentCount
 });
 
 // Sessions in these states are still "in flight" and safe to rewrite when the
@@ -1994,6 +2027,8 @@ export async function saveManualBookingAction(formData: FormData) {
     actualStudentCount: formData.get("actualStudentCount") || undefined,
     internalNotes: String(formData.get("internalNotes") || "") || undefined,
     recordOnly: formData.get("recordOnly") === "on",
+    deliveryMode: formData.get("deliveryMode") === "online" ? "online" : "in_person",
+    meetingUrl: String(formData.get("meetingUrl") || "").trim() || undefined,
     returnTo: fallbackReturnTo
   });
 
@@ -2074,7 +2109,7 @@ export async function saveManualBookingAction(formData: FormData) {
       school_id: school.id,
       primary_contact_id: contact.id,
       contact_position: parsed.data.contactPosition || null,
-      region_id: school.region_id ?? null,
+      region_id: parsed.data.deliveryMode === "online" ? null : school.region_id ?? null,
       status: effectiveStatus,
       source: parsed.data.outreachAmbassadorId ? "ambassador" : "staff",
       ambassador_outreach_by: parsed.data.outreachAmbassadorId || null,
@@ -2096,10 +2131,15 @@ export async function saveManualBookingAction(formData: FormData) {
     .insert({
       booking_request_id: booking.id,
       presentation_type_id: parsed.data.presentationTypeId,
-      region_id: school.region_id ?? null,
+      region_id: parsed.data.deliveryMode === "online" ? null : school.region_id ?? null,
       school_id: school.id,
       assigned_ambassador_id: parsed.data.assignedAmbassadorId || null,
       share_contact_with_ambassador: Boolean(parsed.data.assignedAmbassadorId),
+      // Only written for online sessions, so in-person logging keeps working
+      // even before the 0050 migration is applied.
+      ...(parsed.data.deliveryMode === "online"
+        ? { delivery_mode: "online", meeting_url: parsed.data.meetingUrl ?? null }
+        : {}),
       status: effectiveStatus,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
@@ -4916,6 +4956,12 @@ export async function assignAmbassadorAction(formData: FormData) {
     .select("id, booking_request_id, starts_at, ends_at, school_id, presentation_type_id")
     .eq("id", parsed.data.bookingSessionId)
     .maybeSingle();
+  // Missing until the 0050 migration is applied; treated as in person.
+  const { data: sessionDelivery } = await admin
+    .from("booking_sessions")
+    .select("delivery_mode, meeting_url")
+    .eq("id", parsed.data.bookingSessionId)
+    .maybeSingle();
   const { data: school } = session?.school_id
     ? await admin.from("schools").select("name, address").eq("id", session.school_id).maybeSingle()
     : { data: null };
@@ -4948,7 +4994,10 @@ export async function assignAmbassadorAction(formData: FormData) {
       ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
       schoolName: (school.name as string | null) ?? "School",
       sessionDate: formatDateTime(session.starts_at as string),
-      sessionAddress: (school.address as string | null) ?? "",
+      sessionAddress:
+        sessionDelivery?.delivery_mode === "online"
+          ? `Online (video call)${sessionDelivery.meeting_url ? ` — ${sessionDelivery.meeting_url}` : " — link to follow"}`
+          : (school.address as string | null) ?? "",
       presentationTitle: (presentation.title as string | null) ?? "Presentation",
       bookingSessionId: parsed.data.bookingSessionId
     }));
@@ -5357,23 +5406,215 @@ export async function removeBookingInternalNoteAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "removed", "note"));
 }
 
-// Lets staff fill in or correct the student numbers on an existing session,
-// e.g. completed bookings imported without a count.
-export async function updateSessionStudentCountsAction(formData: FormData) {
+// Sets the video-call link on an online session. It is shown to the school
+// in the confirmation email and to staff and the assigned ambassador.
+// Returns its result (rather than redirecting) so the booking details dialog
+// stays open and shows the saved link.
+export async function updateSessionMeetingLinkAction(
+  _previousState: SessionActionState,
+  formData: FormData
+): Promise<SessionActionState> {
   const actor = await requirePortalAccess("staff");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/staff/bookings"),
-    "/staff/bookings"
-  );
-  const parsed = updateSessionStudentCountsSchema.safeParse({
+  const parsed = updateSessionMeetingLinkSchema.safeParse({
     sessionId: String(formData.get("sessionId") || ""),
-    expectedStudentCount: String(formData.get("expectedStudentCount") ?? "").trim(),
-    actualStudentCount: String(formData.get("actualStudentCount") ?? "").trim(),
-    returnTo: fallbackReturnTo
+    meetingUrl: String(formData.get("meetingUrl") ?? "").trim()
   });
 
   if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-student-count"));
+    return sessionActionResult({ error: "invalid-meeting-link" });
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, booking_request_id, delivery_mode, meeting_url, status, starts_at")
+    .eq("id", parsed.data.sessionId)
+    .maybeSingle();
+
+  if (!session || session.delivery_mode !== "online") {
+    return sessionActionResult({ error: "session-not-found" });
+  }
+
+  const meetingUrl = parsed.data.meetingUrl || null;
+  const { error } = await admin
+    .from("booking_sessions")
+    .update({ meeting_url: meetingUrl })
+    .eq("id", parsed.data.sessionId);
+
+  if (error) {
+    return sessionActionResult({ error: "meeting-link-update-failed" });
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: parsed.data.sessionId,
+    action: "booking.meeting_link_updated",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { hadLink: Boolean(session.meeting_url), hasLink: Boolean(meetingUrl) }
+  });
+
+  await logAuditEvent(
+    actor.id,
+    "booking.meeting_link_updated",
+    "booking_session",
+    parsed.data.sessionId
+  );
+
+  const notified =
+    Boolean(meetingUrl) &&
+    meetingUrl !== session.meeting_url &&
+    sessionAwaitsMeetingLinkEmail(session.status as string, session.starts_at as string);
+
+  if (notified) {
+    scheduleEmail(() =>
+      sendMeetingLinkNotifications(session.booking_request_id as string, parsed.data.sessionId)
+    );
+  }
+
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/ambassador");
+  return sessionActionResult({
+    updated: !meetingUrl ? "meeting-link-removed" : notified ? "meeting-link-sent" : "meeting-link"
+  });
+}
+
+// A confirmed online session that hasn't happened yet: adding or changing its
+// link emails the school and ambassador. Before confirmation the link simply
+// goes out in the confirmation email.
+function sessionAwaitsMeetingLinkEmail(status: string, startsAt: string) {
+  return (
+    ["confirmed", "ambassador_assigned", "reschedule_requested", "withdrawal_requested"].includes(status) &&
+    new Date(startsAt).getTime() > Date.now()
+  );
+}
+
+// Staff click "Create Teams link" in the booking details. Microsoft creates a
+// Teams meeting on the shared calendar and the join link is saved.
+export async function createSessionTeamsLinkAction(
+  _previousState: SessionActionState,
+  formData: FormData
+): Promise<SessionActionState> {
+  const actor = await requirePortalAccess("staff");
+  const sessionId = String(formData.get("sessionId") || "");
+
+  if (!z.uuid().safeParse(sessionId).success) {
+    return sessionActionResult({ error: "session-not-found" });
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: before } = await admin
+    .from("booking_sessions")
+    .select("booking_request_id, meeting_url, status, starts_at")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const result = await createTeamsMeetingForSession(sessionId);
+
+  if (!result.ok) {
+    return sessionActionResult({ error: `teams-${result.code}` });
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: before?.booking_request_id ?? null,
+    booking_session_id: sessionId,
+    action: "booking.meeting_link_updated",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { source: "teams", hadLink: Boolean(before?.meeting_url), hasLink: true }
+  });
+  await logAuditEvent(actor.id, "booking.teams_link_created", "booking_session", sessionId);
+
+  const notified =
+    Boolean(before?.booking_request_id) &&
+    result.joinUrl !== before?.meeting_url &&
+    sessionAwaitsMeetingLinkEmail(String(before?.status ?? ""), String(before?.starts_at ?? ""));
+
+  if (notified && before?.booking_request_id) {
+    scheduleEmail(() => sendMeetingLinkNotifications(before.booking_request_id as string, sessionId));
+  }
+
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  revalidatePath("/ambassador");
+  return sessionActionResult({
+    updated: notified ? "teams-link-sent" : "teams-link",
+    lobbyNote: !result.lobbyBypassed
+  });
+}
+
+// Settings: creates a throwaway Teams meeting on the shared calendar and then
+// deletes it, to prove the Microsoft connection works on this deployment.
+export async function testMicrosoftTeamsAction() {
+  const actor = await requirePortalAccess("super_admin");
+  const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const result = await createOrUpdateTeamsMeeting({
+    title: "NZ Esports booking platform – connection test (safe to delete)",
+    startsAt: startsAt.toISOString(),
+    endsAt: new Date(startsAt.getTime() + 15 * 60 * 1000).toISOString(),
+    description: "Created by the booking platform to test the Microsoft Teams connection. It is deleted straight away.",
+    location: "Online (Microsoft Teams)"
+  });
+
+  await logAuditEvent(actor.id, "settings.microsoft_teams_tested", "settings");
+
+  if (result.status === "unconfigured") {
+    redirect("/admin/settings?teams=unconfigured");
+  }
+
+  if (result.status === "failed") {
+    redirect(`/admin/settings?teams=${result.code}`);
+  }
+
+  const deleted = await deleteOutlookCalendarEvent(result.eventId).catch(() => false);
+  redirect(
+    `/admin/settings?teams=${result.lobbyBypassed ? "ok" : "ok-lobby"}${deleted ? "" : "&teamsCleanup=failed"}`
+  );
+}
+
+// Replaces the private online booking link: bumping the version changes the
+// signed token, so every copy of the old link already shared stops working.
+export async function rotateOnlineBookingLinkAction(formData: FormData) {
+  const actor = await requirePortalAccess("super_admin");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/admin/bookings"),
+    "/admin/bookings"
+  );
+  const admin = getAdminClientOrThrow();
+  const currentVersion = await getOnlineBookingLinkVersion();
+  const { error } = await admin.from("settings").upsert(
+    {
+      setting_key: ONLINE_BOOKING_LINK_SETTING_KEY,
+      setting_value: { version: currentVersion + 1 },
+      updated_by: actor.id,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "setting_key" }
+  );
+
+  if (error) {
+    redirect(appendSearchParam(returnTo, "error", "online-link-replace-failed"));
+  }
+
+  await logAuditEvent(actor.id, "settings.online_booking_link_replaced", "settings");
+  redirect(appendSearchParam(returnTo, "replaced", "online-link"));
+}
+
+// Lets staff fill in or correct the student numbers on an existing session,
+// e.g. completed bookings imported without a count.
+export async function updateSessionStudentCountsAction(
+  _previousState: SessionActionState,
+  formData: FormData
+): Promise<SessionActionState> {
+  const actor = await requirePortalAccess("staff");
+  const parsed = updateSessionStudentCountsSchema.safeParse({
+    sessionId: String(formData.get("sessionId") || ""),
+    expectedStudentCount: String(formData.get("expectedStudentCount") ?? "").trim(),
+    actualStudentCount: String(formData.get("actualStudentCount") ?? "").trim()
+  });
+
+  if (!parsed.success) {
+    return sessionActionResult({ error: "invalid-student-count" });
   }
 
   const admin = getAdminClientOrThrow();
@@ -5384,7 +5625,7 @@ export async function updateSessionStudentCountsAction(formData: FormData) {
     .maybeSingle();
 
   if (!session) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+    return sessionActionResult({ error: "session-not-found" });
   }
 
   const { error } = await admin
@@ -5396,7 +5637,7 @@ export async function updateSessionStudentCountsAction(formData: FormData) {
     .eq("id", parsed.data.sessionId);
 
   if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "student-count-update-failed"));
+    return sessionActionResult({ error: "student-count-update-failed" });
   }
 
   await admin.from("booking_activity_logs").insert({
@@ -5425,7 +5666,7 @@ export async function updateSessionStudentCountsAction(formData: FormData) {
   );
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(appendSearchParam(parsed.data.returnTo, "updated", "students"));
+  return sessionActionResult({ updated: "students" });
 }
 
 export async function prepareResourceUploadAction(input: { name: string; size: number }) {

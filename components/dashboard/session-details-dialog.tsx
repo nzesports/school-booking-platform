@@ -12,9 +12,10 @@ import {
   Mail,
   School2,
   UserRound,
-  UsersRound
+  UsersRound,
+  Video
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BookingEmailsPanel } from "@/components/dashboard/booking-emails-panel";
@@ -26,6 +27,10 @@ import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
+import type {
+  SessionActionState,
+  SessionDialogAction
+} from "@/components/dashboard/session-update-notices";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import {
@@ -72,6 +77,8 @@ export function SessionDetailsButton({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   updateStudentCountsAction,
+  updateMeetingLinkAction,
+  createTeamsLinkAction,
   returnTo
 }: {
   session: BookingSessionView;
@@ -82,7 +89,11 @@ export function SessionDetailsButton({
   resolveWithdrawalAction?: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction?: (formData: FormData) => void | Promise<void>;
   // Staff/admin only: lets the student numbers on this session be corrected.
-  updateStudentCountsAction?: (formData: FormData) => void | Promise<void>;
+  updateStudentCountsAction?: SessionDialogAction;
+  // Staff/admin only: sets the video-call link on an online session.
+  updateMeetingLinkAction?: SessionDialogAction;
+  // Staff/admin only: creates a Microsoft Teams meeting for an online session.
+  createTeamsLinkAction?: SessionDialogAction;
   returnTo?: string;
 }) {
   const [tab, setTab] = useState<"details" | "emails">("details");
@@ -115,7 +126,10 @@ export function SessionDetailsButton({
     setFeedbackLinkCopied(true);
   };
 
-  const location = session.locationAddress || session.schoolAddress || session.schoolName;
+  const isOnline = session.deliveryMode === "online";
+  const location = isOnline
+    ? session.meetingUrl || "Online (video call)"
+    : session.locationAddress || session.schoolAddress || session.schoolName;
   const calendarEvent: CalendarEventInput = {
     uid: `${session.id}@book.nzesports.org.nz`,
     cancelled: ["cancelled", "declined"].includes(session.status),
@@ -233,52 +247,15 @@ export function SessionDetailsButton({
               </div>
 
               {updateStudentCountsAction ? (
-                <form
-                  action={updateStudentCountsAction}
-                  className="mt-5 grid gap-3 border-t border-slate-200/70 pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
-                >
-                  <input type="hidden" name="sessionId" value={session.id} />
-                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                  <label className="grid gap-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                      Expected students
-                    </span>
-                    <input
-                      name="expectedStudentCount"
-                      type="number"
-                      min={0}
-                      max={10000}
-                      step={1}
-                      defaultValue={session.expectedStudentCount > 0 ? session.expectedStudentCount : ""}
-                      placeholder="e.g. 120"
-                      className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]"
-                    />
-                  </label>
-                  <label className="grid gap-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-                      Actual students
-                    </span>
-                    <input
-                      name="actualStudentCount"
-                      type="number"
-                      min={0}
-                      max={10000}
-                      step={1}
-                      defaultValue={session.actualStudentCount ?? ""}
-                      placeholder="Optional"
-                      className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]"
-                    />
-                  </label>
-                  <PendingSubmitButton type="submit" pendingLabel="Saving...">
-                    Save student numbers
-                  </PendingSubmitButton>
-                  {session.reportStatus === "submitted" || session.reportStatus === "reviewed" ? (
-                    <p className="text-xs text-[color:var(--text-soft)] sm:col-span-3">
-                      This session has an ambassador report, so the report&apos;s attendance is
-                      shown as the actual figure.
-                    </p>
-                  ) : null}
-                </form>
+                <StudentNumbersForm session={session} action={updateStudentCountsAction} />
+              ) : null}
+
+              {isOnline && updateMeetingLinkAction ? (
+                <MeetingLinkSection
+                  session={session}
+                  updateMeetingLinkAction={updateMeetingLinkAction}
+                  createTeamsLinkAction={createTeamsLinkAction}
+                />
               ) : null}
 
               <div className="mt-5 grid gap-5 border-t border-slate-200/70 pt-5 md:grid-cols-2">
@@ -286,12 +263,32 @@ export function SessionDetailsButton({
                   icon={<MapPin className="h-6 w-6" />}
                   label="Location"
                 >
-                  {session.regionName ? (
+                  {isOnline ? (
+                    <>
+                      <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
+                        Online (video call)
+                      </p>
+                      {session.meetingUrl ? (
+                        <a
+                          href={session.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-all text-sm leading-6 font-semibold text-[#246bff] underline"
+                        >
+                          {session.meetingUrl}
+                        </a>
+                      ) : (
+                        <p className="text-sm text-[color:var(--text-soft)]">
+                          Video-call link to be added by our team.
+                        </p>
+                      )}
+                    </>
+                  ) : session.regionName ? (
                     <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
                       {session.regionName}
                     </p>
                   ) : null}
-                  {session.schoolAddress || session.locationAddress ? (
+                  {isOnline ? null : session.schoolAddress || session.locationAddress ? (
                     <p className="text-sm leading-6 text-[color:var(--text-soft)]">
                       {session.locationAddress ?? session.schoolAddress}
                     </p>
@@ -608,6 +605,237 @@ export function SessionDetailsButton({
           )
         : null}
     </>
+  );
+}
+
+function meetingProviderLabel(url: string) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith("teams.microsoft.com") || host.endsWith("teams.live.com")) return "Microsoft Teams";
+    if (host.endsWith("zoom.us")) return "Zoom";
+    if (host === "meet.google.com") return "Google Meet";
+    if (host.endsWith("webex.com")) return "Webex";
+  } catch {
+    return "Video call";
+  }
+  return "Video call";
+}
+
+const noSessionAction: SessionDialogAction = async () => null;
+
+const meetingInputClassName =
+  "min-h-[44px] w-full rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]";
+
+// Staff-only expected/actual student numbers. Saves in place (no redirect)
+// so the details dialog stays open.
+function StudentNumbersForm({
+  session,
+  action
+}: {
+  session: BookingSessionView;
+  action: SessionDialogAction;
+}) {
+  const [state, formAction] = useActionState(action, null);
+
+  return (
+    <form
+      action={formAction}
+      className="mt-5 grid gap-3 border-t border-slate-200/70 pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+    >
+      <input type="hidden" name="sessionId" value={session.id} />
+      <label className="grid gap-1">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+          Expected students
+        </span>
+        <input
+          name="expectedStudentCount"
+          type="number"
+          min={0}
+          max={10000}
+          step={1}
+          defaultValue={session.expectedStudentCount > 0 ? session.expectedStudentCount : ""}
+          placeholder="e.g. 120"
+          className={meetingInputClassName}
+        />
+      </label>
+      <label className="grid gap-1">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+          Actual students
+        </span>
+        <input
+          name="actualStudentCount"
+          type="number"
+          min={0}
+          max={10000}
+          step={1}
+          defaultValue={session.actualStudentCount ?? ""}
+          placeholder="Optional"
+          className={meetingInputClassName}
+        />
+      </label>
+      <PendingSubmitButton type="submit" pendingLabel="Saving...">
+        Save student numbers
+      </PendingSubmitButton>
+      {session.reportStatus === "submitted" || session.reportStatus === "reviewed" ? (
+        <p className="text-xs text-[color:var(--text-soft)] sm:col-span-3">
+          This session has an ambassador report, so the report&apos;s attendance is shown as the
+          actual figure.
+        </p>
+      ) : null}
+      <ActionMessage state={state} className="sm:col-span-3" />
+    </form>
+  );
+}
+
+function ActionMessage({ state, className }: { state: SessionActionState; className?: string }) {
+  if (!state) {
+    return null;
+  }
+
+  return (
+    <p
+      role={state.tone === "error" ? "alert" : "status"}
+      className={cn(
+        "flex items-start gap-2 rounded-[12px] px-3 py-2 text-xs font-medium",
+        state.tone === "error" ? "bg-[#fff6f6] text-[#9d2424]" : "bg-[#eef8f1] text-[#1d6f35]",
+        className
+      )}
+    >
+      {state.tone === "error" ? (
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      )}
+      {state.message}
+    </p>
+  );
+}
+
+// Staff-only video-call link controls for an online session: create a Teams
+// meeting, or paste a link from Zoom, Google Meet, Teams or anything else.
+function MeetingLinkSection({
+  session,
+  updateMeetingLinkAction,
+  createTeamsLinkAction
+}: {
+  session: BookingSessionView;
+  updateMeetingLinkAction: SessionDialogAction;
+  createTeamsLinkAction?: SessionDialogAction;
+}) {
+  const [copied, setCopied] = useState(false);
+  // Both actions save in place and report back here, so the dialog stays open
+  // and the new link appears as soon as the page data refreshes.
+  const [lastSource, setLastSource] = useState<"link" | "teams">("link");
+  const [linkState, linkFormAction] = useActionState(updateMeetingLinkAction, null);
+  const [teamsState, teamsFormAction] = useActionState(
+    createTeamsLinkAction ?? noSessionAction,
+    null
+  );
+  const actionState = lastSource === "teams" ? teamsState : linkState;
+  const meetingUrl = session.meetingUrl;
+  const confirmedWithoutLink =
+    !meetingUrl && ["confirmed", "ambassador_assigned"].includes(session.status);
+
+  return (
+    <div className="mt-5 grid gap-3 border-t border-slate-200/70 pt-5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+          Video-call link
+        </span>
+        <InfoTooltip label="Video-call link">
+          Create a Teams link with one click, or paste a link from Zoom, Google Meet or any other
+          tool. Schools and ambassadors can join Teams links from a web browser without an account.
+          If the session is already confirmed, saving a link emails it to the school and ambassador.
+        </InfoTooltip>
+      </div>
+
+      {meetingUrl ? (
+        <div className="flex min-w-0 items-center gap-2 rounded-[12px] border border-[color:var(--border-soft)] bg-[#f6f9fd] py-1.5 pl-3 pr-1.5">
+          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[color:var(--navy)] shadow-[inset_0_0_0_1px_rgba(4,15,75,0.08)]">
+            {meetingProviderLabel(meetingUrl)}
+          </span>
+          <a
+            href={meetingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={meetingUrl}
+            className="min-w-0 flex-1 truncate text-sm text-[#246bff] underline"
+          >
+            {meetingUrl}
+          </a>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(meetingUrl);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+              } catch {
+                setCopied(false);
+              }
+            }}
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[9px] px-2.5 text-xs font-semibold text-[color:var(--navy)] transition hover:bg-white"
+          >
+            {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <form action={linkFormAction} onSubmit={() => setLastSource("link")}>
+            <input type="hidden" name="sessionId" value={session.id} />
+            <input type="hidden" name="meetingUrl" value="" />
+            <PendingSubmitButton
+              unstyled
+              type="submit"
+              pendingLabel="Removing..."
+              className="inline-flex h-8 shrink-0 items-center rounded-[9px] px-2.5 text-xs! font-semibold! text-[#9d2424] transition hover:bg-white"
+            >
+              Remove
+            </PendingSubmitButton>
+          </form>
+        </div>
+      ) : createTeamsLinkAction ? (
+        <form action={teamsFormAction} onSubmit={() => setLastSource("teams")}>
+          <input type="hidden" name="sessionId" value={session.id} />
+          <PendingSubmitButton type="submit" pendingLabel="Creating Teams link..." className="w-full sm:w-auto">
+            <Video className="h-4 w-4" />
+            Create Teams link
+          </PendingSubmitButton>
+        </form>
+      ) : null}
+
+      <form
+        action={linkFormAction}
+        onSubmit={() => setLastSource("link")}
+        className="flex flex-col gap-2 sm:flex-row sm:items-center"
+      >
+        <input type="hidden" name="sessionId" value={session.id} />
+        <input
+          name="meetingUrl"
+          type="url"
+          inputMode="url"
+          maxLength={2000}
+          pattern="https://.*"
+          required
+          aria-label={meetingUrl ? "Replace with another link" : "Paste a video-call link"}
+          placeholder={
+            meetingUrl ? "Replace with another link (https://...)" : "Or paste a Zoom, Google Meet or Teams link"
+          }
+          className={meetingInputClassName}
+        />
+        <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Saving..." className="shrink-0">
+          Save link
+        </PendingSubmitButton>
+      </form>
+
+      <ActionMessage state={actionState} />
+
+      {confirmedWithoutLink ? (
+        <p className="flex items-start gap-2 rounded-[12px] bg-[#fff8ea] px-3 py-2 text-xs font-medium text-[#7a4a00]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          This session is confirmed but has no video-call link yet. Adding one emails it to the school
+          and ambassador.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

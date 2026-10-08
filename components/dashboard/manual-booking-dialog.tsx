@@ -9,7 +9,9 @@ import {
   Handshake,
   Leaf,
   ListChecks,
+  Link2,
   Mail,
+  MonitorPlay,
   Phone,
   School2,
   StickyNote,
@@ -61,6 +63,7 @@ export function ManualBookingDialog({
   const [open, setOpen] = useState(false);
   const [submissionId, setSubmissionId] = useState("");
   const [recordOnly, setRecordOnly] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<"in_person" | "online">("in_person");
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
 
   return (
@@ -69,7 +72,7 @@ export function ManualBookingDialog({
         <Button
           type="button"
           variant="secondary"
-          onClick={() => { setSubmissionId(crypto.randomUUID()); setRecordOnly(false); setOpen(true); }}
+          onClick={() => { setSubmissionId(crypto.randomUUID()); setRecordOnly(false); setDeliveryMode("in_person"); setOpen(true); }}
           className="min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
         >
           <CirclePlus className="h-4 w-4" />
@@ -107,6 +110,35 @@ export function ManualBookingDialog({
                       ))}
                     </select>
                   </Field>
+                </div>
+
+                <div className="grid items-start gap-4 lg:grid-cols-2">
+                  <Field label="Delivery" icon={<MonitorPlay className={iconClassName} />} required>
+                    <select
+                      name="deliveryMode"
+                      value={deliveryMode}
+                      onChange={(event) =>
+                        setDeliveryMode(event.target.value === "online" ? "online" : "in_person")
+                      }
+                      className={fieldClassName}
+                    >
+                      <option value="in_person">In person at the school</option>
+                      <option value="online">Online (video call)</option>
+                    </select>
+                  </Field>
+                  {deliveryMode === "online" ? (
+                    <Field label="Video-call link (optional)" icon={<Link2 className={iconClassName} />}>
+                      <input
+                        type="url"
+                        name="meetingUrl"
+                        inputMode="url"
+                        maxLength={2000}
+                        pattern="https://.*"
+                        placeholder="https://..."
+                        className={fieldClassName}
+                      />
+                    </Field>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
