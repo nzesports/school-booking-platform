@@ -151,7 +151,8 @@ export async function sendStaffBookingRequestAlert(opts: {
   online?: boolean;
   sessions: BookingReceiptSession[];
 }) {
-  const bookingUrl = `${config.siteUrl}/admin/bookings?status=all&range=all&booking=${opts.bookingId}#booking-${opts.bookingId}`;
+  // /staff works for staff and super admins alike.
+  const bookingUrl = `${config.siteUrl}/staff/bookings?status=all&range=all&booking=${opts.bookingId}#booking-${opts.bookingId}`;
   const reference = opts.referenceCode ?? opts.bookingId;
   const summary = buildBookingReceipt({ ...opts, referenceCode: reference });
   const sessionCount = opts.sessions.length;

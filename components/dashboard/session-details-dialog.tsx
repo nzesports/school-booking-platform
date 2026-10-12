@@ -19,6 +19,13 @@ import { useActionState, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { BookingEmailsPanel } from "@/components/dashboard/booking-emails-panel";
+import {
+  AutoSaveBookingStatus,
+  BOOKING_STATUS_OPTIONS,
+  COMPLETION_STATUSES,
+  schoolBookingStatus
+} from "@/components/dashboard/booking-status-control";
+import { StatusEmailForm } from "@/components/dashboard/status-email-form";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 
 import { getSignedFeedbackLinkAction, revokeBookingGuestAccessAction } from "@/app/portal/actions";
@@ -79,6 +86,11 @@ export function SessionDetailsButton({
   updateStudentCountsAction,
   updateMeetingLinkAction,
   createTeamsLinkAction,
+  updateStatusInPlaceAction,
+  open: controlledOpen,
+  onOpen,
+  onClose,
+  hideTrigger = false,
   returnTo
 }: {
   session: BookingSessionView;
@@ -94,10 +106,25 @@ export function SessionDetailsButton({
   updateMeetingLinkAction?: SessionDialogAction;
   // Staff/admin only: creates a Microsoft Teams meeting for an online session.
   createTeamsLinkAction?: SessionDialogAction;
+  // Staff/admin only: change the booking's status without leaving the dialog.
+  updateStatusInPlaceAction?: SessionDialogAction;
+  // Optional control from a parent (the bookings list keeps one dialog open
+  // even if the booking moves page after a change). onOpen replaces the
+  // built-in dialog; hideTrigger renders the dialog only.
+  open?: boolean;
+  onOpen?: () => void;
+  onClose?: () => void;
+  hideTrigger?: boolean;
   returnTo?: string;
 }) {
   const [tab, setTab] = useState<"details" | "emails">("details");
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const openDialog = () => (onOpen ? onOpen() : setInternalOpen(true));
+  const closeDialog = () => {
+    setInternalOpen(false);
+    onClose?.();
+  };
   const [feedbackLinkCopied, setFeedbackLinkCopied] = useState(false);
   const canReview = Boolean(updateStatusAction && session.bookingRequestId);
 
@@ -163,15 +190,15 @@ export function SessionDetailsButton({
 
   return (
     <>
-      {unstyled ? (
-        <button type="button" onClick={() => setOpen(true)} className={className}>
+      {hideTrigger ? null : unstyled ? (
+        <button type="button" onClick={openDialog} className={className}>
           {label ?? "Details"}
         </button>
       ) : (
         <Button
           type="button"
           variant="secondary"
-          onClick={() => setOpen(true)}
+          onClick={openDialog}
           className={
             className ??
             "min-h-[40px] rounded-[13px] border-transparent bg-[#e8f1fd] px-3.5 py-1.5 text-xs text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
@@ -192,7 +219,7 @@ export function SessionDetailsButton({
         ? createPortal(
             <BookingDialogShell
               title={session.presentationTitle}
-              onClose={() => setOpen(false)}
+              onClose={closeDialog}
               maxWidthClassName="max-w-[1120px]"
               bodyClassName="px-6 py-7 md:px-10 md:py-9 lg:px-12 lg:py-10"
               overlayClassName="z-[80]"
@@ -204,12 +231,17 @@ export function SessionDetailsButton({
               ]} />}
               {canReview && tab === "emails" ? <BookingEmailsPanel sessionId={session.id} /> : <>
               <SessionChangeSummary session={session} />
-              <p className="mt-5 flex flex-wrap items-center gap-2 text-base font-semibold tracking-[-0.02em] text-[#117a2e] md:text-lg">
-                <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
-                {formatWeekdayDate(session.startsAt)}
-                <span aria-hidden="true">·</span>
-                {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
-              </p>
+              <div className="mt-5 flex flex-wrap items-start justify-between gap-3">
+                <p className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-[-0.02em] text-[#117a2e] md:text-lg">
+                  <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
+                  {formatWeekdayDate(session.startsAt)}
+                  <span aria-hidden="true">·</span>
+                  {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
+                </p>
+                {updateStatusInPlaceAction && session.bookingRequestId ? (
+                  <DialogStatusControl session={session} action={updateStatusInPlaceAction} />
+                ) : null}
+              </div>
 
               <section aria-label="Session overview" className="mt-4 rounded-2xl bg-slate-50/80 p-5 md:p-6">
               <div className="grid gap-5 md:grid-cols-3">
@@ -625,6 +657,50 @@ const noSessionAction: SessionDialogAction = async () => null;
 
 const meetingInputClassName =
   "min-h-[44px] w-full rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]";
+
+// Booking status inside the details dialog. Uses the same dropdown and
+// "email the school?" prompt as the bookings list, but saves in place.
+function DialogStatusControl({
+  session,
+  action
+}: {
+  session: BookingSessionView;
+  action: SessionDialogAction;
+}) {
+  const [state, formAction, isPending] = useActionState(action, null);
+  const [requestedStatus, setRequestedStatus] = useState<string | null>(null);
+  // While saving, keep showing the status just chosen (the form resets as
+  // soon as the action is dispatched); afterwards show the saved status.
+  const currentStatus =
+    isPending && requestedStatus ? requestedStatus : session.bookingStatus ?? session.status;
+  const sessionIsFuture = new Date(session.endsAt).getTime() > new Date().getTime();
+  const options = BOOKING_STATUS_OPTIONS.filter(
+    ([value]) =>
+      !sessionIsFuture ||
+      !COMPLETION_STATUSES.has(value) ||
+      value === schoolBookingStatus(currentStatus)
+  );
+
+  return (
+    <div className="grid w-full gap-2 sm:w-[260px]">
+      <StatusEmailForm
+        action={(data) => {
+          setRequestedStatus(String(data.get("status") || ""));
+          formAction(data);
+        }}
+      >
+        <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
+        <AutoSaveBookingStatus
+          key={currentStatus}
+          currentStatus={currentStatus}
+          options={options}
+          saving={isPending}
+        />
+      </StatusEmailForm>
+      <ActionMessage state={state} />
+    </div>
+  );
+}
 
 // Staff-only expected/actual student numbers. Saves in place (no redirect)
 // so the details dialog stays open.

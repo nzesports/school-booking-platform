@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  CircleX,
   Clock3,
   Eye,
   LayoutList,
@@ -36,6 +35,12 @@ import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 
 import { SessionChangeSummary } from "@/components/dashboard/session-change-summary";
+import {
+  AutoSaveBookingStatus,
+  BOOKING_STATUS_OPTIONS,
+  COMPLETION_STATUSES,
+  schoolBookingStatus
+} from "@/components/dashboard/booking-status-control";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import type { SessionDialogAction } from "@/components/dashboard/session-update-notices";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
@@ -43,6 +48,7 @@ import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
+const AWAITING_REVIEW_STATUSES = new Set<string>(["requested", "tentative", "applied"]);
 
 function paginationItems(currentPage: number, pageCount: number) {
   if (pageCount <= 7) {
@@ -79,32 +85,6 @@ function paginationItems(currentPage: number, pageCount: number) {
   return items;
 }
 
-const BOOKING_STATUS_OPTIONS = [
-  ["requested", "Pending"],
-  ["tentative", "Tentative"],
-  ["applied", "Applied"],
-  ["ambassador_assigned", "Ambassador assigned"],
-  ["confirmed", "Confirmed"],
-  ["reschedule_requested", "Reschedule requested"],
-  ["closed", "Completed"],
-  ["cancelled", "Cancelled"],
-  ["declined", "Declined"]
-] as const;
-
-// Statuses that mean "this booking has been delivered" — not selectable while
-// any of the booking's sessions are still in the future.
-const COMPLETION_STATUSES = new Set([
-  "completed_pending_report",
-  "report_submitted",
-  "payment_pending",
-  "paid",
-  "closed"
-]);
-
-function schoolBookingStatus(status: string) {
-  return COMPLETION_STATUSES.has(status) ? "closed" : status;
-}
-
 const statusPillStyles: Record<string, string> = {
   tentative: "bg-[#f1f3f6] text-[#667085]",
   applied: "bg-[#e8f1fd] text-[#1e4fae]",
@@ -120,35 +100,6 @@ const statusPillStyles: Record<string, string> = {
   declined: "bg-[#f5eaf0] text-[#8b2c58]",
   reschedule_requested: "bg-[#fff0e4] text-[#b54708]",
   requested: "bg-[#fff5df] text-[#9a5a00]"
-};
-
-const bookingStatusControlStyles: Record<string, string> = {
-  requested: "border-[#f2ddb0] bg-[#fff5df] text-[#9a5a00]",
-  tentative: "border-[#d7dce4] bg-[#f1f3f6] text-[#667085]",
-  applied: "border-[#c4dbfb] bg-[#e8f1fd] text-[#1e4fae]",
-  ambassador_assigned: "border-[#d9cef7] bg-[#f1edfd] text-[#6941c6]",
-  confirmed: "border-[#bfe6ca] bg-[#eaf8ee] text-[#117a2e]",
-  reschedule_requested: "border-[#f2cfb3] bg-[#fff0e4] text-[#b54708]",
-  withdrawal_requested: "border-[#eadb91] bg-[#fff8d9] text-[#8a6500]",
-  cancelled: "border-[#f0c3c0] bg-[#fdecec] text-[#a8322b]",
-  declined: "border-[#e6c5d5] bg-[#f5eaf0] text-[#8b2c58]",
-  completed_pending_report: "border-[#ced3fa] bg-[#eef0ff] text-[#4c5bd4]",
-  report_submitted: "border-[#bee6ed] bg-[#e6f7fb] text-[#087f8c]",
-  payment_pending: "border-[#efd9aa] bg-[#fff7e6] text-[#9b6100]",
-  paid: "border-[#b9e5ce] bg-[#e4f7ed] text-[#087443]",
-  closed: "border-[#b9e4dd] bg-[#e6f7f4] text-[#087f6a]"
-};
-
-const bookingStatusIconStyles: Record<string, string> = {
-  requested: "text-[#9a5a00]",
-  tentative: "text-[#667085]",
-  applied: "text-[#1e4fae]",
-  ambassador_assigned: "text-[#6941c6]",
-  confirmed: "text-[#117a2e]",
-  reschedule_requested: "text-[#b54708]",
-  closed: "text-[#087f6a]",
-  cancelled: "text-[#b3372e]",
-  declined: "text-[#8b2c58]"
 };
 
 type CalendarTone = "green" | "blue" | "amber" | "red" | "grey";
@@ -208,79 +159,6 @@ export function StatusPill({ value }: { value: string }) {
   );
 }
 
-function AutoSaveBookingStatus({
-  currentStatus,
-  options,
-  compact = false
-}: {
-  currentStatus: string;
-  options: ReadonlyArray<readonly [string, string]>;
-  compact?: boolean;
-}) {
-  const { pending } = useFormStatus();
-  const displayStatus = schoolBookingStatus(currentStatus);
-  const isCancelled = ["cancelled", "declined"].includes(displayStatus);
-  const isCompleted = [
-    "ambassador_assigned",
-    "confirmed",
-    "closed"
-  ].includes(displayStatus);
-
-  return (
-    <label className="grid w-full min-w-0 justify-items-start gap-1">
-      <span
-        className={cn(
-          "text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]",
-          compact && "sr-only"
-        )}
-      >
-        Booking status
-      </span>
-      <span className="relative block w-full min-w-0">
-        <span
-          className={cn(
-            "pointer-events-none absolute inset-y-0 left-2.5 z-10 flex items-center",
-            bookingStatusIconStyles[displayStatus] ?? "text-[#667085]"
-          )}
-        >
-          {isCancelled ? (
-            <CircleX className="h-3.5 w-3.5" />
-          ) : isCompleted ? (
-            <CheckCircle2 className="h-3.5 w-3.5" />
-          ) : (
-            <Clock3 className="h-3.5 w-3.5" />
-          )}
-        </span>
-        <select
-          name="status"
-          defaultValue={displayStatus}
-          disabled={pending}
-          aria-busy={pending}
-          style={compact ? { fontSize: "13px", lineHeight: "1.15" } : undefined}
-          onChange={(event) => event.currentTarget.form?.requestSubmit()}
-          className={cn(
-            "w-full min-w-0 appearance-none rounded-[9px] border pl-8 pr-7 font-semibold outline-none transition-colors",
-            compact ? "min-h-[34px]" : "min-h-[40px] text-sm",
-            bookingStatusControlStyles[displayStatus] ??
-              "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]",
-            pending && "cursor-wait opacity-60"
-          )}
-        >
-          {options.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-      </span>
-      <span className="sr-only" aria-live="polite">
-        {pending ? "Saving booking status" : ""}
-      </span>
-    </label>
-  );
-}
-
 function BulkStatusSubmitButton({ count }: { count: number }) {
   const { pending } = useFormStatus();
 
@@ -313,6 +191,7 @@ export function BookingsExplorer({
   updateStudentCountsAction,
   updateMeetingLinkAction,
   createTeamsLinkAction,
+  updateStatusInPlaceAction,
   initialQuery,
   initialBookingId,
   metric = "all"
@@ -334,6 +213,7 @@ export function BookingsExplorer({
   updateStudentCountsAction?: SessionDialogAction;
   updateMeetingLinkAction?: SessionDialogAction;
   createTeamsLinkAction?: SessionDialogAction;
+  updateStatusInPlaceAction?: SessionDialogAction;
   initialQuery?: string;
   initialBookingId?: string;
   metric?: string;
@@ -350,8 +230,17 @@ export function BookingsExplorer({
       || left.id.localeCompare(right.id)
     )
   })).sort((left, right) => {
-    // Match the date displayed in each row, across all pages and years.
-    // Bookings without sessions belong at the end.
+    // New requests awaiting review always come first (newest request on
+    // top), whatever their session date, so they can't get lost in the list.
+    const leftNew = AWAITING_REVIEW_STATUSES.has(left.status);
+    const rightNew = AWAITING_REVIEW_STATUSES.has(right.status);
+    if (leftNew !== rightNew) return leftNew ? -1 : 1;
+    if (leftNew && rightNew) {
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+        || left.id.localeCompare(right.id);
+    }
+    // Everything else matches the date displayed in each row, across all
+    // pages and years. Bookings without sessions belong at the end.
     const leftDate = left.sessions[0]?.startsAt;
     const rightDate = right.sessions[0]?.startsAt;
     if (!leftDate) return rightDate ? 1 : left.id.localeCompare(right.id);
@@ -368,6 +257,23 @@ export function BookingsExplorer({
     ? bookings.findIndex((booking) => booking.id === initialBookingId)
     : -1;
   const [viewMode, setViewMode] = useState<"calendar" | "list">("list");
+  // One details dialog for the whole list, looked up from every booking in
+  // the period, so it stays open even if a change moves the booking to
+  // another page or out of the current filter.
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const openSessionBooking = openSessionId
+    ? allBookings.find((booking) => booking.sessions.some((item) => item.id === openSessionId))
+    : undefined;
+  const openSessionMatch = openSessionBooking?.sessions.find((item) => item.id === openSessionId);
+  const openSession =
+    openSessionBooking && openSessionMatch
+      ? {
+          ...openSessionMatch,
+          contactName: openSessionBooking.primaryContactName,
+          contactEmail: openSessionBooking.primaryContactEmail,
+          contactPosition: openSessionBooking.primaryContactPosition
+        }
+      : null;
   const [query, setQuery] = useState(initialQuery ?? "");
   const [regionFilter, setRegionFilter] = useState("all");
   const [presentationFilter, setPresentationFilter] = useState("all");
@@ -480,6 +386,22 @@ export function BookingsExplorer({
       id="bookings-panel"
       className="surface-panel grid scroll-mt-24 gap-0 overflow-hidden rounded-[24px]"
     >
+      {openSession ? (
+        <SessionDetailsButton
+          session={openSession}
+          open
+          hideTrigger
+          onClose={() => setOpenSessionId(null)}
+          updateStatusAction={updateStatusAction}
+          resolveWithdrawalAction={resolveWithdrawalAction}
+          resolveRescheduleAction={resolveRescheduleAction}
+          updateStudentCountsAction={updateStudentCountsAction}
+          updateMeetingLinkAction={updateMeetingLinkAction}
+          createTeamsLinkAction={createTeamsLinkAction}
+          updateStatusInPlaceAction={updateStatusInPlaceAction}
+          returnTo={`${returnTo}&booking=${openSession.bookingRequestId}#booking-${openSession.bookingRequestId}`}
+        />
+      ) : null}
       {/* ------------------------------------------------ filter toolbar */}
       <div className="grid gap-3 border-b border-[color:rgba(4,15,75,0.08)] p-3.5 md:p-4">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -514,7 +436,7 @@ export function BookingsExplorer({
 
         </div>
 
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(130px,160px))_auto] xl:items-end">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(4,minmax(130px,160px))_auto] xl:items-end">
           <label className="flex min-h-[36px] min-w-0 items-center gap-2.5 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
             <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
             <input
@@ -577,21 +499,23 @@ export function BookingsExplorer({
               ...BOOKING_STATUS_OPTIONS.map(([value, label]) => ({ value, label }))
             ]}
           />
-          <button
-            type="button"
-            disabled={!hasActiveFilters}
-            onClick={() => {
-              setQuery("");
-              setRegionFilter("all");
-              setPresentationFilter("all");
-              setStatusFilter("all");
-              setDeliveryFilter("all");
-              setPage(1);
-            }}
-            className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! font-semibold! text-[color:var(--navy)] transition disabled:opacity-40"
-          >
-            Clear
-          </button>
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setRegionFilter("all");
+                setPresentationFilter("all");
+                setStatusFilter("all");
+                setDeliveryFilter("all");
+                setPage(1);
+              }}
+              className="inline-flex min-h-[36px] items-center gap-1 justify-self-start whitespace-nowrap px-1.5 text-xs! leading-5! font-semibold! text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear filters
+            </button>
+          ) : null}
         </div>
 
         {viewMode === "list" && selectedBookingIds.size > 0 ? (
@@ -671,6 +595,7 @@ export function BookingsExplorer({
           updateStatusAction={updateStatusAction}
           resolveWithdrawalAction={resolveWithdrawalAction}
           resolveRescheduleAction={resolveRescheduleAction}
+          onOpenSession={setOpenSessionId}
           returnTo={`${returnTo}#bookings-panel`}
         />
       ) : (
@@ -920,6 +845,7 @@ export function BookingsExplorer({
                             updateStudentCountsAction={updateStudentCountsAction}
                             updateMeetingLinkAction={updateMeetingLinkAction}
                             createTeamsLinkAction={createTeamsLinkAction}
+                            onOpenSession={setOpenSessionId}
                             returnTo={cardReturnTo}
                           />
                         ))}
@@ -1031,6 +957,7 @@ export function BookingsExplorer({
                                   updateStudentCountsAction={updateStudentCountsAction}
                                   updateMeetingLinkAction={updateMeetingLinkAction}
                                   createTeamsLinkAction={createTeamsLinkAction}
+                                  onOpen={() => setOpenSessionId(session.id)}
                                   returnTo={cardReturnTo}
                                 />
                               </td>
@@ -1133,6 +1060,7 @@ function CompactSessionCard({
   updateStudentCountsAction,
   updateMeetingLinkAction,
   createTeamsLinkAction,
+  onOpenSession,
   returnTo
 }: {
   session: BookingSessionView;
@@ -1145,6 +1073,7 @@ function CompactSessionCard({
   updateStudentCountsAction?: SessionDialogAction;
   updateMeetingLinkAction?: SessionDialogAction;
   createTeamsLinkAction?: SessionDialogAction;
+  onOpenSession?: (sessionId: string) => void;
   returnTo: string;
 }) {
   return (
@@ -1228,6 +1157,7 @@ function CompactSessionCard({
           updateStudentCountsAction={updateStudentCountsAction}
           updateMeetingLinkAction={updateMeetingLinkAction}
           createTeamsLinkAction={createTeamsLinkAction}
+          onOpen={onOpenSession ? () => onOpenSession(session.id) : undefined}
           returnTo={returnTo}
         />
       </div>
@@ -1313,12 +1243,14 @@ function BookingsCalendar({
   updateStatusAction,
   resolveWithdrawalAction,
   resolveRescheduleAction,
+  onOpenSession,
   returnTo
 }: {
   entries: Array<{ session: BookingSessionView; schoolName: string }>;
   updateStatusAction: (formData: FormData) => void | Promise<void>;
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
+  onOpenSession?: (sessionId: string) => void;
   returnTo: string;
 }) {
   const [viewMonth, setViewMonth] = useState(() => {
@@ -1449,6 +1381,7 @@ function BookingsCalendar({
                         updateStatusAction={updateStatusAction}
                         resolveWithdrawalAction={resolveWithdrawalAction}
                         resolveRescheduleAction={resolveRescheduleAction}
+                        onOpen={onOpenSession ? () => onOpenSession(session.id) : undefined}
                         returnTo={returnTo}
                         className={cn(
                           "w-full truncate rounded-[8px] border px-1.5 py-1 text-left text-[11px] font-semibold leading-4 transition",

@@ -154,8 +154,17 @@ export async function sendSchoolStatusChangeEmails(
 // session: the school (via the normal session email path, so record-only
 // bookings stay silent) and the assigned ambassador both get the link.
 export async function sendMeetingLinkNotifications(bookingId: string, sessionId: string) {
-  await sendSchoolSessionEmails(bookingId, [sessionId], "meeting_link");
+  // Independent sends: a school without a usable email address must not stop
+  // the ambassador getting the link (and vice versa).
+  const results = await Promise.allSettled([
+    sendSchoolSessionEmails(bookingId, [sessionId], "meeting_link"),
+    sendAmbassadorMeetingLink(bookingId, sessionId)
+  ]);
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed) throw failed.reason;
+}
 
+async function sendAmbassadorMeetingLink(bookingId: string, sessionId: string) {
   const policy = await bookingEmailPolicy(bookingId);
   if (policy?.manualOnly) return;
   const admin = createAdminClient();

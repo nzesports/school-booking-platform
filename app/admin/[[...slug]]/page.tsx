@@ -2218,6 +2218,10 @@ function calendarSyncNotice(
     return { tone: "error", message: "Microsoft isn't connected on this site, so bookings can't be synced to Outlook." };
   }
 
+  if (result === "error") {
+    return { tone: "error", message: "The Outlook sync couldn't run just now. Please try again in a minute." };
+  }
+
   const [added, updated, removed, failed, remaining] = result.split("-").map((value) => Number(value) || 0);
   const parts = [
     `${added} added`,
@@ -2240,11 +2244,9 @@ function teamsTestNotice(
 
   switch (result) {
     case "ok":
-      return { tone: "success", message: `Microsoft Teams is connected. Staff can create Teams links for online sessions.${cleanupNote}` };
-    case "ok-lobby":
       return {
         tone: "success",
-        message: `Microsoft Teams is connected and links can be created. The site couldn't open the lobby automatically (that needs the OnlineMeetings.ReadWrite.All permission), so depending on your Teams settings, schools and ambassadors may wait in the lobby until someone from NZ Esports admits them.${cleanupNote}`
+        message: `Microsoft Teams is connected. Staff can create Teams links for online sessions; schools and ambassadors wait in the meeting lobby until someone from NZ Esports admits them.${cleanupNote}`
       };
     case "unconfigured":
       return { tone: "error", message: "Microsoft isn't connected on this site. Add the MICROSOFT_GRAPH_* settings in Vercel." };

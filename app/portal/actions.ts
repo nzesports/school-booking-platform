@@ -18,6 +18,7 @@ import {
   PLATFORM_DATA_TAG,
   PUBLIC_CONTENT_TAG
 } from "@/lib/services/cache-tags";
+import { bookingEmailPolicy } from "@/lib/services/booking-email-policy";
 import { createTeamsMeetingForSession } from "@/lib/services/calendar-triggers";
 import {
   collectCalendarEventIdsForBookings,
@@ -518,6 +519,45 @@ const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] 
   // ambassador open pool and stop reading as "pending approval" for schools.
   declined: { to: "declined", onlyFrom: NON_TERMINAL_SESSION_STATUSES }
 };
+
+const REMOVED_BOOKING_STATUSES = ["cancelled", "declined"];
+const BOOKING_COMPLETION_STATUSES = [
+  "completed_pending_report",
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed"
+];
+
+// Un-cancelling a booking brings back the sessions its cancellation closed:
+// upcoming ones when it returns to an active status, past ones when it's
+// marked delivered. Only called for bookings that were cancelled/declined.
+async function reinstateCancelledSessions(
+  admin: ReturnType<typeof getAdminClientOrThrow>,
+  bookingIds: string[],
+  targetStatus: string
+) {
+  if (bookingIds.length === 0 || REMOVED_BOOKING_STATUSES.includes(targetStatus)) {
+    return [];
+  }
+
+  const completing = BOOKING_COMPLETION_STATUSES.includes(targetStatus);
+  const sessionStatus = SESSION_CASCADE[targetStatus]?.to ?? (completing ? "closed" : "tentative");
+  const now = new Date().toISOString();
+  const query = admin
+    .from("booking_sessions")
+    .update({ status: sessionStatus })
+    .in("booking_request_id", bookingIds)
+    .in("status", REMOVED_BOOKING_STATUSES);
+  const { data, error } = await (completing ? query.lt("ends_at", now) : query.gt("starts_at", now))
+    .select("id, booking_request_id");
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
 
 // Links rendered as hrefs: only web URLs, never javascript:/data: schemes.
 const httpUrlSchema = z
@@ -5059,21 +5099,21 @@ export async function assignAmbassadorAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "assigned", "1"));
 }
 
-export async function updateBookingStatusAction(formData: FormData) {
-  const actor = await requirePortalAccess("staff");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/staff/bookings"),
-    "/staff/bookings"
-  );
+// Shared by the bookings list (redirects afterwards) and the booking details
+// dialog (stays open). Returns an error code instead of redirecting.
+async function applyBookingStatusUpdate(
+  actorId: string,
+  formData: FormData
+): Promise<{ ok: true; emailed: boolean } | { ok: false; error: string }> {
   const parsed = updateBookingStatusSchema.safeParse({
     bookingRequestId: String(formData.get("bookingRequestId") || ""),
     status: String(formData.get("status") || ""),
     reason: String(formData.get("reason") || "").trim() || undefined,
-    returnTo: fallbackReturnTo
+    returnTo: "/staff/bookings"
   });
 
   if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-status"));
+    return { ok: false, error: "invalid-status" };
   }
 
   const admin = getAdminClientOrThrow();
@@ -5084,7 +5124,7 @@ export async function updateBookingStatusAction(formData: FormData) {
     .maybeSingle();
 
   if (!existingBooking) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
+    return { ok: false, error: "booking-not-found" };
   }
 
   // A booking can't be marked delivered/completed before its sessions have
@@ -5108,7 +5148,7 @@ export async function updateBookingStatusAction(formData: FormData) {
       .maybeSingle();
 
     if (lastSession && new Date(lastSession.ends_at as string).getTime() > Date.now()) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "cannot-complete-future"));
+      return { ok: false, error: "cannot-complete-future" };
     }
   }
 
@@ -5127,7 +5167,7 @@ export async function updateBookingStatusAction(formData: FormData) {
     .eq("id", parsed.data.bookingRequestId);
 
   if (error) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+    return { ok: false, error: "status-update-failed" };
   }
 
   const cascade = SESSION_CASCADE[parsed.data.status];
@@ -5148,34 +5188,49 @@ export async function updateBookingStatusAction(formData: FormData) {
     affectedSessionIds = (changedSessions ?? []).map((session) => session.id as string);
 
     if (cascadeError) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+      return { ok: false, error: "status-update-failed" };
     }
+  }
+
+  if (REMOVED_BOOKING_STATUSES.includes(existingBooking.status as string)) {
+    const reinstated = await reinstateCancelledSessions(
+      admin,
+      [parsed.data.bookingRequestId],
+      parsed.data.status
+    ).catch(() => null);
+
+    if (!reinstated) {
+      return { ok: false, error: "status-update-failed" };
+    }
+
+    affectedSessionIds = [...affectedSessionIds, ...reinstated.map((session) => session.id as string)];
   }
 
   await admin.from("booking_status_history").insert({
     booking_request_id: parsed.data.bookingRequestId,
     new_status: parsed.data.status,
-    changed_by: actor.id,
+    changed_by: actorId,
     reason: parsed.data.reason || `Status updated to ${parsed.data.status}`
   });
 
   await admin.from("booking_activity_logs").insert({
     booking_request_id: parsed.data.bookingRequestId,
     action: "booking.status_updated",
-    actor_id: actor.id,
+    actor_id: actorId,
     actor_type: "staff",
     details: { status: parsed.data.status, email_choice: formData.get("emailChoice") === "send" ? "send" : "skip" }
   });
 
   const emailEvent = statusEmailEvent(parsed.data.status);
-  if (formData.get("emailChoice") === "send" && emailEvent && affectedSessionIds.length) {
+  const emailed = Boolean(formData.get("emailChoice") === "send" && emailEvent && affectedSessionIds.length);
+  if (emailed && emailEvent) {
     const event = emailEvent === "confirmed" && existingBooking.status === "reschedule_requested" ? "rescheduled" : emailEvent;
     scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: parsed.data.bookingRequestId }, () =>
       sendSchoolSessionEmails(parsed.data.bookingRequestId, affectedSessionIds, event)));
   }
 
   await logAuditEvent(
-    actor.id,
+    actorId,
     "booking.status_updated",
     "booking_request",
     parsed.data.bookingRequestId
@@ -5184,7 +5239,38 @@ export async function updateBookingStatusAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/school");
-  redirect(appendSearchParam(parsed.data.returnTo, "updated", "status"));
+  return { ok: true, emailed };
+}
+
+export async function updateBookingStatusAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const returnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/bookings"),
+    "/staff/bookings"
+  );
+  const result = await applyBookingStatusUpdate(actor.id, formData);
+
+  if (!result.ok) {
+    redirect(appendSearchParam(returnTo, "error", result.error));
+  }
+
+  redirect(appendSearchParam(returnTo, "updated", "status"));
+}
+
+// Booking details dialog: same update, but the dialog stays open and shows
+// the result inside it.
+export async function updateBookingStatusInPlaceAction(
+  _previousState: SessionActionState,
+  formData: FormData
+): Promise<SessionActionState> {
+  const actor = await requirePortalAccess("staff");
+  const result = await applyBookingStatusUpdate(actor.id, formData);
+
+  if (!result.ok) {
+    return sessionActionResult({ error: result.error });
+  }
+
+  return sessionActionResult({ updated: result.emailed ? "status-emailed" : "status" });
 }
 
 export async function bulkDeleteBookingsAction(formData: FormData) {
@@ -5240,7 +5326,7 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
   const admin = getAdminClientOrThrow();
   const { data: existingBookings, error: bookingReadError } = await admin
     .from("booking_requests")
-    .select("id")
+    .select("id, status")
     .in("id", parsed.data.bookingRequestIds);
 
   if (bookingReadError || existingBookings.length !== parsed.data.bookingRequestIds.length) {
@@ -5271,6 +5357,7 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
   }
 
   const cascade = SESSION_CASCADE[parsed.data.status];
+  let changedSessions: Array<{ id: unknown; booking_request_id: unknown }> = [];
 
   if (cascade) {
     let sessionUpdate = admin
@@ -5283,20 +5370,36 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
       sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
     }
 
-    const { data: changedSessions, error: cascadeError } = await sessionUpdate.select("id, booking_request_id");
+    const { data, error: cascadeError } = await sessionUpdate.select("id, booking_request_id");
 
     if (cascadeError) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
     }
 
-    const event = statusEmailEvent(parsed.data.status);
-    if (formData.get("emailChoice") === "send" && event) {
-      for (const bookingId of parsed.data.bookingRequestIds) {
-        const ids = (changedSessions ?? []).filter((session) => session.booking_request_id === bookingId)
-          .map((session) => session.id as string);
-        if (ids.length) scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: bookingId }, () =>
-          sendSchoolSessionEmails(bookingId, ids, event)));
-      }
+    changedSessions = data ?? [];
+  }
+
+  const previouslyCancelledIds = existingBookings
+    .filter((booking) => REMOVED_BOOKING_STATUSES.includes(booking.status as string))
+    .map((booking) => booking.id as string);
+  const reinstated = await reinstateCancelledSessions(
+    admin,
+    previouslyCancelledIds,
+    parsed.data.status
+  ).catch(() => null);
+
+  if (!reinstated) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
+  }
+
+  changedSessions = [...changedSessions, ...reinstated];
+  const event = statusEmailEvent(parsed.data.status);
+  if (formData.get("emailChoice") === "send" && event) {
+    for (const bookingId of parsed.data.bookingRequestIds) {
+      const ids = changedSessions.filter((session) => session.booking_request_id === bookingId)
+        .map((session) => session.id as string);
+      if (ids.length) scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: bookingId }, () =>
+        sendSchoolSessionEmails(bookingId, ids, event)));
     }
   }
 
@@ -5461,13 +5564,17 @@ export async function updateSessionMeetingLinkAction(
   const notified =
     Boolean(meetingUrl) &&
     meetingUrl !== session.meeting_url &&
-    sessionAwaitsMeetingLinkEmail(session.status as string, session.starts_at as string);
+    sessionAwaitsMeetingLinkEmail(session.status as string, session.starts_at as string) &&
+    (await bookingSendsEmails(session.booking_request_id as string));
 
   if (notified) {
     scheduleEmail(() =>
       sendMeetingLinkNotifications(session.booking_request_id as string, parsed.data.sessionId)
     );
   }
+
+  // Keep the schools@ calendar event's video-call details current.
+  scheduleCalendarSync({ sessionIds: [parsed.data.sessionId] });
 
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -5480,6 +5587,12 @@ export async function updateSessionMeetingLinkAction(
 // A confirmed online session that hasn't happened yet: adding or changing its
 // link emails the school and ambassador. Before confirmation the link simply
 // goes out in the confirmation email.
+// Record-only bookings never email anyone, so don't claim we did.
+async function bookingSendsEmails(bookingId: string) {
+  const policy = await bookingEmailPolicy(bookingId).catch(() => null);
+  return Boolean(policy && !policy.manualOnly);
+}
+
 function sessionAwaitsMeetingLinkEmail(status: string, startsAt: string) {
   return (
     ["confirmed", "ambassador_assigned", "reschedule_requested", "withdrawal_requested"].includes(status) &&
@@ -5525,19 +5638,20 @@ export async function createSessionTeamsLinkAction(
   const notified =
     Boolean(before?.booking_request_id) &&
     result.joinUrl !== before?.meeting_url &&
-    sessionAwaitsMeetingLinkEmail(String(before?.status ?? ""), String(before?.starts_at ?? ""));
+    sessionAwaitsMeetingLinkEmail(String(before?.status ?? ""), String(before?.starts_at ?? "")) &&
+    (await bookingSendsEmails(before?.booking_request_id as string));
 
   if (notified && before?.booking_request_id) {
     scheduleEmail(() => sendMeetingLinkNotifications(before.booking_request_id as string, sessionId));
   }
 
+  // Fill the calendar event's description with the full booking details.
+  scheduleCalendarSync({ sessionIds: [sessionId] });
+
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/ambassador");
-  return sessionActionResult({
-    updated: notified ? "teams-link-sent" : "teams-link",
-    lobbyNote: !result.lobbyBypassed
-  });
+  return sessionActionResult({ updated: notified ? "teams-link-sent" : "teams-link" });
 }
 
 // Settings: pushes bookings into the schools@ Outlook calendar (past and
@@ -5545,8 +5659,12 @@ export async function createSessionTeamsLinkAction(
 // press repeatedly: existing events are updated, never duplicated.
 export async function syncCalendarNowAction() {
   const actor = await requirePortalAccess("super_admin");
-  const result = await reconcileCalendar(80);
+  const result = await reconcileCalendar(80).catch(() => null);
   await logAuditEvent(actor.id, "settings.calendar_synced", "settings");
+
+  if (!result) {
+    redirect("/admin/settings?calendarSync=error");
+  }
 
   if (!result.configured) {
     redirect("/admin/settings?calendarSync=unconfigured");
@@ -5581,7 +5699,7 @@ export async function testMicrosoftTeamsAction() {
 
   const deleted = await deleteOutlookCalendarEvent(result.eventId).catch(() => false);
   redirect(
-    `/admin/settings?teams=${result.lobbyBypassed ? "ok" : "ok-lobby"}${deleted ? "" : "&teamsCleanup=failed"}`
+    `/admin/settings?teams=ok${deleted ? "" : "&teamsCleanup=failed"}`
   );
 }
 
@@ -5677,6 +5795,7 @@ export async function updateSessionStudentCountsAction(
     "booking_session",
     parsed.data.sessionId
   );
+  scheduleCalendarSync({ sessionIds: [parsed.data.sessionId] });
   revalidatePath("/staff");
   revalidatePath("/admin");
   return sessionActionResult({ updated: "students" });

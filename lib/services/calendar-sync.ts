@@ -42,7 +42,8 @@ function isOutlookEventId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && !value.startsWith("calendar-");
 }
 
-// Latest calendar_events row per session (older code could leave several).
+// One calendar_events row per session: the newest one holding a real Outlook
+// event id, else the newest (older code could leave placeholder rows).
 async function loadCalendarRows(admin: Admin, sessionIds?: string[]) {
   const rows = await fetchAllRows("calendar events", (from, to) => {
     const query = admin
@@ -55,8 +56,14 @@ async function loadCalendarRows(admin: Admin, sessionIds?: string[]) {
   const latest = new Map<string, (typeof rows)[number]>();
 
   for (const row of rows) {
-    if (!latest.has(row.booking_session_id as string)) {
-      latest.set(row.booking_session_id as string, row);
+    const sessionId = row.booking_session_id as string;
+    const current = latest.get(sessionId);
+
+    if (
+      !current ||
+      (!isOutlookEventId(current.external_event_id) && isOutlookEventId(row.external_event_id))
+    ) {
+      latest.set(sessionId, row);
     }
   }
 
@@ -129,7 +136,8 @@ async function syncChunk(admin: Admin, sessionIds: string[], counts: CalendarSyn
     const meetingUrl = (onlineRow?.meeting_url as string | null) ?? null;
     const schoolName = (school?.name as string | null) ?? "School";
     const tentative = TENTATIVE_STATUSES.has(status);
-    const bookingUrl = `${config.siteUrl}/admin/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`;
+    // /staff works for staff and super admins alike.
+    const bookingUrl = `${config.siteUrl}/staff/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`;
     const detail = (label: string, value?: string | null) =>
       value ? `<b>${label}:</b> ${escapeHtml(value)}<br>` : "";
     const description = [

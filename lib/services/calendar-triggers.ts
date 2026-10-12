@@ -102,6 +102,6 @@ export async function createTeamsMeetingForSession(bookingSessionId: string) {
     return { ok: false as const, code: "other" as TeamsLinkFailure };
   }
 
-  return { ok: true as const, joinUrl: result.joinUrl, lobbyBypassed: result.lobbyBypassed };
+  return { ok: true as const, joinUrl: result.joinUrl };
 }
 

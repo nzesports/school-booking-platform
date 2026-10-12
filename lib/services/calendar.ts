@@ -27,7 +27,15 @@ function toGraphNzDateTime(value: string) {
     .replace(" ", "T");
 }
 
+// Reused until shortly before it expires, so a large sync doesn't sign in to
+// Microsoft once per event.
+let cachedGraphToken: { token: string; expiresAt: number } | null = null;
+
 async function getGraphToken() {
+  if (cachedGraphToken && cachedGraphToken.expiresAt > Date.now()) {
+    return cachedGraphToken.token;
+  }
+
   const params = new URLSearchParams({
     client_id: config.microsoftClientId as string,
     client_secret: config.microsoftClientSecret as string,
@@ -48,7 +56,11 @@ async function getGraphToken() {
     throw new Error("Unable to fetch Microsoft Graph access token.");
   }
 
-  const payload = (await response.json()) as { access_token: string };
+  const payload = (await response.json()) as { access_token: string; expires_in?: number };
+  cachedGraphToken = {
+    token: payload.access_token,
+    expiresAt: Date.now() + Math.max(60, (payload.expires_in ?? 3600) - 300) * 1000
+  };
   return payload.access_token;
 }
 
@@ -130,11 +142,12 @@ export async function createOutlookCalendarEvent(input: CalendarEventInput) {
 
 // Teams meetings are created as an Outlook event on the shared calendar with
 // isOnlineMeeting set; Microsoft then returns the meeting's join link. Anyone
-// can join from a web browser, without a Teams account.
+// can join from a web browser, without a Teams account, and guests wait in
+// the lobby until someone admits them.
 export type TeamsFailureCode = "signin" | "permission" | "licence" | "other";
 
 type TeamsMeetingResult =
-  | { status: "created"; eventId: string; joinUrl: string; lobbyBypassed: boolean }
+  | { status: "created"; eventId: string; joinUrl: string }
   | { status: "unconfigured" }
   | { status: "failed"; code: TeamsFailureCode };
 
@@ -192,46 +205,6 @@ async function readJoinUrl(token: string, eventUrl: string) {
   return null;
 }
 
-// Best effort: let everyone skip the lobby and present, so the school and the
-// ambassador (who join as guests) aren't left waiting for someone to admit
-// them. Needs the OnlineMeetings.ReadWrite.All permission and a Teams
-// application access policy; without them the meeting still works, but
-// guests may wait in the lobby depending on the organisation's Teams policy.
-async function openTeamsLobby(token: string, userId: string, joinUrl: string) {
-  try {
-    const lookup = await fetch(
-      `https://graph.microsoft.com/v1.0/users/${userId}/onlineMeetings?$filter=${encodeURIComponent(`JoinWebUrl eq '${joinUrl.replace(/'/g, "''")}'`)}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    if (!lookup.ok) {
-      return false;
-    }
-
-    const meeting = ((await lookup.json()) as { value?: Array<{ id: string }> }).value?.[0];
-
-    if (!meeting) {
-      return false;
-    }
-
-    const update = await fetch(
-      `https://graph.microsoft.com/v1.0/users/${userId}/onlineMeetings/${encodeURIComponent(meeting.id)}`,
-      {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lobbyBypassSettings: { scope: "everyone", isDialInBypassEnabled: true },
-          allowedPresenters: "everyone"
-        })
-      }
-    );
-
-    return update.ok;
-  } catch {
-    return false;
-  }
-}
-
 export async function createOrUpdateTeamsMeeting(
   input: CalendarEventInput,
   externalEventId?: string | null
@@ -248,7 +221,7 @@ export async function createOrUpdateTeamsMeeting(
     return { status: "failed", code: "signin" };
   }
 
-  const { userId, eventsUrl } = graphCalendarBase();
+  const { eventsUrl } = graphCalendarBase();
   const eventFields = {
     subject: input.title,
     body: { contentType: "HTML", content: input.description },
@@ -269,7 +242,10 @@ export async function createOrUpdateTeamsMeeting(
       })
     : null;
 
+  let createdNow = false;
+
   if (!response || response.status === 404) {
+    createdNow = true;
     response = await fetch(eventsUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -289,17 +265,22 @@ export async function createOrUpdateTeamsMeeting(
   const joinUrl = await readJoinUrl(token, `${eventsUrl}/${encodeURIComponent(eventId)}`);
 
   // The event exists but Microsoft gave it no Teams meeting: almost always a
-  // calendar account without a Teams licence.
+  // calendar account without a Teams licence. Remove an event made just now
+  // so failed attempts don't leave strays in the shared calendar.
   if (!joinUrl) {
+    if (createdNow) {
+      await fetch(`${eventsUrl}/${encodeURIComponent(eventId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => undefined);
+    }
+
     return { status: "failed", code: "licence" };
   }
 
-  return {
-    status: "created",
-    eventId,
-    joinUrl,
-    lobbyBypassed: await openTeamsLobby(token, userId, joinUrl)
-  };
+  // The organisation's Teams lobby applies as usual: schools and ambassadors
+  // joining as guests wait to be admitted by the NZ Esports team.
+  return { status: "created", eventId, joinUrl };
 }
 
 export async function deleteOutlookCalendarEvent(externalEventId: string) {

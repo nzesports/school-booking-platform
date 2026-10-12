@@ -8,11 +8,10 @@ function read(searchParams: SearchParams, key: string) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-const LOBBY_NOTE =
-  " Depending on your organisation's Teams settings, the school and ambassador may wait in the lobby until someone from NZ Esports lets them in.";
-
 const successMessages: Record<string, string> = {
   students: "Student numbers saved.",
+  status: "Booking status updated.",
+  "status-emailed": "Booking status updated and the school has been emailed.",
   "meeting-link": "Video-call link saved.",
   "meeting-link-sent": "Video-call link saved and emailed to the school and ambassador.",
   "meeting-link-removed": "Video-call link removed.",
@@ -21,6 +20,10 @@ const successMessages: Record<string, string> = {
 };
 
 const errorMessages: Record<string, string> = {
+  "invalid-status": "Choose a valid booking status.",
+  "booking-not-found": "That booking couldn't be found. It may have been deleted.",
+  "cannot-complete-future": "A booking can't be marked completed before its session has happened.",
+  "status-update-failed": "The status couldn't be updated. Please try again.",
   "invalid-student-count": "Enter student numbers between 0 and 10,000.",
   "student-count-update-failed": "The student numbers couldn't be saved. Please try again.",
   "invalid-meeting-link": "Enter a full video-call link starting with https://.",
@@ -48,7 +51,7 @@ export type SessionDialogAction = (
 ) => Promise<SessionActionState>;
 
 export function sessionActionResult(
-  outcome: { updated: string; lobbyNote?: boolean } | { error: string }
+  outcome: { updated: string } | { error: string }
 ): SessionActionState {
   if ("error" in outcome) {
     return { tone: "error", message: errorMessages[outcome.error] ?? "Something went wrong. Please try again." };
@@ -56,7 +59,7 @@ export function sessionActionResult(
 
   return {
     tone: "success",
-    message: (successMessages[outcome.updated] ?? "Saved.") + (outcome.lobbyNote ? LOBBY_NOTE : "")
+    message: successMessages[outcome.updated] ?? "Saved."
   };
 }
 
@@ -65,8 +68,7 @@ export function sessionUpdateNotice(searchParams: SearchParams) {
   const error = read(searchParams, "error");
 
   if (updated && successMessages[updated]) {
-    const lobby = read(searchParams, "lobby") === "guests-wait" ? LOBBY_NOTE : "";
-    return { scope: "booking" as const, tone: "success" as const, message: successMessages[updated] + lobby };
+    return { scope: "booking" as const, tone: "success" as const, message: successMessages[updated] };
   }
 
   if (error && errorMessages[error]) {

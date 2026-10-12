@@ -38,8 +38,7 @@ describe("notification routing and content", () => {
     ["school_booking_confirmed", sendBookingConfirmedEmail],
     ["school_booking_cancelled", sendBookingCancelledEmail],
     ["school_booking_rescheduled", sendBookingRescheduledEmail],
-    ["school_session_reminder", sendSessionReminderEmail],
-    ["school_feedback_request", sendFeedbackRequestEmail]
+    ["school_session_reminder", sendSessionReminderEmail]
   ] as const)("renders the saved %s template with all session fields", async (key, send) => {
     mocks.template.mockResolvedValue({ data: { ...schoolTemplates.find((template) => template.template_key === key), is_active: true } });
     await send(session);
@@ -49,13 +48,24 @@ describe("notification routing and content", () => {
     expect(html).not.toMatch(/\{\{\w+\}\}/);
   });
   it.each([sendBookingConfirmedEmail, sendBookingCancelledEmail, sendBookingRescheduledEmail,
-    sendSessionReminderEmail, sendFeedbackRequestEmail])("includes full details even when a saved school template has only an introduction", async (send) => {
+    sendSessionReminderEmail])("includes full details even when a saved school template has only an introduction", async (send) => {
     mocks.template.mockResolvedValue({ data: { subject: "School email", body_html: "<p>Hello</p>", is_active: true } });
     await send(session);
     const html = mocks.send.mock.calls[0][0].html;
     for (const detail of ["Digital Wellbeing", "Test School", "Tue 22 Sep 2026", "9:00", "10:00", "120", "Years 7 to 8"]) {
       expect(html).toContain(detail);
     }
+  });
+
+  // The feedback request is a short "how did it go?" note: it deliberately
+  // leaves out the session details table and leads with the feedback link.
+  it("keeps the feedback request short, without the session details table", async () => {
+    mocks.template.mockResolvedValue({ data: { ...schoolTemplates.find((template) => template.template_key === "school_feedback_request"), is_active: true } });
+    await sendFeedbackRequestEmail(session);
+    const html = mocks.send.mock.calls[0][0].html;
+    expect(html).not.toContain("data-school-session-details");
+    expect(html).toContain("https://book.nzesports.org.nz/feedback/session-1");
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
   });
 
   it("renders the saved detail placeholder once and escapes user-provided text", async () => {

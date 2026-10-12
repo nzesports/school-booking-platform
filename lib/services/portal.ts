@@ -1645,6 +1645,9 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
       .map((session) => ({
         ...session,
         applicants: undefined,
+        // Video-call links are only for the assigned ambassador, never the
+        // open pool.
+        meetingUrl: undefined,
         myApplicationStatus: myApplicationStatusBySessionId.get(session.id)
       }))
   );
@@ -1670,6 +1673,14 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
       ? bookings
           .filter((booking) => booking.sourcedByAmbassadorId === rawAmbassador.id)
           .map(stripInternalNotes)
+          .map((booking) => ({
+            ...booking,
+            sessions: booking.sessions.map((session) => ({
+              ...session,
+              meetingUrl:
+                session.assignedAmbassadorId === rawAmbassador.id ? session.meetingUrl : undefined
+            }))
+          }))
       : [],
     reports: rawAmbassador
       ? reports.filter((report) => {

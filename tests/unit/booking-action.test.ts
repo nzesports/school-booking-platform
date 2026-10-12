@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   updateTag: vi.fn()
 }));
 
+vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
   updateTag: mocks.updateTag

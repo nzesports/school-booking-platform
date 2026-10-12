@@ -11,6 +11,7 @@ import {
   resolveSessionRescheduleAction,
   resolveSessionWithdrawalAction,
   updateBookingStatusAction,
+  updateBookingStatusInPlaceAction,
   updateSessionMeetingLinkAction,
   updateSessionStudentCountsAction
 } from "@/app/portal/actions";
@@ -208,6 +209,7 @@ export function BookingLifecyclePanel({
         updateStudentCountsAction={updateSessionStudentCountsAction}
         updateMeetingLinkAction={updateSessionMeetingLinkAction}
         createTeamsLinkAction={createSessionTeamsLinkAction}
+        updateStatusInPlaceAction={updateBookingStatusInPlaceAction}
         initialQuery={initialQuery}
         initialBookingId={initialBookingId}
       />

@@ -5,7 +5,8 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: mocks
 vi.mock("@/lib/services/email-triggers", () => ({
   sendBookingConfirmedEmail: mocks.send, sendBookingCancelledEmail: mocks.send,
   sendBookingRescheduledEmail: mocks.send, sendFeedbackRequestEmail: mocks.send,
-  sendSchoolRescheduleNoticeEmail: mocks.send
+  sendSchoolRescheduleNoticeEmail: mocks.send, sendMeetingLinkEmail: mocks.send,
+  sendAmbassadorMeetingLinkEmail: mocks.send
 }));
 import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
 
