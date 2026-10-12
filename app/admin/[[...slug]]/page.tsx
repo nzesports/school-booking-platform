@@ -38,6 +38,7 @@ import {
   reviewAmbassadorAction,
   reviewSchoolFeedbackAction,
   rotateOnlineBookingLinkAction,
+  syncCalendarNowAction,
   testMicrosoftTeamsAction,
   saveManualBookingAction,
   saveEmailTemplateAction,
@@ -2080,7 +2081,9 @@ export default async function AdminPortalPage({
             returnTo="/admin/settings"
             canEditFinanceEmail
             testTeamsAction={testMicrosoftTeamsAction}
+            syncCalendarAction={syncCalendarNowAction}
             notice={
+              calendarSyncNotice(readSearchParam(resolvedSearchParams, "calendarSync")) ??
               teamsTestNotice(readSearchParam(resolvedSearchParams, "teams"), readSearchParam(resolvedSearchParams, "teamsCleanup")) ??
               (readSearchParam(resolvedSearchParams, "saved") === "settings"
                 ? { tone: "success", message: "Settings saved." }
@@ -2202,6 +2205,30 @@ function SectionHeading({
       ) : null}
     </div>
   );
+}
+
+function calendarSyncNotice(
+  result: string | undefined
+): { tone: "success" | "error"; message: string } | null {
+  if (!result) {
+    return null;
+  }
+
+  if (result === "unconfigured") {
+    return { tone: "error", message: "Microsoft isn't connected on this site, so bookings can't be synced to Outlook." };
+  }
+
+  const [added, updated, removed, failed, remaining] = result.split("-").map((value) => Number(value) || 0);
+  const parts = [
+    `${added} added`,
+    `${updated} updated`,
+    ...(removed ? [`${removed} removed (cancelled)`] : [])
+  ];
+  const message = `Outlook sync: ${parts.join(", ")}.${
+    remaining ? ` ${remaining} more to go – press "Sync bookings to Outlook" again.` : " The schools@ calendar is up to date."
+  }${failed ? ` ${failed} couldn't be synced; they'll be retried automatically each hour.` : ""}`;
+
+  return { tone: failed && !added && !updated ? "error" : "success", message };
 }
 
 function teamsTestNotice(

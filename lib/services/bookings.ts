@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { config } from "@/lib/env";
+import { scheduleCalendarSync } from "@/lib/services/calendar-sync";
 import { scheduleEmail } from "@/lib/services/email-background";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -194,6 +195,8 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   // One insert for all sessions instead of two round trips per session.
   const { error: sessionsError } = await admin.from("booking_sessions").insert(sessionRows);
   if (sessionsError) throw sessionsError;
+  // Tentative requests go into the schools@ calendar for follow-up.
+  scheduleCalendarSync({ bookingIds: [bookingRequest.id as string] });
 
   await admin.from("booking_activity_logs").insert({
     booking_request_id: bookingRequest.id,

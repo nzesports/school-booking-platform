@@ -14,7 +14,7 @@ import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
 import { notifyStaff, notifyUser } from "@/lib/services/notifications";
 import { validateGuestReschedule } from "@/lib/services/guest-rescheduling";
 import { AVAILABILITY_DATA_TAG, PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
-import { syncSessionToCalendar } from "@/lib/services/calendar-triggers";
+import { scheduleCalendarSync } from "@/lib/services/calendar-sync";
 
 const cookieOptions = { httpOnly: true, secure: new URL(config.siteUrl).protocol === "https:", sameSite: "strict" as const, path: "/manage-booking" };
 
@@ -94,7 +94,6 @@ export async function changeGuestSessionAction(formData: FormData) {
   if (!booking || !session || session.updated_at !== parsed.data.updatedAt) redirect("/manage-booking?error=change");
   if (Date.parse(session.starts_at) <= Date.now() + CHANGE_NOTICE_HOURS * 3600000) redirect("/manage-booking?error=cutoff");
   let newStart: string | null = null;
-  let newEnd = session.ends_at as string;
   if (parsed.data.action === "reschedule") {
     const replacement = await validateGuestReschedule({
       date: String(formData.get("date") || ""), time: String(formData.get("time") || ""),
@@ -102,7 +101,6 @@ export async function changeGuestSessionAction(formData: FormData) {
     });
     if (!replacement) redirect("/manage-booking?error=availability");
     newStart = replacement.startsAt;
-    newEnd = replacement.endsAt;
   }
   const { data: changed, error } = await admin.rpc("change_authenticated_booking_session", {
     p_token_hash: grant.tokenHash, p_booking_id: booking.id, p_session_id: session.id,
@@ -120,14 +118,9 @@ export async function changeGuestSessionAction(formData: FormData) {
       const { data } = await admin.from("ambassador_profiles").select("user_id").eq("id", session.assigned_ambassador_id).maybeSingle();
       if (data?.user_id) await notifyUser(data.user_id, { title, body, type: `booking_${event}`, relatedUrl: "/ambassador/upcoming" });
     }
-    await syncSessionToCalendar({
-      bookingSessionId: session.id,
-      title: `${event === "cancelled" ? "CANCELLED: " : ""}${session.presentation_types?.title || "NZ Esports presentation"}`,
-      startsAt: newStart || session.starts_at, endsAt: newEnd,
-      schoolName: booking.schools?.name || "School", schoolAddress: session.location_address || booking.schools?.name || "",
-      ambassadorName: session.ambassador_profiles?.profiles?.full_name || session.ambassador_profiles?.display_name || "To be assigned"
-    });
   });
+  // Updates the event time, or removes it from Outlook if cancelled.
+  scheduleCalendarSync({ sessionIds: [session.id] });
   updateTag(PLATFORM_DATA_TAG);
   updateTag(AVAILABILITY_DATA_TAG);
   revalidatePath("/manage-booking");

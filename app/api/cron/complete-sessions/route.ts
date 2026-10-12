@@ -9,6 +9,7 @@ import {
   sendFeedbackRequestEmail,
   sendSessionReminderEmail
 } from "@/lib/services/email-triggers";
+import { reconcileCalendar } from "@/lib/services/calendar-sync";
 import { relationOne } from "@/lib/supabase/relation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
@@ -333,5 +334,14 @@ export async function GET(request: NextRequest) {
     revalidateTag(AVAILABILITY_DATA_TAG, "max");
   }
 
-  return NextResponse.json({ completedSessions, emailsSent, remindersSent });
+  // Safety net for the schools@ Outlook calendar: catch up any booking that
+  // changed since its last sync (a batch per run, newest first).
+  const calendar = await reconcileCalendar(40).catch(() => null);
+
+  return NextResponse.json({
+    completedSessions,
+    emailsSent,
+    remindersSent,
+    calendar: calendar ? { ...calendar.counts, remaining: calendar.remaining } : "failed"
+  });
 }

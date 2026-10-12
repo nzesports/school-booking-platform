@@ -620,7 +620,13 @@ export async function sendAmbassadorAssignedEmail(opts: {
   sessionAddress: string;
   presentationTitle: string;
   bookingSessionId: string;
+  // When present, the email includes "Add to calendar" links.
+  sessionStartsAt?: string;
+  sessionEndsAt?: string;
+  deliveryMode?: "in_person" | "online";
+  meetingUrl?: string | null;
 }) {
+  const calendarLinks = calendarLinksBlock(opts);
   const ambassadorName = escapeHtml(opts.ambassadorName);
   const schoolName = escapeHtml(opts.schoolName);
   const sessionDate = escapeHtml(opts.sessionDate);
@@ -633,20 +639,20 @@ export async function sendAmbassadorAssignedEmail(opts: {
     sessionAddress: opts.sessionAddress || "To be confirmed",
     presentationTitle: opts.presentationTitle,
     bookingSessionId: opts.bookingSessionId
-  });
+  }, { calendarLinks });
   const result = await sendTransactionalEmail({
     bookingSessionId: opts.bookingSessionId,
     templateKey: "ambassador_assignment_confirmation",
     recipientEmail: opts.ambassadorEmail,
     subject: template?.subject ?? `Session confirmed: ${opts.presentationTitle} at ${opts.schoolName}`,
     html:
-      template?.html ??
+      (template?.html ??
       `
       <p>Hi ${ambassadorName},</p>
       <p>You've been assigned to deliver <strong>${presentationTitle}</strong>
       at <strong>${schoolName}</strong> on <strong>${sessionDate}</strong>.</p>
       <p>Location: ${sessionAddress}</p>
-    `
+    `) + (calendarLinks && !template?.htmlPlaceholders.includes("calendarLinks") ? `<p>${calendarLinks}</p>` : "")
   });
 
   await logEmail(result, {

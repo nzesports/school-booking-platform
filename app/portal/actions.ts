@@ -18,10 +18,13 @@ import {
   PLATFORM_DATA_TAG,
   PUBLIC_CONTENT_TAG
 } from "@/lib/services/cache-tags";
+import { createTeamsMeetingForSession } from "@/lib/services/calendar-triggers";
 import {
-  createTeamsMeetingForSession,
-  syncSessionToCalendar
-} from "@/lib/services/calendar-triggers";
+  collectCalendarEventIdsForBookings,
+  reconcileCalendar,
+  scheduleCalendarSync,
+  scheduleOutlookEventRemoval
+} from "@/lib/services/calendar-sync";
 import { createOrUpdateTeamsMeeting, deleteOutlookCalendarEvent } from "@/lib/services/calendar";
 import {
   sendAmbassadorApprovedEmail,
@@ -2178,6 +2181,7 @@ export async function saveManualBookingAction(formData: FormData) {
     scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "tentative"));
   }
   await logAuditEvent(actor.id, "booking.manually_created", "booking_request", booking.id);
+  scheduleCalendarSync({ bookingIds: [booking.id as string] });
   revalidatePath("/staff");
   revalidatePath("/admin");
   redirect(successUrl(booking.id, booking.reference_code));
@@ -2351,6 +2355,7 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     scheduleEmail(() => sendSchoolStatusChangeEmails(booking.id as string, [session.id as string], "confirmed"));
   }
   await logAuditEvent(actor.id, "booking.ambassador_created", "booking_request", booking.id);
+  scheduleCalendarSync({ bookingIds: [booking.id as string] });
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -4167,6 +4172,7 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     "booking_request",
     parsed.data.bookingRequestId
   );
+  scheduleCalendarSync({ bookingIds: [parsed.data.bookingRequestId] });
   revalidatePath("/school");
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -4314,6 +4320,7 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
     "booking_session",
     parsed.data.bookingSessionId
   );
+  scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
   revalidatePath("/school");
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -4447,19 +4454,13 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     })
   ]);
 
-  const [
-    { data: school },
-    { data: contact }
-  ] = await Promise.all([
-    admin.from("schools").select("name, address").eq("id", session.school_id).maybeSingle(),
-    admin
-      .from("school_contacts")
-      .select("id, full_name, email")
-      .eq("school_id", session.school_id)
-      .order("is_primary", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  ]);
+  const { data: contact } = await admin
+    .from("school_contacts")
+    .select("id, full_name, email")
+    .eq("school_id", session.school_id)
+    .order("is_primary", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (contact?.id) {
     const { data: contactLinks } = await admin
@@ -4487,15 +4488,7 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     [session.id as string], parsed.data.decision === "approve" ? "rescheduled" : "reschedule_declined"));
 
   if (parsed.data.decision === "approve") {
-    void syncSessionToCalendar({
-      bookingSessionId: session.id as string,
-      title: `Esports Session - ${(school?.name as string | null) ?? "School"}`,
-      startsAt: finalStartsAt,
-      endsAt: finalEndsAt,
-      schoolName: (school?.name as string | null) ?? "School",
-      schoolAddress: (school?.address as string | null) ?? "",
-      ambassadorName: "Assigned ambassador"
-    }).catch(() => {});
+    scheduleCalendarSync({ sessionIds: [session.id as string] });
   }
 
   await logAuditEvent(
@@ -4504,6 +4497,9 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     "booking_session",
     parsed.data.bookingSessionId
   );
+  if (parsed.data.decision !== "approve") {
+    scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
+  }
   updateTag(AVAILABILITY_DATA_TAG);
   revalidatePath("/school");
   revalidatePath("/staff");
@@ -4679,6 +4675,7 @@ export async function resolveSessionWithdrawalAction(formData: FormData) {
       reason: "Ambassador withdrawal changed assignment coverage"
     });
   }
+  scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/ambassador");
@@ -4999,18 +4996,14 @@ export async function assignAmbassadorAction(formData: FormData) {
           ? `Online (video call)${sessionDelivery.meeting_url ? ` — ${sessionDelivery.meeting_url}` : " — link to follow"}`
           : (school.address as string | null) ?? "",
       presentationTitle: (presentation.title as string | null) ?? "Presentation",
-      bookingSessionId: parsed.data.bookingSessionId
+      bookingSessionId: parsed.data.bookingSessionId,
+      sessionStartsAt: session.starts_at as string,
+      sessionEndsAt: session.ends_at as string,
+      deliveryMode: sessionDelivery?.delivery_mode === "online" ? "online" : "in_person",
+      meetingUrl: (sessionDelivery?.meeting_url as string | null) ?? null
     }));
 
-    void syncSessionToCalendar({
-      bookingSessionId: parsed.data.bookingSessionId,
-      title: `Esports Session - ${(school.name as string | null) ?? "School"}`,
-      startsAt: session.starts_at as string,
-      endsAt: session.ends_at as string,
-      schoolName: (school.name as string | null) ?? "School",
-      schoolAddress: (school.address as string | null) ?? "",
-      ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador"
-    }).catch(() => {});
+    scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
   }
 
   if (ambassadorProfile?.user_id) {
@@ -5187,6 +5180,7 @@ export async function updateBookingStatusAction(formData: FormData) {
     "booking_request",
     parsed.data.bookingRequestId
   );
+  scheduleCalendarSync({ bookingIds: [parsed.data.bookingRequestId] });
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/school");
@@ -5203,6 +5197,7 @@ export async function bulkDeleteBookingsAction(formData: FormData) {
     redirect(appendSearchParam(returnTo, "error", "invalid-booking-deletion"));
   }
   const admin = getAdminClientOrThrow();
+  const calendarEventIds = await collectCalendarEventIdsForBookings(parsed.data).catch(() => []);
   // One DELETE keeps the selected batch atomic. Session dependencies cascade;
   // retained email/media records are detached by their SET NULL constraints.
   const { data, error } = await admin.from("booking_requests")
@@ -5214,6 +5209,7 @@ export async function bulkDeleteBookingsAction(formData: FormData) {
   for (const booking of data ?? []) {
     await logAuditEvent(actor.id, "booking.deleted", "booking_request", booking.id);
   }
+  scheduleOutlookEventRemoval(calendarEventIds);
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/school");
@@ -5334,6 +5330,7 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
       logAuditEvent(actor.id, "booking.status_updated", "booking_request", bookingRequestId)
     )
   );
+  scheduleCalendarSync({ bookingIds: parsed.data.bookingRequestIds });
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/school");
@@ -5541,6 +5538,22 @@ export async function createSessionTeamsLinkAction(
     updated: notified ? "teams-link-sent" : "teams-link",
     lobbyNote: !result.lobbyBypassed
   });
+}
+
+// Settings: pushes bookings into the schools@ Outlook calendar (past and
+// future, newest first), in batches so each press finishes quickly. Safe to
+// press repeatedly: existing events are updated, never duplicated.
+export async function syncCalendarNowAction() {
+  const actor = await requirePortalAccess("super_admin");
+  const result = await reconcileCalendar(80);
+  await logAuditEvent(actor.id, "settings.calendar_synced", "settings");
+
+  if (!result.configured) {
+    redirect("/admin/settings?calendarSync=unconfigured");
+  }
+
+  const { added, updated, removed, failed } = result.counts;
+  redirect(`/admin/settings?calendarSync=${added}-${updated}-${removed}-${failed}-${result.remaining}`);
 }
 
 // Settings: creates a throwaway Teams meeting on the shared calendar and then

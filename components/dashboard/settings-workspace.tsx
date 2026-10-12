@@ -50,7 +50,8 @@ export function SettingsWorkspace({
   returnTo,
   notice,
   canEditFinanceEmail,
-  testTeamsAction
+  testTeamsAction,
+  syncCalendarAction
 }: {
   settings: Array<{ key: string; value: string }>;
   action: (formData: FormData) => void | Promise<void>;
@@ -59,6 +60,8 @@ export function SettingsWorkspace({
   canEditFinanceEmail: boolean;
   // Super admins only: checks the Microsoft Teams connection.
   testTeamsAction?: () => void | Promise<void>;
+  // Super admins only: pushes bookings into the schools@ Outlook calendar.
+  syncCalendarAction?: () => void | Promise<void>;
 }) {
   const parsed = parseSettings(settings);
   const bookingDefaults = parsed.booking_defaults;
@@ -238,7 +241,7 @@ export function SettingsWorkspace({
         </div>
       </SettingsCard>
 
-      {testTeamsAction ? (
+      {testTeamsAction || syncCalendarAction ? (
         <Card className="rounded-[28px]">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -247,20 +250,32 @@ export function SettingsWorkspace({
               </span>
               <div className="flex items-center gap-2">
                 <p className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                  Microsoft Teams
+                  Microsoft 365
                 </p>
-                <InfoTooltip label="Microsoft Teams">
-                  Staff can create Teams links for online sessions from the booking details. This
-                  test creates a Teams meeting on the shared Microsoft calendar, checks a join link
-                  comes back, then deletes it.
+                <InfoTooltip label="Microsoft 365">
+                  Bookings are kept in the schools@esf.nz Outlook calendar automatically: pending ones
+                  show as tentative for follow-up, and cancelled ones are removed. &quot;Sync bookings
+                  to Outlook&quot; catches up every booking, past and future, in batches, and is safe to
+                  press again. &quot;Test Microsoft connection&quot; checks Teams links can be created.
                 </InfoTooltip>
               </div>
             </div>
-            <form action={testTeamsAction}>
-              <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Testing...">
-                Test Microsoft connection
-              </PendingSubmitButton>
-            </form>
+            <div className="flex flex-wrap gap-2">
+              {syncCalendarAction ? (
+                <form action={syncCalendarAction}>
+                  <PendingSubmitButton type="submit" pendingLabel="Syncing bookings...">
+                    Sync bookings to Outlook
+                  </PendingSubmitButton>
+                </form>
+              ) : null}
+              {testTeamsAction ? (
+                <form action={testTeamsAction}>
+                  <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Testing...">
+                    Test Microsoft connection
+                  </PendingSubmitButton>
+                </form>
+              ) : null}
+            </div>
           </div>
         </Card>
       ) : null}

@@ -8,6 +8,8 @@ type CalendarEventInput = {
   endsAt: string;
   description: string;
   location: string;
+  // How the event shows in Outlook; pending bookings show as tentative.
+  showAs?: "tentative" | "busy";
 };
 
 function toGraphNzDateTime(value: string) {
@@ -94,7 +96,8 @@ export async function syncOutlookCalendarEvent(
         },
         location: {
           displayName: input.location
-        }
+        },
+        ...(input.showAs ? { showAs: input.showAs } : {})
       })
     }
   );
