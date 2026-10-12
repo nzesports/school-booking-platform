@@ -11,7 +11,10 @@ import {
   getStaffPortalData as getLiveStaffPortalData
 } from "@/lib/services/portal";
 import type { BookingContactDefaults, BookingRequestInput } from "@/lib/domain/types";
-import { sendBookingRequestReceivedEmail } from "@/lib/services/email-triggers";
+import {
+  sendBookingRequestReceivedEmail,
+  sendStaffBookingRequestAlert
+} from "@/lib/services/email-triggers";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
 import { nzDateTimeToIso, slugify, titleCase } from "@/lib/utils";
@@ -218,6 +221,27 @@ export async function submitBookingRequest(input: BookingRequestInput) {
     referenceCode: (bookingRequest.reference_code as string | null) ?? undefined,
     contactPhone: input.contactPhone,
     schoolNotes: input.schoolNotes,
+    online: isOnline,
+    sessions: input.sessions.map((session, index) => ({
+      presentationTitle: presentations.get(session.presentationSlug)!.title as string,
+      regionName: isOnline
+        ? "Online (video call)"
+        : (regions.get(session.regionSlug)?.name as string | undefined) ?? titleCase(session.regionSlug),
+      startsAt: sessionRows[index].starts_at,
+      endsAt: sessionRows[index].ends_at,
+      yearLevels: session.yearLevels,
+      expectedStudentCount: session.expectedStudentCount
+    }))
+  }));
+  scheduleEmail(() => sendStaffBookingRequestAlert({
+    schoolName: input.schoolName,
+    contactName: input.contactName,
+    contactEmail: input.contactEmail,
+    contactPhone: input.contactPhone,
+    contactPosition: input.contactPosition,
+    schoolNotes: input.schoolNotes,
+    bookingId: bookingRequest.id as string,
+    referenceCode: (bookingRequest.reference_code as string | null) ?? undefined,
     online: isOnline,
     sessions: input.sessions.map((session, index) => ({
       presentationTitle: presentations.get(session.presentationSlug)!.title as string,

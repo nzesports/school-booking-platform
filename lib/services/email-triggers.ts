@@ -136,6 +136,45 @@ async function sendSchoolSessionEmail(
   });
 }
 
+// Alerts the team inbox (schools@esf.nz by default) when a school submits a
+// booking request, so new requests are seen without opening the dashboard.
+// Replies go straight to the school contact.
+export async function sendStaffBookingRequestAlert(opts: {
+  schoolName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  contactPosition?: string;
+  schoolNotes?: string;
+  bookingId: string;
+  referenceCode?: string;
+  online?: boolean;
+  sessions: BookingReceiptSession[];
+}) {
+  const bookingUrl = `${config.siteUrl}/admin/bookings?status=all&range=all&booking=${opts.bookingId}#booking-${opts.bookingId}`;
+  const reference = opts.referenceCode ?? opts.bookingId;
+  const summary = buildBookingReceipt({ ...opts, referenceCode: reference });
+  const sessionCount = opts.sessions.length;
+  const result = await sendTransactionalEmail({
+    bookingReference: opts.referenceCode,
+    bookingRequestId: opts.bookingId,
+    templateKey: "staff_booking_request_alert",
+    recipientEmail: config.brevoContactEmail,
+    replyTo: { email: opts.contactEmail, name: opts.contactName },
+    includeUnsubscribe: false,
+    subject: `New ${opts.online ? "online " : ""}booking request: ${opts.schoolName} (ref ${reference})`,
+    html: `
+      <p><strong>${escapeHtml(opts.schoolName)}</strong> has requested ${sessionCount} ${opts.online ? "online " : ""}${sessionCount === 1 ? "session" : "sessions"}. It's waiting for review as a tentative booking.</p>
+      <p><a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Open the booking</a></p>
+      <p>Contact: ${escapeHtml(opts.contactName)}${opts.contactPosition ? ` (${escapeHtml(opts.contactPosition)})` : ""} · ${escapeHtml(opts.contactEmail)} · ${escapeHtml(opts.contactPhone)}<br>Reply to this email to write to them directly.</p>
+      ${summary}
+    `
+  });
+
+  await logEmail(result, { bookingRequestId: opts.bookingId, recipientType: "staff" });
+  return result;
+}
+
 export async function sendBookingRequestReceivedEmail(opts: {
   contactEmail: string;
   contactName: string;
