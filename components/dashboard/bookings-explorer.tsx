@@ -43,7 +43,11 @@ import {
 } from "@/components/dashboard/booking-status-control";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import type { SessionDialogAction } from "@/components/dashboard/session-update-notices";
-import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
+import type {
+  BookingRequestView,
+  BookingSessionView,
+  SessionApplicant
+} from "@/lib/domain/types";
 import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
@@ -1480,7 +1484,7 @@ function AmbassadorSearchSelect({
   ambassadors: Array<{ id: string; name: string }>;
   session: Pick<BookingSessionView, "id" | "startsAt" | "endsAt">;
   schedule: AmbassadorSchedule;
-  applicants: Array<{ id: string; name: string }>;
+  applicants: SessionApplicant[];
   assignedId?: string;
   assignedName?: string;
 }) {
@@ -1673,6 +1677,14 @@ function AmbassadorSearchSelect({
                     >
                       <span className="grid min-w-0">
                         <span className="truncate font-medium">{applicant.name}</span>
+                        <span className="truncate text-xs text-[color:var(--text-soft)]">
+                          {applicant.deliveredSessions
+                            ? `${applicant.deliveredSessions} delivered`
+                            : "New ambassador"}
+                          {applicant.averageRating !== undefined
+                            ? ` · ★ ${applicant.averageRating.toFixed(1)}`
+                            : ""}
+                        </span>
                         {(() => {
                           const clash = findScheduleClash(schedule, applicant.id, session);
                           return clash ? <ClashNote clash={clash} /> : null;

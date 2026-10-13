@@ -38,7 +38,7 @@ import type {
   SessionActionState,
   SessionDialogAction
 } from "@/components/dashboard/session-update-notices";
-import type { BookingSessionView } from "@/lib/domain/types";
+import type { BookingSessionView, SessionApplicant } from "@/lib/domain/types";
 import { maximumBookingDate, minimumBookingDate } from "@/lib/services/availability";
 import {
   bookingCalendarDescription,
@@ -420,15 +420,25 @@ export function SessionDetailsButton({
                     Ambassador applications
                   </p>
                   {session.applicants?.length ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4 grid gap-2">
                       {session.applicants.map((applicant) => (
-                        <span
+                        <div
                           key={applicant.id}
-                          className="inline-flex min-h-[36px] items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3 text-sm font-semibold text-[color:var(--navy)]"
+                          className="rounded-[12px] border border-slate-200 bg-white px-3 py-2.5"
                         >
-                          <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
-                          {applicant.name}
-                        </span>
+                          <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-[#117a2e]" />
+                            {applicant.name}
+                          </p>
+                          <p className="mt-0.5 pl-6 text-xs text-[color:var(--text-soft)]">
+                            {applicantTrackRecord(applicant)}
+                          </p>
+                          {applicant.message ? (
+                            <p className="mt-1.5 whitespace-pre-wrap pl-6 text-sm leading-6 text-[color:var(--text-dark)]">
+                              {applicant.message}
+                            </p>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -1002,4 +1012,18 @@ function YahooLogo() {
       y!
     </span>
   );
+}
+
+function applicantTrackRecord(applicant: SessionApplicant) {
+  const delivered = applicant.deliveredSessions ?? 0;
+
+  if (delivered === 0) {
+    return "New ambassador · no sessions delivered yet";
+  }
+
+  const sessions = `${delivered} ${delivered === 1 ? "session" : "sessions"} delivered`;
+
+  return applicant.averageRating === undefined
+    ? sessions
+    : `${sessions} · ★ ${applicant.averageRating.toFixed(1)} (${applicant.reviewCount} ${applicant.reviewCount === 1 ? "review" : "reviews"})`;
 }

@@ -25,6 +25,7 @@ import {
 import { logoutAction } from "@/app/auth/actions";
 import {
   connectAmbassadorPortalAccountAction,
+  resendAmbassadorPortalInviteAction,
   createEmailTemplateAction,
   createTrainingPackAction,
   deleteAmbassadorRecordAction,
@@ -91,6 +92,7 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { loadAmbassadorNotes } from "@/lib/services/ambassador-notes";
+import { loadPortalLoginStatus } from "@/lib/services/portal-login-status";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
   buildFilteredDashboardData,
@@ -335,7 +337,13 @@ export default async function AdminPortalPage({
   const selectedAmbassador = route.startsWith("ambassadors/")
     ? portal.ambassadors.find((ambassador) => ambassador.id === route.replace("ambassadors/", ""))
     : null;
-  const ambassadorNotes = selectedAmbassador ? await loadAmbassadorNotes(selectedAmbassador.id) : [];
+  const [ambassadorNotes, ambassadorPortalLogin] = selectedAmbassador
+    ? await Promise.all([
+        loadAmbassadorNotes(selectedAmbassador.id),
+        selectedAmbassador.userId ? loadPortalLoginStatus(selectedAmbassador.userId) : null
+      ])
+    : [[], null];
+  const ambassadorInviteNotice = getAmbassadorInviteNotice(resolvedSearchParams);
   const ambassadorListHref = `/admin/ambassadors?status=${
     selectedAmbassador ? ambassadorListStatusFor(selectedAmbassador) : ambassadorListStatus
   }`;
@@ -617,6 +625,11 @@ export default async function AdminPortalPage({
 
         {selectedAmbassador ? (
           <div className="grid gap-5">
+            {ambassadorInviteNotice ? (
+              <NoticeBanner tone={ambassadorInviteNotice.tone}>
+                {ambassadorInviteNotice.message}
+              </NoticeBanner>
+            ) : null}
             <div>
               <ButtonLink
                 href={ambassadorListHref}
@@ -637,6 +650,8 @@ export default async function AdminPortalPage({
               activeSection={ambassadorSection}
               reviewAction={reviewAmbassadorAction}
               connectAction={connectAmbassadorPortalAccountAction}
+              resendInviteAction={resendAmbassadorPortalInviteAction}
+              portalLogin={ambassadorPortalLogin}
               deleteAction={deleteAmbassadorRecordAction}
               notes={ambassadorNotes}
               noteError={readSearchParam(resolvedSearchParams, "error")}
@@ -2683,4 +2698,32 @@ function Field({
       {children}
     </label>
   );
+}
+
+function getAmbassadorInviteNotice(searchParams: Record<string, string | string[] | undefined>) {
+  const error = readSearchParam(searchParams, "error");
+
+  if (readSearchParam(searchParams, "invite") === "resent") {
+    return {
+      tone: "success" as const,
+      message: "A fresh portal invite has been emailed. Older invite links no longer work."
+    };
+  }
+
+  if (readSearchParam(searchParams, "invite") === "password-link") {
+    return {
+      tone: "success" as const,
+      message:
+        "A password setup link has been emailed. They can use it to choose a password and sign in."
+    };
+  }
+
+  if (error === "ambassador-invite-failed") {
+    return {
+      tone: "error" as const,
+      message: "We couldn't resend the invite just now. Please try again shortly."
+    };
+  }
+
+  return null;
 }

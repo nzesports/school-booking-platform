@@ -203,6 +203,17 @@ export interface AmbassadorProfile {
   details?: AmbassadorProfileDetails;
 }
 
+// An ambassador's open application for a session, with their track record so
+// staff can choose between applicants.
+export type SessionApplicant = {
+  id: string;
+  name: string;
+  message?: string;
+  deliveredSessions?: number;
+  averageRating?: number;
+  reviewCount?: number;
+};
+
 export interface BookingSessionView {
   id: string;
   presentationTypeId?: string;
@@ -238,7 +249,7 @@ export interface BookingSessionView {
   reportStatus: ReportStatus;
   paymentStatus: PaymentStatus;
   myApplicationStatus?: string;
-  applicants?: Array<{ id: string; name: string }>;
+  applicants?: SessionApplicant[];
   bookingRequestId?: string;
   bookingStatus?: BookingStatus;
   withdrawalReason?: string;

@@ -20,6 +20,7 @@ import {
 import beroccaLogo from "@/public/media/berocca-logo.png";
 
 import type { BookingFormState } from "@/app/actions";
+import { BookingCoordinatorPanel } from "@/components/site/booking-coordinator-panel";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { BookingDatePicker, BookingTimeCombobox } from "@/components/site/booking-field-pickers";
 import type { HeroBookingDraftSession } from "@/components/site/hero-booking-modal";
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { MINIMUM_IN_PERSON_STUDENTS } from "@/lib/domain/booking-rules";
 import { isOtherRegionSlug, regionDisplayName } from "@/lib/domain/regions";
 import { cn } from "@/lib/utils";
 import type { BookingContactDefaults, PresentationType, Region } from "@/lib/domain/types";
@@ -49,6 +51,9 @@ import {
 } from "@/lib/services/time-slots";
 
 type BookingStep = "plan" | "review";
+// In-person requests start by confirming the group meets the student minimum;
+// smaller groups are sent to the Schools Coordinator enquiry instead.
+type ModalStep = BookingStep | "students" | "coordinator";
 
 export function BookingModalHost({
   request,
@@ -200,9 +205,10 @@ function BookingModalFlow({
       hasRegion(session)
   );
 
-  const [step, setStep] = useState<BookingStep>(
-    initialStep === "review" && !initialCanContinue ? "plan" : initialStep ?? "plan"
-  );
+  const resumeStep: BookingStep =
+    initialStep === "review" && !initialCanContinue ? "plan" : initialStep ?? "plan";
+  const [step, setStep] = useState<ModalStep>(isOnline ? resumeStep : "students");
+  const [coordinatorReturnStep, setCoordinatorReturnStep] = useState<ModalStep>("students");
   const [nextSessionNumber, setNextSessionNumber] = useState(initialDraftSessions.length + 1);
   const [sessions, setSessions] = useState<HeroBookingDraftSession[]>(initialDraftSessions);
   const [isReturningToDetails, setIsReturningToDetails] = useState(false);
@@ -260,6 +266,64 @@ function BookingModalFlow({
   }, []);
 
   const reviewSessions = normalizeSessions(sessions);
+  const totalStudents = reviewSessions.reduce(
+    (total, session) => total + session.expectedStudentCount,
+    0
+  );
+  const isBelowStudentMinimum =
+    !isOnline && totalStudents > 0 && totalStudents < MINIMUM_IN_PERSON_STUDENTS;
+  const sessionRegionName = (session: HeroBookingDraftSession) => {
+    const customRegion = session.customRegion?.trim() ?? "";
+
+    return isOtherRegionSlug(session.regionSlug) && customRegion
+      ? customRegion
+      : regions.find((item) => item.slug === session.regionSlug)?.name ?? "Selected region";
+  };
+  const openCoordinatorEnquiry = () => {
+    setCoordinatorReturnStep(step);
+    setStep("coordinator");
+  };
+  const coordinatorDefaults = {
+    name: contactDetails.contactName,
+    email: contactDetails.contactEmail,
+    school: contactDetails.schoolName,
+    phone: contactDetails.contactPhone,
+    subject: `Booking enquiry – fewer than ${MINIMUM_IN_PERSON_STUDENTS} students`,
+    message:
+      coordinatorReturnStep === "review"
+        ? [
+            `Hi, we'd like to book a presentation for a group of fewer than ${MINIMUM_IN_PERSON_STUDENTS} students.`,
+            "",
+            ...reviewSessions.map((session, index) => {
+              const title =
+                presentations.find((item) => item.slug === session.presentationSlug)?.title ??
+                "Presentation";
+              const when = [
+                formatDisplayDate(session.date),
+                session.startTime ? formatTimeLabel(session.startTime) : ""
+              ]
+                .filter(Boolean)
+                .join(" at ");
+              const students =
+                session.expectedStudentCount > 0
+                  ? `${session.expectedStudentCount} students`
+                  : "students to confirm";
+
+              return `Session ${index + 1}: ${title}, ${when}, ${sessionRegionName(session)} (${students})`;
+            }),
+            "",
+            "We'd love to talk about options for our group."
+          ].join("\n")
+        : [
+            `Hi, we'd like to book a presentation for a group of fewer than ${MINIMUM_IN_PERSON_STUDENTS} students.`,
+            "",
+            "Number of students: ",
+            "Year levels: ",
+            "Preferred dates: ",
+            "",
+            "We'd love to talk about options for our group."
+          ].join("\n")
+  };
   const canContinueToReview = sessions.every(
     (session) =>
       Boolean(session.presentationSlug) &&
@@ -271,27 +335,83 @@ function BookingModalFlow({
   return (
     <BookingDialogShell
       title={
-        step === "plan"
-          ? isOnline
-            ? "Book an online session"
-            : "Book your school presentation"
-          : "Review and send your booking request"
+        step === "students"
+          ? "Book your school presentation"
+          : step === "coordinator"
+            ? "Talk to our Schools Coordinator"
+            : step === "plan"
+              ? isOnline
+                ? "Book an online session"
+                : "Book your school presentation"
+              : "Review and send your booking request"
       }
       description={
-        step === "plan"
-          ? isOnline
-            ? "Online sessions are delivered by video call. We'll email you the link once your session is confirmed."
-            : undefined
-          : isOnline
-            ? "We'll check availability, confirm the session with your school and email you the video-call link."
-            : "We'll check availability and confirm the session details with your school before anything is final."
+        step === "students" || step === "coordinator"
+          ? undefined
+          : step === "plan"
+            ? isOnline
+              ? "Online sessions are delivered by video call. We'll email you the link once your session is confirmed."
+              : undefined
+            : isOnline
+              ? "We'll check availability, confirm the session with your school and email you the video-call link."
+              : "We'll check availability and confirm the session details with your school before anything is final."
       }
       onClose={onClose}
-      headerAside={<BookingStepProgress currentStep={step === "plan" ? 1 : 2} />}
+      headerAside={
+        step === "plan" || step === "review" ? (
+          <BookingStepProgress currentStep={step === "plan" ? 1 : 2} />
+        ) : undefined
+      }
       maxWidthClassName="max-w-[1480px]"
       overlayClassName="z-[60]"
     >
-      {step === "plan" ? (
+      {step === "students" ? (
+        <div className="mt-5 overflow-hidden rounded-[32px] border border-[rgba(164,202,227,0.48)] bg-[linear-gradient(180deg,rgba(248,252,255,0.96),rgba(255,255,255,0.98))] shadow-[0_30px_68px_rgba(11,24,77,0.12)]">
+          <div className="flex flex-col gap-6 px-5 py-6 md:px-7 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[rgba(164,202,227,0.28)] text-[color:var(--navy)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.62)]">
+                <UsersRound className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                  Is this booking for {MINIMUM_IN_PERSON_STUDENTS} or more students?
+                </p>
+                <p className="mt-2 max-w-2xl text-sm leading-7 text-[color:var(--text-soft)]">
+                  Our in-person presentations are designed for groups of{" "}
+                  {MINIMUM_IN_PERSON_STUDENTS} or more students. If your group is smaller, our
+                  Schools Coordinator can help you directly with a custom option.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={openCoordinatorEnquiry}
+                className="min-h-[54px] rounded-[18px] px-6 py-3 text-base"
+              >
+                No, fewer than {MINIMUM_IN_PERSON_STUDENTS}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => setStep(resumeStep)}
+                className="min-h-[54px] rounded-[18px] px-7 py-3 text-base"
+              >
+                Yes, {MINIMUM_IN_PERSON_STUDENTS}+ students
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : step === "coordinator" ? (
+        <BookingCoordinatorPanel
+          // Remount once saved school details arrive so they prefill the form.
+          key={contactDefaultsLoading ? "loading" : "ready"}
+          defaultValues={coordinatorDefaults}
+          onBack={() => setStep(coordinatorReturnStep)}
+        />
+      ) : step === "plan" ? (
         <div className="mt-5 overflow-hidden rounded-[32px] border border-[rgba(164,202,227,0.48)] bg-[linear-gradient(180deg,rgba(248,252,255,0.96),rgba(255,255,255,0.98))] shadow-[0_30px_68px_rgba(11,24,77,0.12)]">
           <div className="px-5 py-5 md:px-7 lg:px-8">
             <div className="grid gap-4">
@@ -630,11 +750,7 @@ function BookingModalFlow({
                   (item) => item.slug === session.presentationSlug
                 );
                 const customRegion = session.customRegion?.trim() ?? "";
-                const regionName =
-                  isOtherRegionSlug(session.regionSlug) && customRegion
-                    ? customRegion
-                    : regions.find((item) => item.slug === session.regionSlug)?.name ??
-                      "Selected region";
+                const regionName = sessionRegionName(session);
 
                 return (
                   <div
@@ -750,6 +866,33 @@ function BookingModalFlow({
                 );
               })}
             </div>
+
+            {isOnline ? null : (
+              <p className="mt-4 text-sm font-medium text-[color:var(--navy)]" aria-live="polite">
+                Total: {totalStudents} {totalStudents === 1 ? "student" : "students"}
+              </p>
+            )}
+
+            {isBelowStudentMinimum ? (
+              <div className="mt-4 flex flex-col gap-4 rounded-[20px] border border-[#f1d38a] bg-[#fffaeb] px-5 py-4 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm leading-6 text-[#7a4b00]">
+                  <span className="font-semibold">
+                    In-person presentations are for groups of {MINIMUM_IN_PERSON_STUDENTS} or more
+                    students.
+                  </span>{" "}
+                  For a smaller group, our Schools Coordinator can help you directly with a custom
+                  option.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openCoordinatorEnquiry}
+                  className="min-h-[46px] shrink-0 rounded-[16px] px-5 py-2.5 text-sm"
+                >
+                  Contact our Schools Coordinator
+                </Button>
+              </div>
+            ) : null}
           </section>
 
           <section className="mt-8">
@@ -828,7 +971,7 @@ function BookingModalFlow({
                 >
                   Back to booking
                 </Button>
-                <PendingSubmitButton type="submit" pendingLabel="Sending request..." className="min-h-[48px] rounded-[18px] px-6 py-2.5" disabled={contactDefaultsLoading}>
+                <PendingSubmitButton type="submit" pendingLabel="Sending request..." className="min-h-[48px] rounded-[18px] px-6 py-2.5" disabled={contactDefaultsLoading || isBelowStudentMinimum}>
                   <Send className="h-4 w-4" />
                   Send request
                 </PendingSubmitButton>

@@ -328,11 +328,17 @@ export default async function AmbassadorPortalPage({
               <form action={applyToSessionAction} className="mt-6 grid gap-4">
                 <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
                 <input type="hidden" name="returnTo" value="/ambassador/bookings?tab=applied" />
-                <Textarea
-                  name="message"
-                  placeholder="Share why you're a strong fit for this presentation."
-                  required
-                />
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[color:var(--navy)]">
+                    Anything we should know?{" "}
+                    <span className="font-normal text-[color:var(--text-soft)]">(optional)</span>
+                  </span>
+                  <Textarea
+                    name="message"
+                    maxLength={2000}
+                    placeholder="e.g. your availability on the day, travel plans, or experience with this presentation."
+                  />
+                </label>
                 <Button type="submit">Submit application</Button>
               </form>
             ) : (

@@ -25,6 +25,7 @@ export async function submitContactFormAction(
     name: formData.get("name"),
     email: formData.get("email"),
     school: formData.get("school") ?? "",
+    phone: String(formData.get("phone") || "") || undefined,
     subject: formData.get("subject"),
     message: formData.get("message")
   });

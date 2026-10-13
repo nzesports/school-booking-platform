@@ -8,7 +8,8 @@ import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   initialContactFormState,
-  type ContactFormState
+  type ContactFormState,
+  type ContactFormValues
 } from "@/lib/services/contact";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,19 @@ type ContactAction = (
   formData: FormData
 ) => Promise<ContactFormState>;
 
-export function ContactForm({ action }: { action: ContactAction }) {
+export function ContactForm({
+  action,
+  defaultValues,
+  idPrefix = "contact",
+  submitLabel = "Send message"
+}: {
+  action: ContactAction;
+  // Prefills the fields, e.g. with details a school already entered while booking.
+  defaultValues?: Partial<ContactFormValues>;
+  // Keeps ids unique when the form is rendered somewhere other than /contact.
+  idPrefix?: string;
+  submitLabel?: string;
+}) {
   const [state, formAction] = useActionState(action, initialContactFormState);
   const formRef = useRef<HTMLFormElement>(null);
   const formStartedAtRef = useRef<HTMLInputElement>(null);
@@ -56,86 +69,111 @@ export function ContactForm({ action }: { action: ContactAction }) {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <ContactField
-          id="contact-name"
+          id={`${idPrefix}-name`}
           label="Your name"
           error={state.fieldErrors?.name?.[0]}
         >
           <Input
-            id="contact-name"
+            id={`${idPrefix}-name`}
             name="name"
+            defaultValue={defaultValues?.name}
             autoComplete="name"
             required
             maxLength={80}
             aria-invalid={Boolean(state.fieldErrors?.name)}
-            aria-describedby={state.fieldErrors?.name ? "contact-name-error" : undefined}
+            aria-describedby={state.fieldErrors?.name ? `${idPrefix}-name-error` : undefined}
           />
         </ContactField>
 
         <ContactField
-          id="contact-email"
+          id={`${idPrefix}-email`}
           label="Email address"
           error={state.fieldErrors?.email?.[0]}
         >
           <Input
-            id="contact-email"
+            id={`${idPrefix}-email`}
             name="email"
+            defaultValue={defaultValues?.email}
             type="email"
             autoComplete="email"
             inputMode="email"
             required
             maxLength={254}
             aria-invalid={Boolean(state.fieldErrors?.email)}
-            aria-describedby={state.fieldErrors?.email ? "contact-email-error" : undefined}
+            aria-describedby={state.fieldErrors?.email ? `${idPrefix}-email-error` : undefined}
+          />
+        </ContactField>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <ContactField
+          id={`${idPrefix}-school`}
+          label="School or organisation"
+          error={state.fieldErrors?.school?.[0]}
+        >
+          <Input
+            id={`${idPrefix}-school`}
+            name="school"
+            defaultValue={defaultValues?.school}
+            autoComplete="organization"
+            required
+            maxLength={120}
+            aria-invalid={Boolean(state.fieldErrors?.school)}
+            aria-describedby={state.fieldErrors?.school ? `${idPrefix}-school-error` : undefined}
+          />
+        </ContactField>
+
+        <ContactField
+          id={`${idPrefix}-phone`}
+          label="Phone (optional)"
+          optional
+          error={state.fieldErrors?.phone?.[0]}
+        >
+          <Input
+            id={`${idPrefix}-phone`}
+            name="phone"
+            type="tel"
+            defaultValue={defaultValues?.phone}
+            autoComplete="tel"
+            maxLength={50}
+            aria-invalid={Boolean(state.fieldErrors?.phone)}
+            aria-describedby={state.fieldErrors?.phone ? `${idPrefix}-phone-error` : undefined}
           />
         </ContactField>
       </div>
 
       <ContactField
-        id="contact-school"
-        label="School or organisation"
-        error={state.fieldErrors?.school?.[0]}
-      >
-        <Input
-          id="contact-school"
-          name="school"
-          autoComplete="organization"
-          required
-          maxLength={120}
-          aria-invalid={Boolean(state.fieldErrors?.school)}
-          aria-describedby={state.fieldErrors?.school ? "contact-school-error" : undefined}
-        />
-      </ContactField>
-
-      <ContactField
-        id="contact-subject"
+        id={`${idPrefix}-subject`}
         label="Subject"
         error={state.fieldErrors?.subject?.[0]}
       >
         <Input
-          id="contact-subject"
+          id={`${idPrefix}-subject`}
           name="subject"
+          defaultValue={defaultValues?.subject}
           required
           maxLength={120}
           aria-invalid={Boolean(state.fieldErrors?.subject)}
-          aria-describedby={state.fieldErrors?.subject ? "contact-subject-error" : undefined}
+          aria-describedby={state.fieldErrors?.subject ? `${idPrefix}-subject-error` : undefined}
         />
       </ContactField>
 
       <ContactField
-        id="contact-message"
+        id={`${idPrefix}-message`}
         label="How can we help?"
         error={state.fieldErrors?.message?.[0]}
       >
         <Textarea
-          id="contact-message"
+          id={`${idPrefix}-message`}
           name="message"
+          defaultValue={defaultValues?.message}
           required
           minLength={10}
           maxLength={5000}
           rows={8}
           className="min-h-48 resize-y"
           aria-invalid={Boolean(state.fieldErrors?.message)}
-          aria-describedby={state.fieldErrors?.message ? "contact-message-error" : undefined}
+          aria-describedby={state.fieldErrors?.message ? `${idPrefix}-message-error` : undefined}
         />
       </ContactField>
 
@@ -160,7 +198,7 @@ export function ContactForm({ action }: { action: ContactAction }) {
           pendingLabel="Sending message..."
           className="min-h-[48px] rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_12px_28px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
         >
-          Send message
+          {submitLabel}
           <Send className="h-4 w-4" aria-hidden="true" />
         </PendingSubmitButton>
       </div>
@@ -171,11 +209,13 @@ export function ContactForm({ action }: { action: ContactAction }) {
 function ContactField({
   id,
   label,
+  optional = false,
   error,
   children
 }: {
   id: string;
   label: string;
+  optional?: boolean;
   error?: string;
   children: ReactNode;
 }) {
@@ -185,10 +225,14 @@ function ContactField({
         <label htmlFor={id} className="text-sm font-semibold text-[color:var(--navy)]">
           {label}
         </label>
-        <span className="font-bold text-[#c7352c]" aria-hidden="true">
-          *
-        </span>
-        <span className="sr-only">Required</span>
+        {optional ? null : (
+          <>
+            <span className="font-bold text-[#c7352c]" aria-hidden="true">
+              *
+            </span>
+            <span className="sr-only">Required</span>
+          </>
+        )}
       </div>
       {children}
       {error ? (

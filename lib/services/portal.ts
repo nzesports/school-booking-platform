@@ -30,6 +30,7 @@ import type {
   Role,
   School,
   SchoolFeedbackSummary,
+  SessionApplicant,
   TrainingModule,
   UserSummary
 } from "@/lib/domain/types";
@@ -39,7 +40,7 @@ import { loadSessionRescheduleHistory } from "@/lib/services/session-change-hist
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isFutureSession } from "@/lib/services/dashboard-insights";
+import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
 
@@ -333,7 +334,7 @@ async function loadPlatformDataUncached() {
     fetchAllRows("booking_session_applications", (from, to) =>
       admin
         .from("booking_session_applications")
-        .select("id, booking_session_id, ambassador_profile_id, status")
+        .select("id, booking_session_id, ambassador_profile_id, status, message")
         .order("id", { ascending: true })
         .range(from, to)
     ),
@@ -606,7 +607,7 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
   } = buildLookups(data);
 
   const sessionsByBookingId = new Map<string, BookingSessionView[]>();
-  const applicantsBySessionId = new Map<string, Array<{ id: string; name: string }>>();
+  const applicantsBySessionId = new Map<string, SessionApplicant[]>();
   const reportedAttendanceBySessionId = new Map(
     data.reports
       .filter((report) => Boolean(report.booking_session_id))
@@ -636,7 +637,8 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
         name:
           (user?.full_name as string | undefined) ??
           (ambassadorProfile.display_name as string | null) ??
-          "Ambassador"
+          "Ambassador",
+        message: (application.message as string | null)?.trim() || undefined
       }
     ]);
   }
@@ -1054,6 +1056,67 @@ function mapSchoolReviews(data: NonNullable<RawPlatformData>) {
   });
 }
 
+// Adds each applicant's delivered sessions and average school rating, using
+// the same delivered rule as the ambassador roster.
+function withApplicantTrackRecords(
+  bookings: BookingRequestView[],
+  schoolReviews: SchoolFeedbackSummary[]
+) {
+  const sessions = bookings.flatMap((booking) => booking.sessions);
+  const ratingsBySessionId = new Map<string, number[]>();
+
+  for (const review of schoolReviews) {
+    if (review.bookingSessionId && typeof review.rating === "number") {
+      ratingsBySessionId.set(review.bookingSessionId, [
+        ...(ratingsBySessionId.get(review.bookingSessionId) ?? []),
+        review.rating
+      ]);
+    }
+  }
+
+  const trackRecords = new Map<string, { deliveredSessions: number; ratings: number[] }>();
+  const now = new Date();
+
+  for (const session of sessions) {
+    if (!session.assignedAmbassadorId || !isDeliveredSession(session, now)) {
+      continue;
+    }
+
+    const record = trackRecords.get(session.assignedAmbassadorId) ?? {
+      deliveredSessions: 0,
+      ratings: []
+    };
+    record.deliveredSessions += 1;
+    record.ratings.push(...(ratingsBySessionId.get(session.id) ?? []));
+    trackRecords.set(session.assignedAmbassadorId, record);
+  }
+
+  return bookings.map((booking) => ({
+    ...booking,
+    sessions: booking.sessions.map((session) =>
+      session.applicants?.length
+        ? {
+            ...session,
+            applicants: session.applicants.map((applicant) => {
+              const record = trackRecords.get(applicant.id);
+              const ratings = record?.ratings ?? [];
+
+              return {
+                ...applicant,
+                deliveredSessions: record?.deliveredSessions ?? 0,
+                averageRating:
+                  ratings.length > 0
+                    ? ratings.reduce((total, rating) => total + rating, 0) / ratings.length
+                    : undefined,
+                reviewCount: ratings.length
+              };
+            })
+          }
+        : session
+    )
+  }));
+}
+
 function mapPayments(data: NonNullable<RawPlatformData>) {
   const { profilesById, ambassadorProfilesById } = buildLookups(data);
 
@@ -1335,11 +1398,11 @@ export async function getStaffPortalData(userId?: string): Promise<StaffPortalDa
     };
   }
 
-  const bookings = mapBookingRequests(data);
+  const schoolReviews = mapSchoolReviews(data);
+  const bookings = withApplicantTrackRecords(mapBookingRequests(data), schoolReviews);
   const schools = mapSchools(data);
   const ambassadors = mapAmbassadors(data);
   const reports = mapReports(data);
-  const schoolReviews = mapSchoolReviews(data);
   const payments = mapPayments(data);
   const resources = await mapResources(data);
   const activityLogs = mapActivityLogs(data);
@@ -1448,7 +1511,8 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
     };
   }
 
-  const bookings = mapBookingRequests(data);
+  const schoolReviews = mapSchoolReviews(data);
+  const bookings = withApplicantTrackRecords(mapBookingRequests(data), schoolReviews);
   const schools = mapSchools(data);
   const ambassadors = mapAmbassadors(data);
   const presentations = mapPresentations(data);
@@ -1464,7 +1528,6 @@ export async function getAdminPortalData(userId?: string): Promise<AdminPortalDa
   const emailTemplates = mapEmailTemplates(data);
   const auditLogs = mapAuditLogs(data);
   const reports = mapReports(data);
-  const schoolReviews = mapSchoolReviews(data);
   const upcomingSessions = bookings
     .flatMap((booking) => booking.sessions)
     .filter((session) => isFutureSession(session))

@@ -112,11 +112,17 @@ export function AmbassadorOpenSessionDialog({
                 <form action={action} className="mt-6 grid gap-4">
                   <input type="hidden" name="bookingSessionId" value={session.id} />
                   <input type="hidden" name="returnTo" value={returnTo} />
-                  <Textarea
-                    name="message"
-                    placeholder="Share why you're a strong fit for this presentation."
-                    required
-                  />
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[color:var(--navy)]">
+                      Anything we should know?{" "}
+                      <span className="font-normal text-[color:var(--text-soft)]">(optional)</span>
+                    </span>
+                    <Textarea
+                      name="message"
+                      maxLength={2000}
+                      placeholder="e.g. your availability on the day, travel plans, or experience with this presentation."
+                    />
+                  </label>
                   <div className="flex flex-wrap justify-end gap-3">
                     <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                       Cancel

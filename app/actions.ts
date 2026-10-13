@@ -4,6 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { MINIMUM_IN_PERSON_STUDENTS } from "@/lib/domain/booking-rules";
 import { safeLocalPath } from "@/lib/safe-redirect";
 import { AVAILABILITY_DATA_TAG, PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
@@ -172,6 +173,16 @@ async function handleBookingSubmission(
     (!parsed.data.regionSlug || parsed.data.sessions.some((session) => !session.regionSlug))
   ) {
     return { error: "Please review every session detail before sending your request." };
+  }
+
+  if (
+    !isOnline &&
+    parsed.data.sessions.reduce((total, session) => total + session.expectedStudentCount, 0) <
+      MINIMUM_IN_PERSON_STUDENTS
+  ) {
+    return {
+      error: `In-person presentations are for groups of ${MINIMUM_IN_PERSON_STUDENTS} or more students. For smaller groups, please contact our Schools Coordinator, who can help with a custom option.`
+    };
   }
 
   // Every submission emails the address given, so cap how often one visitor

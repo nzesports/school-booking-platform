@@ -16,6 +16,7 @@ import {
   MapPin,
   Phone,
   Plane,
+  RotateCw,
   Search,
   Star,
   UserPlus,
@@ -28,6 +29,7 @@ import { AmbassadorDeleteDialog } from "@/components/dashboard/ambassador-delete
 import { AmbassadorNotesPanel } from "@/components/dashboard/ambassador-notes-panel";
 import { AmbassadorProfileTabs } from "@/components/dashboard/ambassador-profile-tabs";
 import type { AmbassadorNote } from "@/lib/services/ambassador-notes";
+import type { PortalLoginStatus } from "@/lib/services/portal-login-status";
 import { isDeliveredSession } from "@/lib/services/dashboard-insights";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
@@ -82,6 +84,9 @@ type ProfileProps = Omit<WorkspaceProps, "ambassadors" | "status" | "query" | "s
   activeSection: AmbassadorProfileSection;
   reviewAction: (formData: FormData) => void | Promise<void>;
   connectAction: (formData: FormData) => void | Promise<void>;
+  resendInviteAction: (formData: FormData) => void | Promise<void>;
+  // Whether a connected login has accepted its invite; null if unknown.
+  portalLogin?: PortalLoginStatus | null;
   deleteAction: (formData: FormData) => void | Promise<void>;
   // Staff-only discussion notes (see ambassador-notes-panel).
   notes: AmbassadorNote[];
@@ -670,6 +675,8 @@ export function AmbassadorProfileWorkspace({
   activeSection,
   reviewAction,
   connectAction,
+  resendInviteAction,
+  portalLogin,
   deleteAction,
   notes,
   noteError,
@@ -679,6 +686,7 @@ export function AmbassadorProfileWorkspace({
   deleteNoteAction
 }: ProfileProps) {
   const isApplication = ambassador.status === "applied" || ambassador.status === "declined";
+  const invitePending = Boolean(ambassador.userId) && portalLogin?.state === "pending";
   const allSessions = bookings.flatMap((booking) => booking.sessions);
   const sessionsById = new Map(allSessions.map((session) => [session.id, session]));
   const deliveredSessions = allSessions
@@ -774,8 +782,12 @@ export function AmbassadorProfileWorkspace({
                   <MetaChip icon={Plane}>{travelLabel(ambassador)}</MetaChip>
                   {!isApplication ? (
                     <>
-                      <MetaChip icon={KeyRound} tone={ambassador.userId ? "good" : "warn"}>
-                        {ambassador.userId ? "Portal connected" : "No portal account"}
+                      <MetaChip icon={KeyRound} tone={ambassador.userId && !invitePending ? "good" : "warn"}>
+                        {invitePending
+                          ? "Invite pending"
+                          : ambassador.userId
+                            ? "Portal connected"
+                            : "No portal account"}
                       </MetaChip>
                       {ambassador.userId ? (
                         <MetaChip icon={Signature} tone={materialsSignedAt ? "good" : "warn"}>
@@ -885,9 +897,27 @@ export function AmbassadorProfileWorkspace({
                 {!isApplication ? (
                   <InfoGroup icon={KeyRound} title="Account">
                     <InfoLine label="Portal login">
-                      <StatusChip tone={ambassador.userId ? "good" : "neutral"}>
-                        {ambassador.userId ? "Connected" : "Not connected"}
-                      </StatusChip>
+                      {invitePending ? (
+                        <span className="grid gap-0.5">
+                          <StatusChip tone="warn">Invite pending</StatusChip>
+                          {portalLogin?.invitedAt ? (
+                            <span className="text-xs text-[color:var(--text-soft)]">
+                              Last sent {formatDate(portalLogin.invitedAt)}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : ambassador.userId ? (
+                        <span className="grid gap-0.5">
+                          <StatusChip tone="good">Connected</StatusChip>
+                          {portalLogin?.lastSignInAt ? (
+                            <span className="text-xs text-[color:var(--text-soft)]">
+                              Last sign-in {formatDate(portalLogin.lastSignInAt)}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <StatusChip tone="neutral">Not connected</StatusChip>
+                      )}
                     </InfoLine>
                     <InfoLine
                       label="Materials agreement"
@@ -1029,6 +1059,39 @@ export function AmbassadorProfileWorkspace({
                       className="mt-3 min-h-[46px] w-full rounded-[14px]"
                     >
                       Invite and connect profile
+                    </PendingSubmitButton>
+                  </form>
+                ) : null}
+                {!isApplication && ambassador.userId ? (
+                  <form
+                    action={resendInviteAction}
+                    className="rounded-[20px] border border-[color:var(--border-soft)] bg-[#f7fafc] p-4"
+                  >
+                    <input type="hidden" name="ambassadorProfileId" value={ambassador.id} />
+                    <input type="hidden" name="returnTo" value={`${profileHref}?section=overview`} />
+                    <div className="flex items-center gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#e8f3fa] text-[color:var(--navy)]">
+                        <Mail className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-[color:var(--navy)]">
+                          {invitePending ? "Portal invite not accepted yet" : "Trouble signing in?"}
+                        </p>
+                        <p className="mt-0.5 text-xs leading-5 text-[color:var(--text-soft)]">
+                          {invitePending
+                            ? `Invite links expire. Send a fresh one to ${ambassador.email ?? "their email"}.`
+                            : "Email them a link to choose a password, e.g. if their invite link was used up or they've forgotten it."}
+                        </p>
+                      </div>
+                    </div>
+                    <PendingSubmitButton
+                      type="submit"
+                      variant={invitePending ? "primary" : "secondary"}
+                      pendingLabel={invitePending ? "Resending invite..." : "Sending link..."}
+                      className="mt-3 min-h-[46px] w-full rounded-[14px]"
+                    >
+                      <RotateCw className="h-4 w-4" aria-hidden="true" />
+                      {invitePending ? "Resend portal invite" : "Send password setup link"}
                     </PendingSubmitButton>
                   </form>
                 ) : null}

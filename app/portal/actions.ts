@@ -131,6 +131,11 @@ const ambassadorPortalConnectSchema = z.object({
   returnTo: z.string().min(1).default("/staff/ambassadors")
 });
 
+const ambassadorInviteResendSchema = z.object({
+  ambassadorProfileId: z.uuid(),
+  returnTo: z.string().min(1).default("/staff/ambassadors")
+});
+
 const manualSchoolSchema = z.object({
   name: z.string().min(2),
   regionId: z.string().optional(),
@@ -334,7 +339,7 @@ const staffFeedbackSubmitSchema = z
 
 const sessionApplicationSchema = z.object({
   bookingSessionId: z.uuid(),
-  message: z.string().optional(),
+  message: z.string().trim().max(2000).optional(),
   returnTo: z.string().min(1).default("/ambassador/open-bookings")
 });
 
@@ -1640,6 +1645,73 @@ export async function connectAmbassadorPortalAccountAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/ambassador");
   redirect(appendSearchParam(parsed.data.returnTo, "connected", "platform"));
+}
+
+// Emails an ambassador a fresh way into their portal login: a new invite if
+// they never accepted (e.g. the link expired), otherwise a password setup
+// link (e.g. an email scanner used up the invite, or they forgot it).
+export async function resendAmbassadorPortalInviteAction(formData: FormData) {
+  const actor = await requirePortalAccess("staff");
+  const fallbackReturnTo = sanitizeReturnTo(
+    String(formData.get("returnTo") || "/staff/ambassadors"),
+    "/staff/ambassadors"
+  );
+  const parsed = ambassadorInviteResendSchema.safeParse({
+    ambassadorProfileId: String(formData.get("ambassadorProfileId") || ""),
+    returnTo: fallbackReturnTo
+  });
+
+  if (!parsed.success) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "ambassador-invite-failed"));
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: ambassador } = await admin
+    .from("ambassador_profiles")
+    .select("id, user_id, deleted_at")
+    .eq("id", parsed.data.ambassadorProfileId)
+    .maybeSingle();
+
+  if (!ambassador || ambassador.deleted_at || !ambassador.user_id) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
+  }
+
+  const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(
+    ambassador.user_id as string
+  );
+
+  if (authUserError || !authUser.user?.email) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-invite-failed"));
+  }
+
+  const alreadyAccepted = Boolean(authUser.user.email_confirmed_at);
+  // Supabase re-sends the invite for an existing, unconfirmed user and
+  // replaces the previous link. It refuses to re-invite a confirmed user, so
+  // they get a password reset link instead, which works the same way.
+  const { error: sendError } = alreadyAccepted
+    ? await admin.auth.resetPasswordForEmail(authUser.user.email, {
+        redirectTo: buildAuthConfirmUrl("/reset-password")
+      })
+    : await admin.auth.admin.inviteUserByEmail(authUser.user.email, {
+        data: authUser.user.user_metadata,
+        redirectTo: buildAuthConfirmUrl("/reset-password")
+      });
+
+  if (sendError) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-invite-failed"));
+  }
+
+  await logAuditEvent(
+    actor.id,
+    alreadyAccepted ? "ambassador.password_link_sent" : "ambassador.invite_resent",
+    "ambassador_profile",
+    ambassador.id as string
+  );
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  redirect(
+    appendSearchParam(parsed.data.returnTo, "invite", alreadyAccepted ? "password-link" : "resent")
+  );
 }
 
 export async function deleteAmbassadorRecordAction(formData: FormData) {

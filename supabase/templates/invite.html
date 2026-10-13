@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>You've been invited</title>
+  </head>
+
+  <body style="margin:0; padding:0; background:#eef8fb; font-family:Arial, Helvetica, sans-serif; color:#040F4B;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      You've been invited to create an account.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:linear-gradient(135deg,#edfafa 0%,#e9f5fb 45%,#f7fbff 100%); padding:40px 16px;">
+      <tr>
+        <td align="center">
+
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px; background:#ffffff; border-radius:24px; overflow:hidden; border:1px solid #dcebf3;">
+
+            <!-- Header -->
+            <tr>
+              <td align="center" style="padding:42px 32px 22px 32px; text-align:center;">
+
+                <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto;">
+                  <tr>
+                    <td align="center" style="text-align:center; padding:0 0 26px 0;">
+                      <a href="https://www.nzesports.org.nz/" style="display:inline-block; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/brand%20logos/NZ%20Esports_Logo_Black.png"
+                          alt="NZ Esports"
+                          width="155"
+                          style="display:block; width:155px; max-width:155px; height:auto; border:0; margin:0 auto;"
+                        >
+                      </a>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td align="center" style="text-align:center;">
+                      <div style="display:inline-block; padding:14px 28px; background:#e9f8ef; color:#13a64a; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:3px; text-transform:uppercase;">
+                        School Presentations
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+              </td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td align="center" style="padding:8px 40px 40px 40px; text-align:center;">
+                <h1 style="margin:0 0 16px 0; font-size:32px; line-height:1.2; color:#040F4B; font-weight:700;">
+                  You've been invited
+                </h1>
+
+                <p style="margin:0 auto 28px auto; max-width:460px; font-size:16px; line-height:1.7; color:#54647a;">
+                  You've been invited to create an account. Follow the button below to accept your invitation.
+                </p>
+
+                <a
+                  href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=invite&amp;next=/reset-password"
+                  style="display:inline-block; background:#AFD5ED; color:#040F4B; text-decoration:none; font-size:16px; font-weight:700; padding:15px 26px; border-radius:14px; border:1px solid #9dc7e3;"
+                >
+                  Accept invitation
+                </a>
+
+                <p style="margin:26px auto 0 auto; max-width:460px; font-size:13px; line-height:1.6; color:#7a8798;">
+                  If the button does not work, copy and paste this link into your browser:
+                </p>
+
+                <p style="margin:8px auto 0 auto; max-width:460px; font-size:12px; line-height:1.6; color:#7a8798; word-break:break-all;">
+                  {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=invite&amp;next=/reset-password
+                </p>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td align="center" style="background:#f6fbfd; padding:36px 32px; text-align:center; border-top:1px solid #dcebf3;">
+
+                <a href="https://www.nzesports.org.nz/" style="display:inline-block; text-decoration:none;">
+                  <img
+                    src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/brand%20logos/NZ%20Esports_Logo_Black.png"
+                    alt="NZ Esports"
+                    width="135"
+                    style="display:block; margin:0 auto 24px auto; width:135px; max-width:135px; height:auto; border:0;"
+                  >
+                </a>
+
+                <!-- Social icons -->
+                <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto 26px auto;">
+                  <tr>
+                    <td style="padding:0 6px;">
+                      <a href="https://www.facebook.com/nzesports" style="display:block; width:38px; height:38px; border-radius:50%; background:#e9f2f8; text-align:center; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/social%20icons/facebook.png"
+                          alt="Facebook"
+                          width="18"
+                          style="display:inline-block; width:18px; max-width:18px; height:auto; margin-top:10px; border:0;"
+                        >
+                      </a>
+                    </td>
+
+                    <td style="padding:0 6px;">
+                      <a href="https://www.instagram.com/nzesports" style="display:block; width:38px; height:38px; border-radius:50%; background:#e9f2f8; text-align:center; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/social%20icons/instagram.png"
+                          alt="Instagram"
+                          width="18"
+                          style="display:inline-block; width:18px; max-width:18px; height:auto; margin-top:10px; border:0;"
+                        >
+                      </a>
+                    </td>
+
+                    <td style="padding:0 6px;">
+                      <a href="https://www.linkedin.com/company/nzesports" style="display:block; width:38px; height:38px; border-radius:50%; background:#e9f2f8; text-align:center; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/social%20icons/linkedin.png"
+                          alt="LinkedIn"
+                          width="18"
+                          style="display:inline-block; width:18px; max-width:18px; height:auto; margin-top:10px; border:0;"
+                        >
+                      </a>
+                    </td>
+
+                    <td style="padding:0 6px;">
+                      <a href="https://www.tiktok.com/@nzesports" style="display:block; width:38px; height:38px; border-radius:50%; background:#e9f2f8; text-align:center; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/social%20icons/tiktok.png"
+                          alt="TikTok"
+                          width="18"
+                          style="display:inline-block; width:18px; max-width:18px; height:auto; margin-top:10px; border:0;"
+                        >
+                      </a>
+                    </td>
+
+                    <td style="padding:0 6px;">
+                      <a href="https://www.youtube.com/@nzesports" style="display:block; width:38px; height:38px; border-radius:50%; background:#e9f2f8; text-align:center; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/social%20icons/youtube.png"
+                          alt="YouTube"
+                          width="18"
+                          style="display:inline-block; width:18px; max-width:18px; height:auto; margin-top:10px; border:0;"
+                        >
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Berocca partner block -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto 26px auto; max-width:420px; background:#ffffff; border:1px solid #dcebf3; border-radius:18px;">
+                  <tr>
+                    <td align="center" style="padding:20px 20px; text-align:center;">
+                      <p style="margin:0 0 14px 0; font-size:12px; line-height:1.5; color:#7a8798; letter-spacing:1px; text-transform:uppercase; font-weight:700;">
+                        School presentations are brought to you by
+                      </p>
+
+                      <a href="https://www.berocca.co.nz/" style="display:inline-block; text-decoration:none;">
+                        <img
+                          src="https://yrzwujybvomjvehqvpvm.supabase.co/storage/v1/object/public/public-assets/brand%20logos/Berocca%20Logo_LARGE.png"
+                          alt="Berocca"
+                          width="130"
+                          style="display:block; margin:0 auto; width:130px; max-width:130px; height:auto; border:0;"
+                        >
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 auto 8px auto; max-width:500px; font-size:12px; line-height:1.6; color:#7a8798; text-align:center;">
+                  Helping schools build healthier, more supportive conversations around gaming and esports.
+                </p>
+
+                <p style="margin:0 auto; max-width:500px; font-size:12px; line-height:1.6; color:#7a8798; text-align:center;">
+                  © 2026
+                  <a href="https://www.nzesports.org.nz/" style="color:#040F4B; text-decoration:none; font-weight:700;">
+                    NZ Esports
+                  </a>.
+                  All rights reserved.
+                </p>
+
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

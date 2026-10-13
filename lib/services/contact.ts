@@ -15,6 +15,12 @@ export const contactFormSchema = z.object({
     .trim()
     .min(2, "Enter your school or organisation.")
     .max(120, "Keep the school or organisation under 120 characters."),
+  phone: z
+    .string()
+    .trim()
+    .max(50, "Keep the phone number under 50 characters.")
+    .regex(/^[^\r\n]*$/, "Enter the phone number on one line.")
+    .optional(),
   subject: z
     .string()
     .trim()
@@ -62,6 +68,7 @@ export function buildContactEmailHtml(values: ContactFormValues) {
     <p style="margin:0 0 8px;"><strong>From:</strong> ${escapeHtml(values.name)}</p>
     <p style="margin:0 0 8px;"><strong>Email:</strong> ${escapeHtml(values.email)}</p>
     <p style="margin:0 0 8px;"><strong>School or organisation:</strong> ${escapeHtml(values.school)}</p>
+    ${values.phone ? `<p style="margin:0 0 8px;"><strong>Phone:</strong> ${escapeHtml(values.phone)}</p>` : ""}
     <p style="margin:0 0 8px;"><strong>Subject:</strong> ${escapeHtml(values.subject)}</p>
     <div style="margin-top:24px;padding:20px;border-radius:16px;background:#f6fbfd;line-height:1.7;">${message}</div>
   `.trim();
