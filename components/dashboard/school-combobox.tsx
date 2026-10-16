@@ -6,7 +6,7 @@ import { Select } from "@/components/ui/select";
 import type { Region, School } from "@/lib/domain/types";
 
 const inputClassName =
-  "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm text-[color:var(--text-dark)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]";
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase();

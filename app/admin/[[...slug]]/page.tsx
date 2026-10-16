@@ -783,7 +783,7 @@ export default async function AdminPortalPage({
                     <input
                       name="fullName"
                       required
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="Jordan Lee"
                     />
                   </Field>
@@ -792,7 +792,7 @@ export default async function AdminPortalPage({
                       name="email"
                       type="email"
                       required
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="jordan@example.com"
                     />
                   </Field>
@@ -800,7 +800,7 @@ export default async function AdminPortalPage({
                     <select
                       name="role"
                       defaultValue="staff"
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     >
                       <option value="staff">Staff</option>
                       <option value="super_admin">Super admin</option>
@@ -811,7 +811,7 @@ export default async function AdminPortalPage({
                     <select
                       name="regionSlug"
                       defaultValue=""
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     >
                       <option value="">Select region</option>
                       {portal.regions
@@ -928,7 +928,7 @@ export default async function AdminPortalPage({
                               ? "At least one active super admin is required."
                               : undefined
                           }
-                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
+                          className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
                         >
                           <option value="staff">Staff</option>
                           <option value="super_admin">Super admin</option>
@@ -950,7 +950,7 @@ export default async function AdminPortalPage({
                               ? "At least one active super admin is required."
                               : undefined
                           }
-                          className="w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3 py-2.5 text-sm disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
+                          className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] disabled:cursor-not-allowed disabled:bg-[#f2f5fa] disabled:text-[color:var(--text-soft)]"
                         >
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
@@ -1062,7 +1062,7 @@ export default async function AdminPortalPage({
                           <input
                             name="confirmationText"
                             required
-                            className="w-full rounded-[18px] border border-[#f2c6c6] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
+                            className="min-h-[36px] w-full rounded-[8px] border border-[#f2c6c6] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                             placeholder="DELETE"
                           />
                         </Field>
@@ -1346,7 +1346,7 @@ export default async function AdminPortalPage({
                     name="title"
                     defaultValue={presentationEditor.title}
                     required
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -1354,7 +1354,7 @@ export default async function AdminPortalPage({
                   <input
                     name="slug"
                     defaultValue={presentationEditor.slug}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                     placeholder="Leave blank to auto-generate from the title"
                   />
                 </Field>
@@ -1366,7 +1366,7 @@ export default async function AdminPortalPage({
                   <textarea
                     name="shortSummary"
                     defaultValue={presentationEditor.shortSummary}
-                    className="min-h-[7.5rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] leading-7 text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -1400,7 +1400,7 @@ export default async function AdminPortalPage({
                       name="learningOutcomes"
                       defaultValue={presentationEditor.learningOutcomes.join("\n")}
                       placeholder={"Healthy screen routines\nDigital citizenship\nPositive online behaviour"}
-                      className="min-h-[9rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] leading-7 text-[color:var(--text-dark)]"
                     />
                   </Field>
                   <Field label="Required equipment" hint="One per line">
@@ -1408,7 +1408,7 @@ export default async function AdminPortalPage({
                       name="requiredEquipment"
                       defaultValue={presentationEditor.requiredEquipment.join("\n")}
                       placeholder={"Projector or screen\nMicrophone if needed"}
-                      className="min-h-[9rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] leading-7 text-[color:var(--text-dark)]"
                     />
                   </Field>
                 </div>
@@ -1422,7 +1422,7 @@ export default async function AdminPortalPage({
                     type="url"
                     defaultValue={presentationEditor.youtubeUrl ?? ""}
                     placeholder="https://www.youtube.com/watch?v=..."
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                   />
                 </Field>
               </div>
@@ -1451,7 +1451,7 @@ export default async function AdminPortalPage({
                       type="file"
                       name="image"
                       accept=".png,.jpg,.jpeg,.webp"
-                      className="w-full rounded-[18px] border border-dashed border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px]"
                     />
                   </Field>
                 </div>
@@ -1502,7 +1502,7 @@ export default async function AdminPortalPage({
                         name="yearLevels"
                         defaultValue={presentationEditor.yearLevels}
                         placeholder="Years 5 to 6, Years 7 to 8"
-                        className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
+                        className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                       />
                     </Field>
                     <Field label="Duration (minutes)">
@@ -1512,14 +1512,14 @@ export default async function AdminPortalPage({
                         min={1}
                         defaultValue={presentationEditor.durationMinutes}
                         required
-                        className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
+                        className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                       />
                     </Field>
                     <Field label="Delivery format" hint="Comma separated">
                       <input
                         name="deliveryFormats"
                         defaultValue={presentationEditor.deliveryFormats.join(", ")}
-                        className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
+                        className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                       />
                     </Field>
                     <label className="flex items-center gap-3 rounded-[18px] border border-[color:var(--border-soft)] bg-[color:var(--blue-soft)] px-4 py-3 text-sm text-[color:var(--navy)]">
@@ -1739,7 +1739,7 @@ export default async function AdminPortalPage({
                     name="title"
                     required
                     defaultValue={resourceEditor.title}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -1747,7 +1747,7 @@ export default async function AdminPortalPage({
                   <textarea
                     name="description"
                     defaultValue={resourceEditor.description}
-                    className="min-h-[8rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] leading-7 text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -1778,7 +1778,7 @@ export default async function AdminPortalPage({
                     <select
                       name="resourceType"
                       defaultValue={resourceEditor.type}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     >
                       <option value="pdf">PDF</option>
                       <option value="pptx">PPTX</option>
@@ -1824,7 +1824,7 @@ export default async function AdminPortalPage({
                   <select
                     name="category"
                     defaultValue={resourceEditor.category}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   >
                     <option value="resource">Resources — general reference material</option>
                     <option value="training">Training — ambassador learning material</option>
@@ -1838,7 +1838,7 @@ export default async function AdminPortalPage({
                   <input
                     name="tags"
                     defaultValue={resourceEditor.tags.join(", ")}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   />
                 </Field>
 
@@ -1849,7 +1849,7 @@ export default async function AdminPortalPage({
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   >
                     <option value="">General resource</option>
                     {portal.presentations.map((presentation) => (
@@ -1865,7 +1865,7 @@ export default async function AdminPortalPage({
                     <input
                       name="versionLabel"
                       defaultValue={resourceEditor.versionLabel ?? ""}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="v2026.06"
                     />
                   </Field>
@@ -1873,7 +1873,7 @@ export default async function AdminPortalPage({
                     <input
                       name="externalUrl"
                       defaultValue={resourceEditor.externalUrl ?? ""}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="Optional external file link"
                     />
                   </Field>
@@ -1883,7 +1883,7 @@ export default async function AdminPortalPage({
                   <input
                     name="youtubeUrl"
                     defaultValue={resourceEditor.youtubeUrl ?? ""}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     placeholder="https://www.youtube.com/watch?v=..."
                   />
                 </Field>
@@ -1899,7 +1899,7 @@ export default async function AdminPortalPage({
                       type="file"
                       name="file"
                       accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.doc,.docx"
-                      className="w-full rounded-[18px] border border-dashed border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px]"
                     />
                   </Field>
                   {resourceEditor.downloadUrl ? (
@@ -1992,10 +1992,10 @@ export default async function AdminPortalPage({
                   <input type="hidden" name="existingImageUrl" value={section.imageUrl ?? ""} />
                   <div className="grid gap-4">
                     <Field label="Title">
-                      <input name="title" defaultValue={section.title} className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm" />
+                      <input name="title" defaultValue={section.title} className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]" />
                     </Field>
                     <Field label="Subtitle">
-                      <input name="subtitle" defaultValue={section.subtitle} className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm" />
+                      <input name="subtitle" defaultValue={section.subtitle} className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]" />
                     </Field>
                     <Field label="Body">
                       <RichTextEditor
@@ -2010,11 +2010,11 @@ export default async function AdminPortalPage({
                           type="number"
                           name="sortOrder"
                           defaultValue={section.sortOrder}
-                          className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                          className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                         />
                       </Field>
                       <Field label="Replace image">
-                        <input type="file" name="image" accept=".png,.jpg,.jpeg,.webp" className="w-full rounded-[18px] border border-dashed border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm" />
+                        <input type="file" name="image" accept=".png,.jpg,.jpeg,.webp" className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]" />
                       </Field>
                     </div>
                     <label className="flex items-center gap-2 text-sm text-[color:var(--text-soft)]">

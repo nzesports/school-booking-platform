@@ -163,7 +163,7 @@ export function EmailTemplatesWorkspace({
             Template library
           </h2>
 
-          <label className="mt-3 flex min-h-[44px] items-center gap-2.5 rounded-[13px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)]">
+          <label className="mt-3 flex min-h-[36px] items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
             <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
             <input
               value={query}
@@ -336,7 +336,7 @@ export function EmailTemplatesWorkspace({
                       name="subject"
                       defaultValue={selected.subject}
                       required
-                      className="min-h-[44px] w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                     />
                   </label>
 
@@ -363,7 +363,7 @@ export function EmailTemplatesWorkspace({
                     <textarea
                       name="bodyText"
                       defaultValue={selected.bodyText ?? ""}
-                      className="mt-3 min-h-24 w-full rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3.5 py-2.5 text-sm outline-none"
+                      className="mt-3 min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] outline-none"
                     />
                   </details>
 
@@ -415,7 +415,7 @@ export function EmailTemplatesWorkspace({
                       name="name"
                       placeholder="e.g. Payment processed"
                       required
-                      className="min-h-[44px] w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                     />
                   </label>
                   <label className="grid gap-1.5">
@@ -426,7 +426,7 @@ export function EmailTemplatesWorkspace({
                       name="subject"
                       placeholder="e.g. Your payment is on its way"
                       required
-                      className="min-h-[44px] w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                     />
                   </label>
                 </div>

@@ -166,7 +166,7 @@ export function FeedbackHub({
             title="School feedback submissions"
             columns={["School", "Presentation", "Submitted", "Rating", "Show on website", "Submission"]}
             headerContent={
-              <label className="flex min-h-[46px] w-full items-center gap-2.5 rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+              <label className="flex min-h-[36px] w-full items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
                 <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
                 <span className="sr-only">Search school feedback</span>
                 <input
@@ -240,7 +240,7 @@ export function FeedbackHub({
           <DataTable
             title="Ambassador session reports"
             headerContent={
-              <label className="flex min-h-[46px] w-full items-center gap-2.5 rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+              <label className="flex min-h-[36px] w-full items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
                 <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
                 <span className="sr-only">Search ambassador session reports</span>
                 <input
@@ -569,7 +569,7 @@ function SchoolFeedbackOverview({
                 “{review.quote.trim()}”
                 <footer className="mt-1 text-xs text-[color:var(--text-soft)]">
                   {review.attribution ?? "School contact"} · {review.schoolName} ·{" "}
-                  {review.presentationTitle}
+                  {review.presentationTitle} · {formatShortDate(review.createdAt)}
                 </footer>
               </blockquote>
             ))}

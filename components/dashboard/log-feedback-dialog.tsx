@@ -32,7 +32,7 @@ export type FeedbackPresentationOption = {
 };
 
 const selectClassName =
-  "w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";
 
 const ratingRows = [
   { name: "attendanceRating", label: "Attendance" },
@@ -188,7 +188,7 @@ export function LogFeedbackDialog({
                             if (event.key === "Escape") setSessionListOpen(false);
                           }}
                           placeholder="Type a school, presentation, presenter, or date..."
-                          className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-[color:var(--text-soft)]"
+                          className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none placeholder:text-[color:var(--text-soft)]"
                           required={sessionMode === "existing"}
                         />
                         <button
@@ -401,7 +401,7 @@ export function LogFeedbackDialog({
                     name="mediaFiles"
                     multiple
                     accept=".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.avi,.pdf"
-                    className="w-full rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white px-4 py-4 text-sm text-[color:var(--navy)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--navy)]"
                   />
                   <label className="flex items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-[#f6f9fd] px-4 py-3 text-sm text-[color:var(--navy)]">
                     <input type="checkbox" name="mediaConsentObtained" />
@@ -429,21 +429,21 @@ export function LogFeedbackDialog({
                   <FeedbackField label="Presentation feedback *">
                     <Textarea
                       name="presentationFeedback"
-                      className="min-h-24"
+                      className=""
                       placeholder="What landed well, what should change, and anything the team should know."
                       required
                     />
                   </FeedbackField>
                   <div className="grid gap-4 md:grid-cols-2">
                     <FeedbackField label="Attendee thoughts or quotes">
-                      <Textarea name="attendeeQuotes" className="min-h-20" />
+                      <Textarea name="attendeeQuotes" className="" />
                     </FeedbackField>
                     <FeedbackField label="Notable questions or themes">
-                      <Textarea name="notableQuestions" className="min-h-20" />
+                      <Textarea name="notableQuestions" className="" />
                     </FeedbackField>
                   </div>
                   <FeedbackField label="Additional notes">
-                    <Textarea name="additionalNotes" className="min-h-16" />
+                    <Textarea name="additionalNotes" className="" />
                   </FeedbackField>
                 </FeedbackSection>
 

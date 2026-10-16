@@ -168,7 +168,7 @@ export function SiteFooter({
               placeholder="Enter your email"
               required
               autoComplete="email"
-              className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-[color:var(--text-soft)]"
+              className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-[12px] outline-none placeholder:text-[color:var(--text-soft)]"
             />
             <Button type="submit">
               <ArrowRight className="h-4 w-4" />

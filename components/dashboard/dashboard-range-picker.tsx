@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // Override the global form-control font reset so button and link rows match.
-const rangeOptionClassName = "flex min-h-[36px] w-full items-center rounded-[8px] px-4 py-2.5 text-left text-[12px]! font-semibold! leading-[16px]! text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]";
+const rangeOptionClassName = "flex min-h-[36px] w-full items-center rounded-[8px] px-4 py-[9px] text-left text-[12px]! font-semibold! leading-[16px]! text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]";
 
 export function DashboardRangePicker({
   label,
@@ -78,7 +78,7 @@ export function DashboardRangePicker({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white/94 px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.05)]"
+        className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white/94 px-4 py-[9px] text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.05)]"
         aria-expanded={open}
       >
         <CalendarRange className="h-4 w-4 text-[color:var(--green)]" />
@@ -150,7 +150,7 @@ export function DashboardRangePicker({
                       value={from}
                       max={to || undefined}
                       onChange={(event) => setFrom(event.target.value)}
-                      className="min-h-[40px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-sm font-medium outline-none focus:border-[rgba(24,168,59,0.4)]"
+                      className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-medium outline-none focus:border-[rgba(24,168,59,0.4)]"
                     />
                   </label>
                   <label className="grid gap-1.5 text-xs font-semibold text-[color:var(--navy)]">
@@ -160,7 +160,7 @@ export function DashboardRangePicker({
                       value={to}
                       min={from || undefined}
                       onChange={(event) => setTo(event.target.value)}
-                      className="min-h-[40px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-sm font-medium outline-none focus:border-[rgba(24,168,59,0.4)]"
+                      className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-medium outline-none focus:border-[rgba(24,168,59,0.4)]"
                     />
                   </label>
                   <button

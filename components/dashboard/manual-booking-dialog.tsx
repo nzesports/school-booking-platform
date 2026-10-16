@@ -39,7 +39,7 @@ import type {
 } from "@/lib/services/dashboard-insights";
 
 const fieldClassName =
-  "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm text-[color:var(--text-dark)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]";
 
 export function ManualBookingDialog({
   basePath,
@@ -259,7 +259,7 @@ export function ManualBookingDialog({
                 <Field label="Internal notes" icon={<StickyNote className={iconClassName} />}>
                   <textarea
                     name="internalNotes"
-                    className="min-h-24 w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     placeholder="Source, context, delivery notes, or anything staff should know."
                   />
                 </Field>

@@ -1,3 +1,4 @@
+import { TruncationAffordance } from "@/components/ui/truncation-affordance";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Lilita_One, Quicksand, Rozha_One } from "next/font/google";
@@ -79,6 +80,7 @@ export default async function RootLayout({
         >
           {children}
         </AppChrome>
+        <TruncationAffordance />
       </body>
     </html>
   );

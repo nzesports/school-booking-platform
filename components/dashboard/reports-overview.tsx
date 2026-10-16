@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { dataTableHeadingClassName } from "@/components/dashboard/data-table";
 import type { BookingSessionView, ReportSummary } from "@/lib/domain/types";
 import { averageReportRating, summarizeStudentReach } from "@/lib/services/dashboard-insights";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
 
 function average(values: number[]) {
   return values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : null;
@@ -163,7 +163,8 @@ export function ReportsOverview({
                 “{(report.presentationFeedback ?? report.attendeeQuotes ?? "").trim()}”
                 <footer className="mt-1 text-xs text-[color:var(--text-soft)]">
                   {report.ambassadorName ?? "Ambassador"} · {report.schoolName} ·{" "}
-                  {report.presentationTitle}
+                  {report.presentationTitle} ·{" "}
+                  {formatShortDate(report.deliveredAt ?? report.submittedAt)}
                 </footer>
               </blockquote>
             ))}

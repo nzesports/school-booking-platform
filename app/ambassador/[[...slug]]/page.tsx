@@ -509,7 +509,7 @@ function MaterialsConsentForm({
             required
             minLength={2}
             defaultValue={ambassadorName}
-            className="w-full rounded-[15px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm outline-none focus:border-[#9d86d9] focus:ring-4 focus:ring-[#ede9fe]"
+            className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] outline-none focus:border-[#9d86d9] focus:ring-2 focus:ring-[#ede9fe]"
           />
         </label>
         <label className="flex items-start gap-3 rounded-[17px] border border-[#d8c8f4] bg-[#f8f5ff] px-4 py-4 text-sm leading-6 text-[color:var(--navy)]">

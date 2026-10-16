@@ -22,7 +22,7 @@ const variants = {
 // mode too, so a call site that brings its own colours still matches everything
 // else. Sizing lives only here — call sites pass colour and layout, not size.
 const BUTTON_SIZE =
-  "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] px-4 py-2.5 text-[12px] font-semibold leading-[16px] [&>svg]:order-first [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:shrink-0";
+  "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] px-4 py-[9px] text-[12px] font-semibold leading-[16px] [&>svg]:order-first [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:shrink-0";
 
 const BUTTON_BASE =
   BUTTON_SIZE +

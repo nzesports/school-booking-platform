@@ -16,6 +16,12 @@ export function StarRatingInput({ name, label }: { name: string; label?: string 
 
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {/* Anchors the direction before anyone interacts. Without them the row
+          reads as five identical stars, and a reviewer can pick the leftmost
+          believing it is the best score. */}
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[color:var(--text-soft)]">
+        Poor
+      </span>
       <div className="flex gap-1" onMouseLeave={() => setHover(0)}>
         {[1, 2, 3, 4, 5].map((rating) => (
           <label
@@ -44,13 +50,16 @@ export function StarRatingInput({ name, label }: { name: string; label?: string 
           </label>
         ))}
       </div>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[color:var(--text-soft)]">
+        Excellent
+      </span>
       <span
         className={cn(
-          "min-w-[72px] text-sm font-semibold",
+          "min-w-[108px] text-sm font-semibold",
           active > 0 ? "text-[color:var(--navy)]" : "text-[color:var(--text-soft)]"
         )}
       >
-        {active > 0 ? CAPTIONS[active] : "Select"}
+        {active > 0 ? `${active} of 5 · ${CAPTIONS[active]}` : "Select a rating"}
       </span>
     </div>
   );

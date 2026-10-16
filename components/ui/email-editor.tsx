@@ -241,7 +241,7 @@ export function EmailEditor({
                 insertPlaceholder(event.target.value);
               }
             }}
-            className="min-h-9 rounded-full border border-[color:rgba(4,15,75,0.1)] bg-[color:var(--blue-soft)] px-3 text-xs font-semibold text-[color:var(--navy)] outline-none"
+            className="min-h-[36px] rounded-full border border-[color:rgba(4,15,75,0.1)] bg-[color:var(--blue-soft)] px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
             aria-label="Insert placeholder"
           >
             <option value="">Insert placeholder…</option>

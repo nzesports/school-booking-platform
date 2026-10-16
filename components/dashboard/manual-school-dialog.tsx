@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 
 const fieldClassName =
-  "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm text-[color:var(--text-dark)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]";
 
 export function ManualSchoolDialog({
   regions,
@@ -121,7 +121,7 @@ export function ManualSchoolDialog({
                 <Field label="Notes">
                   <textarea
                     name="notes"
-                    className="min-h-24 w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     placeholder="Anything useful for future bookings."
                   />
                 </Field>

@@ -8,7 +8,7 @@
  * a call site silently beat this string.
  */
 export const FIELD_SIZE =
-  "min-h-[36px] w-full rounded-[8px] px-3 py-2 text-[12px] leading-[16px]";
+  "min-h-[36px] w-full rounded-[8px] px-3 py-[9px] text-[12px] leading-[16px]";
 
 export const FIELD_SKIN =
   "border border-[color:var(--border-soft)] bg-white/92 text-[color:var(--text-dark)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)] outline-none transition placeholder:text-[color:var(--text-soft)] focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";

@@ -180,7 +180,7 @@ export function HeroBookingModal({
                                   }
                                   placeholder="e.g. 120"
                                   required
-                                  className="h-11 max-w-[128px] rounded-[14px] px-3 py-2"
+                                  className="h-11 max-w-[128px]"
                                 />
                                 <span className="text-sm font-medium text-[color:var(--navy)]">
                                   students
@@ -261,7 +261,7 @@ export function HeroBookingModal({
                   <Textarea
                     name="schoolNotes"
                     placeholder="Assembly timing, room setup, accessibility notes, or anything else the team should know."
-                    className="min-h-[96px]"
+                    className=""
                   />
                 </Field>
               </div>

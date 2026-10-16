@@ -541,7 +541,7 @@ export function AmbassadorProfileWorkspace({
                   name="preferredTimes"
                   defaultValue={details.preferredTimes ?? ""}
                   placeholder={"Mon, Wed, Fri: 9:00 am - 12:00 pm\nTue, Thu: 1:00 pm - 4:00 pm"}
-                  className="mt-2.5 min-h-20"
+                  className="mt-2.5"
                 />
               ) : (
                 <>
@@ -596,7 +596,7 @@ export function AmbassadorProfileWorkspace({
                       name={`availability-${day.key}`}
                       defaultValue={value}
                       placeholder="9am-4pm"
-                      className="w-full min-w-0 bg-white px-1 py-3 text-center text-[11px] text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+                      className="w-full min-w-0 bg-white px-3 py-2 text-center text-[12px] text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
                     />
                   ) : (
                     <span
@@ -647,7 +647,7 @@ export function AmbassadorProfileWorkspace({
                   name="unavailableDates"
                   defaultValue={(details.unavailableDates ?? []).join(", ")}
                   placeholder="12-14 Jun 2026, 22 Jul 2026"
-                  className="mt-2.5 min-h-16"
+                  className="mt-2.5"
                 />
               ) : (
                 <>
@@ -671,7 +671,7 @@ export function AmbassadorProfileWorkspace({
                   name="availabilityNote"
                   defaultValue={details.availabilityNote ?? ""}
                   placeholder="Requires at least 7 days notice."
-                  className="mt-2.5 min-h-16"
+                  className="mt-2.5"
                 />
               ) : (
                 <>

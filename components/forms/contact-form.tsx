@@ -171,7 +171,7 @@ export function ContactForm({
           minLength={10}
           maxLength={5000}
           rows={8}
-          className="min-h-48 resize-y"
+          className="resize-y"
           aria-invalid={Boolean(state.fieldErrors?.message)}
           aria-describedby={state.fieldErrors?.message ? `${idPrefix}-message-error` : undefined}
         />

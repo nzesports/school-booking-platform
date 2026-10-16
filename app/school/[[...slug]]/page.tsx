@@ -1237,7 +1237,7 @@ export default async function SchoolPortalPage({
                     maxLength={2000}
                     defaultValue={portal.school.profileNotes ?? ""}
                     placeholder="e.g. Assemblies run Tuesday and Thursday mornings. Sign in at the main office on Smith St."
-                    className="min-h-28"
+                    className=""
                   />
                 </ProfileSection>
 

@@ -456,7 +456,7 @@ function BookingModalFlow({
                     >
                       <div>
                         <Select
-                          className="h-[56px] text-base"
+                          className=""
                           value={session.presentationSlug}
                           onChange={(event) =>
                             setSessions((current) =>
@@ -565,7 +565,7 @@ function BookingModalFlow({
                       >
                         <div>
                           <Select
-                            className="h-[56px] text-base"
+                            className=""
                             value={session.regionSlug}
                             onChange={(event) =>
                               setSessions((current) =>
@@ -592,7 +592,7 @@ function BookingModalFlow({
                           </Select>
                           {isOtherRegionSlug(session.regionSlug) ? (
                             <Input
-                              className="mt-2 h-[56px] text-base"
+                              className="mt-2"
                               value={session.customRegion ?? ""}
                               placeholder="Type your region"
                               aria-label="Type your region"
@@ -815,7 +815,7 @@ function BookingModalFlow({
                                 aria-label={`Expected students for session ${index + 1}`}
                                 placeholder="e.g. 120"
                                 required
-                                className="h-11 max-w-[128px] rounded-[14px] px-3 py-2"
+                                className="h-11 max-w-[128px]"
                               />
                               <span className="text-sm font-medium text-[color:var(--navy)]">
                                 students
@@ -918,7 +918,7 @@ function BookingModalFlow({
                 <Textarea
                   name="schoolNotes"
                   placeholder="Assembly timing, room setup, accessibility notes, or anything else the team should know."
-                  className="min-h-[96px]"
+                  className=""
                 />
               </ContactField>
             </div>

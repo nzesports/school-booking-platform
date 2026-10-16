@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const triggerClasses =
-  "w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm text-[color:var(--text-dark)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";
 
 const popoverClasses =
   "fixed z-[90] rounded-[20px] border border-[color:var(--border-soft)] bg-white shadow-[0_24px_54px_rgba(11,24,77,0.18)]";

@@ -7,7 +7,7 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { cn } from "@/lib/utils";
 
 const fieldClassName =
-  "min-h-[46px] w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.45)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.45)]";
 
 type SettingsMap = Record<string, Record<string, unknown>>;
 
@@ -124,7 +124,7 @@ export function SettingsWorkspace({
                 className={fieldClassName}
               />
             </Field>
-            <label className="flex min-h-[46px] items-center gap-3 self-end rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-medium text-[color:var(--navy)]">
+            <label className="flex min-h-[36px] items-center gap-3 self-end rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-medium text-[color:var(--navy)]">
               <input
                 type="checkbox"
                 name="publicHolidayBlock"

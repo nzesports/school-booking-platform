@@ -110,7 +110,7 @@ export function SchoolResourceLibrary({ resources }: { resources: ResourceRecord
     <section className="surface-panel rounded-[28px] p-5 md:p-7">
       <div className="grid gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex min-h-[46px] min-w-[260px] flex-1 items-center gap-3 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+          <label className="flex min-h-[36px] min-w-[260px] flex-1 items-center gap-3 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
             <Search className="h-4 w-4 shrink-0 text-[color:var(--green)]" />
             <input
               value={query}

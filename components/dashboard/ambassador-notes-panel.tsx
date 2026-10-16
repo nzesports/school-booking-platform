@@ -18,7 +18,7 @@ type NotesPanelProps = {
 };
 
 const textareaClassName =
-  "w-full resize-y rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm leading-6 text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+  "min-h-[36px] w-full resize-y rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] leading-6 text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";
 
 export function AmbassadorNotesPanel({
   ambassadorProfileId,

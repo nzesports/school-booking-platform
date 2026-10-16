@@ -660,7 +660,7 @@ export function ResourcesWorkspace({
 
       {/* ------------------------------------------------ toolbar */}
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex min-h-[48px] min-w-[240px] flex-1 items-center gap-2.5 rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+        <label className="flex min-h-[36px] min-w-[240px] flex-1 items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
           <Search className="h-4 w-4 text-[color:var(--text-soft)]" />
           <input
             value={query}
@@ -1089,7 +1089,7 @@ function DeleteTrainingPackDialog({
             autoComplete="off"
             autoFocus
             placeholder="delete"
-            className="w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[#d66a62] focus:ring-4 focus:ring-[rgba(201,59,50,0.1)]"
+            className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] outline-none transition focus:border-[#d66a62] focus:ring-2 focus:ring-[rgba(201,59,50,0.1)]"
           />
         </label>
         <div className="flex items-center justify-end gap-3 border-t border-[color:var(--border-soft)] pt-4">
@@ -1118,7 +1118,7 @@ function TrainingPackEditorDialog({
   onClose: () => void;
 }) {
   const inputClassName =
-    "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+    "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";
 
   return createPortal(
     <BookingDialogShell
@@ -1281,7 +1281,7 @@ function ResourceEditorDialog({
   const isTrainingResource = category === "training";
   const requiresPresentation = category === "presentation_material";
   const inputClassName =
-    "w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]";
+    "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]";
 
   // Portalled to <body> so glassy card ancestors (backdrop-filter) can't trap
   // the fixed overlay inside their own bounds.
@@ -1397,7 +1397,7 @@ function ResourceEditorDialog({
               <textarea
                 name="description"
                 defaultValue={resource?.description ?? ""}
-                className={cn(inputClassName, "min-h-[6.5rem] leading-6")}
+                className={cn(inputClassName, "min-h-[88px] leading-6")}
               />
             </label>
           </div>
@@ -1879,7 +1879,7 @@ function ToolbarSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-[48px] rounded-[16px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
+        className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

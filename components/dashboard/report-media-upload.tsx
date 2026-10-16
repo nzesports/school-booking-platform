@@ -31,7 +31,7 @@ export function ReportMediaUpload() {
 
   return (
     <div className="grid gap-3">
-      <label className="group flex min-h-[76px] cursor-pointer items-center justify-center gap-3 rounded-[16px] border border-dashed border-[#b9c8dc] bg-[#f8fafc] px-4 py-4 text-sm text-[color:var(--navy)] transition hover:border-[#7da6df] hover:bg-[#f4f8fe]">
+      <label className="group flex min-h-[36px] cursor-pointer items-center justify-center gap-3 rounded-[8px] border border-dashed border-[#b9c8dc] bg-[#f8fafc] px-3 py-[9px] text-[12px] text-[color:var(--navy)] transition hover:border-[#7da6df] hover:bg-[#f4f8fe]">
         <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#2563eb] shadow-sm">
           <Upload className="h-4.5 w-4.5" aria-hidden="true" />
         </span>

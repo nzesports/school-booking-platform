@@ -77,7 +77,7 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex min-h-[44px] min-w-[220px] flex-1 items-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)]">
+        <label className="flex min-h-[36px] min-w-[220px] flex-1 items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
           <Search className="h-4 w-4 text-[color:var(--text-soft)]" />
           <input
             value={query}

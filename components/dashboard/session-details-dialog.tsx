@@ -489,7 +489,7 @@ export function SessionDetailsButton({
                         max={maximumBookingDate()}
                         defaultValue={session.rescheduleRequestedDate}
                         required
-                        className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                        className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                       />
                     </label>
                     <label className="grid gap-1">
@@ -501,7 +501,7 @@ export function SessionDetailsButton({
                         type="time"
                         defaultValue={formatNzInputTime(session.startsAt)}
                         required
-                        className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                        className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                       />
                     </label>
                     <PendingSubmitButton
@@ -568,7 +568,7 @@ export function SessionDetailsButton({
                         <input
                           name="note"
                           placeholder="Reply to the ambassador..."
-                          className="min-h-[44px] rounded-[12px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+                          className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                         />
                       </label>
                       <PendingSubmitButton unstyled
@@ -624,7 +624,7 @@ export function SessionDetailsButton({
                       {...(provider.download
                         ? { download: provider.download }
                         : { target: "_blank", rel: "noreferrer" })}
-                      className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
+                      className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-[9px] text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
                     >
                       {provider.icon}
                       {provider.label}
@@ -666,7 +666,7 @@ function meetingProviderLabel(url: string) {
 const noSessionAction: SessionDialogAction = async () => null;
 
 const meetingInputClassName =
-  "min-h-[44px] w-full rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-sm text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]";
+  "min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none focus:border-[rgba(24,168,59,0.4)]";
 
 // Booking status inside the details dialog. Uses the same dropdown and
 // "email the school?" prompt as the bookings list, but saves in place.
@@ -860,7 +860,7 @@ function MeetingLinkSection({
                 setCopied(false);
               }
             }}
-            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] transition hover:bg-white"
+            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] px-4 py-[9px] text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] transition hover:bg-white"
           >
             {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy"}

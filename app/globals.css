@@ -380,3 +380,10 @@ summary {
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
+
+/* Set by components/ui/truncation-affordance.tsx on single-line text that is
+   actually cut off, so the cursor only signals "hover to read the rest" where
+   there really is more to read. */
+[data-clipped="true"] {
+  cursor: help;
+}

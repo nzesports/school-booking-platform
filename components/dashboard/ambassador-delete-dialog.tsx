@@ -119,7 +119,7 @@ export function AmbassadorDeleteDialog({
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}
                   autoComplete="off"
-                  className="rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3 text-sm"
+                  className="rounded-[8px] border border-[color:var(--border-soft)] px-3 py-2 text-[12px]"
                 />
               </label>
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">

@@ -135,7 +135,7 @@ export function SchoolFeedbackForm({
                   name="attendeeFeedback"
                   maxLength={500}
                   placeholder="If so, share it here."
-                  className="min-h-24"
+                  className=""
                   required
                 />
               </label>
@@ -159,7 +159,7 @@ export function SchoolFeedbackForm({
               name="quote"
               maxLength={1000}
               placeholder="What worked well, and what should we improve next time?"
-              className="min-h-28"
+              className=""
               required
             />
           </FeedbackSection>

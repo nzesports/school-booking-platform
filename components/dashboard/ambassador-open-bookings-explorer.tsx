@@ -205,7 +205,7 @@ export function AmbassadorOpenBookingsExplorer({
               : "xl:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,210px))]"
           )}
         >
-          <label className="flex min-h-[46px] items-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+          <label className="flex min-h-[36px] items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
             <Search className="h-4 w-4 text-[color:var(--text-soft)]" />
             <input
               value={query}
@@ -690,7 +690,7 @@ function FilterSelect({
       aria-label={ariaLabel}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="min-h-[46px] min-w-0 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-medium text-[color:var(--navy)] outline-none"
+      className="min-h-[36px] min-w-0 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-medium text-[color:var(--navy)] outline-none"
     >
       {options.map(([optionValue, label]) => (
         <option key={optionValue} value={optionValue}>

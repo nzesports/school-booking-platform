@@ -284,12 +284,27 @@ function integer(value) {
   return match ? Number(match[0]) : null;
 }
 
-function normalizeSevenPointRating(value) {
+// The source workbooks score 1-7; the platform stores 1-5 where 5 is best.
+//
+// The previous version returned any value of 1-5 unchanged, which made the
+// conversion below unreachable for everything except 6 and 7. A workbook 5
+// (good, not top) was stored as a perfect 5, and a workbook 3 (mid) was stored
+// as 3, which on a five-point scale reads far worse than it was. Map the whole
+// range so the stored score means what it says.
+function normalizeSevenPointRating(value, sourceScale = 7) {
   const rating = Number(value);
-  if (!Number.isFinite(rating)) return null;
-  if (rating >= 1 && rating <= 5) return Math.round(rating);
-  if (rating >= 1 && rating <= 7) return Math.max(1, Math.min(5, Math.round(1 + ((rating - 1) * 4) / 6)));
-  return null;
+
+  if (!Number.isFinite(rating) || rating < 1 || rating > sourceScale) {
+    return null;
+  }
+
+  if (sourceScale === 5) {
+    return Math.max(1, Math.min(5, Math.round(rating)));
+  }
+
+  const scaled = 1 + ((rating - 1) * 4) / (sourceScale - 1);
+
+  return Math.max(1, Math.min(5, Math.round(scaled)));
 }
 
 function loadEnvironment() {

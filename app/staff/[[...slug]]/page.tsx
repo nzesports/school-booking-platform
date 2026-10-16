@@ -687,7 +687,7 @@ export default async function StaffPortalPage({
                     name="title"
                     required
                     defaultValue={resourceEditor.title}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -695,7 +695,7 @@ export default async function StaffPortalPage({
                   <textarea
                     name="description"
                     defaultValue={resourceEditor.description}
-                    className="min-h-[8rem] w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3.5 text-sm leading-7 text-[color:var(--text-dark)]"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px] leading-7 text-[color:var(--text-dark)]"
                   />
                 </Field>
 
@@ -726,7 +726,7 @@ export default async function StaffPortalPage({
                     <select
                       name="resourceType"
                       defaultValue={resourceEditor.type}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     >
                       <option value="pdf">PDF</option>
                       <option value="pptx">PPTX</option>
@@ -772,7 +772,7 @@ export default async function StaffPortalPage({
                   <select
                     name="category"
                     defaultValue={resourceEditor.category}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   >
                     <option value="resource">Resources — general reference material</option>
                     <option value="training">Training — ambassador learning material</option>
@@ -789,7 +789,7 @@ export default async function StaffPortalPage({
                   <input
                     name="tags"
                     defaultValue={resourceEditor.tags.join(", ")}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   />
                 </Field>
 
@@ -800,7 +800,7 @@ export default async function StaffPortalPage({
                   <select
                     name="presentationTypeId"
                     defaultValue={resourceEditor.presentationTypeId ?? ""}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                   >
                     <option value="">General resource</option>
                     {portal.presentations.map((presentation) => (
@@ -816,7 +816,7 @@ export default async function StaffPortalPage({
                     <input
                       name="versionLabel"
                       defaultValue={resourceEditor.versionLabel ?? ""}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="v2026.06"
                     />
                   </Field>
@@ -824,7 +824,7 @@ export default async function StaffPortalPage({
                     <input
                       name="externalUrl"
                       defaultValue={resourceEditor.externalUrl ?? ""}
-                      className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                       placeholder="Optional external file link"
                     />
                   </Field>
@@ -834,7 +834,7 @@ export default async function StaffPortalPage({
                   <input
                     name="youtubeUrl"
                     defaultValue={resourceEditor.youtubeUrl ?? ""}
-                    className="w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white/92 px-3 py-[9px] text-[12px]"
                     placeholder="https://www.youtube.com/watch?v=..."
                   />
                 </Field>
@@ -850,7 +850,7 @@ export default async function StaffPortalPage({
                       type="file"
                       name="file"
                       accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.txt,.doc,.docx"
-                      className="w-full rounded-[18px] border border-dashed border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm"
+                      className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px]"
                     />
                   </Field>
                   {resourceEditor.downloadUrl ? (

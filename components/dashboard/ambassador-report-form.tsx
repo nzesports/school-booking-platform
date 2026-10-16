@@ -98,7 +98,7 @@ export function AmbassadorReportForm({
             <select
               value={session.id}
               onChange={(event) => setSelectedSessionId(event.target.value)}
-              className="min-h-11 w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm text-[color:var(--navy)] outline-none focus:border-[#9fd4ad]"
+              className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none focus:border-[#9fd4ad]"
             >
               {sessions.map((option) => (
                 <option key={option.id} value={option.id}>
@@ -189,14 +189,14 @@ export function AmbassadorReportForm({
           <ReportField label="If so, share them here">
             <Textarea
               name="attendeeQuotes"
-              className="min-h-24"
+              className=""
               placeholder="“I didn't know esports had real jobs behind it.” — Year 12 student"
             />
           </ReportField>
           <ReportField label="Any notable student questions or themes?">
             <Textarea
               name="notableQuestions"
-              className="min-h-20"
+              className=""
               placeholder="Careers in casting, screen-time balance, how to start a school club..."
             />
           </ReportField>
@@ -215,13 +215,13 @@ export function AmbassadorReportForm({
           <ReportField label="Do you have any feedback you'd like us to consider for future presentations?">
             <Textarea
               name="presentationFeedback"
-              className="min-h-28"
+              className=""
               placeholder="What landed well, what you'd change, and anything the team should know."
               required
             />
           </ReportField>
           <ReportField label="Additional notes (optional)">
-            <Textarea name="additionalNotes" className="min-h-16" />
+            <Textarea name="additionalNotes" className="" />
           </ReportField>
         </ReportSection>
 

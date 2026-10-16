@@ -99,7 +99,7 @@ export function AutoSaveBookingStatus({
       <span className="relative block w-full min-w-0">
         <span
           className={cn(
-            "pointer-events-none absolute inset-y-0 left-2.5 z-10 flex items-center",
+            "pointer-events-none absolute inset-y-0 left-2 z-10 flex items-center",
             bookingStatusIconStyles[displayStatus] ?? "text-[#667085]"
           )}
         >
@@ -118,8 +118,10 @@ export function AutoSaveBookingStatus({
           aria-busy={pending}
           onChange={(event) => event.currentTarget.form?.requestSubmit()}
           className={cn(
-            "w-full min-w-0 appearance-none rounded-[8px] border pl-8 pr-7 font-semibold outline-none transition-colors",
-            compact ? "min-h-[36px] py-2.5 text-[12px] leading-[16px]" : "min-h-[40px] text-sm",
+            // pl/pr clear the absolutely positioned icon and chevron: each sits
+            // 8px in and is 14px wide, so 26px of inset leaves a 4px gap.
+            "w-full min-w-0 appearance-none rounded-[8px] border pl-[26px] pr-[26px] font-semibold outline-none transition-colors",
+            compact ? "min-h-[36px] py-[9px] text-[12px] leading-[16px]" : "min-h-[36px] text-[12px]",
             bookingStatusControlStyles[displayStatus] ??
               "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]",
             pending && "cursor-wait opacity-60"
@@ -131,7 +133,7 @@ export function AutoSaveBookingStatus({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
       </span>
       <span className="sr-only" aria-live="polite">
         {pending ? "Saving booking status" : ""}

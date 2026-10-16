@@ -73,7 +73,7 @@ export function OnlineBookingLinkDialog({
                     <button
                       type="button"
                       onClick={copyLink}
-                      className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] bg-[color:var(--navy)] px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-white transition hover:bg-[#101c56]"
+                      className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] bg-[color:var(--navy)] px-4 py-[9px] text-[12px] font-semibold leading-[16px] text-white transition hover:bg-[#101c56]"
                     >
                       {copied ? (
                         <Check className="h-4 w-4" aria-hidden="true" />

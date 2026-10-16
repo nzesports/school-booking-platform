@@ -249,7 +249,7 @@ export function SchoolsExplorer({
         <>
           {/* ------------------------------------------------ toolbar */}
           <div className="flex flex-wrap items-center gap-3">
-        <label className="flex min-h-[52px] min-w-[240px] flex-1 items-center gap-2.5 rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 text-sm text-[color:var(--navy)]">
+        <label className="flex min-h-[36px] min-w-[240px] flex-1 items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)]">
           <Search className="h-4 w-4 text-[color:var(--text-soft)]" />
           <span className="sr-only">Search schools</span>
           <input
@@ -606,7 +606,7 @@ function PendingSchoolMerges({
           <select
             name="targetSchoolId"
             required
-            className="w-full rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)]"
+            className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)]"
           >
             <option value="">Merge into...</option>
             {targets.map((target) => (
@@ -924,7 +924,7 @@ function ToolbarSelect({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="min-h-[52px] rounded-[16px] border border-[color:var(--border-soft)] bg-white px-3.5 text-sm font-semibold text-[color:var(--navy)] outline-none"
+      className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

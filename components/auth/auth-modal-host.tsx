@@ -299,7 +299,7 @@ function UnavailablePanel({
         <button
           type="button"
           onClick={closeAuth}
-          className="inline-flex min-h-[36px] items-center justify-center rounded-[8px] border border-[rgba(4,15,75,0.12)] bg-white px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)] transition hover:bg-[#fbfdff]"
+          className="inline-flex min-h-[36px] items-center justify-center rounded-[8px] border border-[rgba(4,15,75,0.12)] bg-white px-4 py-[9px] text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)] transition hover:bg-[#fbfdff]"
         >
           Continue browsing
         </button>
@@ -518,7 +518,7 @@ function SignupPanel({
           <AuthField label="Presentation or facilitation experience">
             <Textarea
               name="experience"
-              className="min-h-24"
+              className=""
               placeholder="Tell us about your presenting, education, youth work, esports, or facilitation experience."
               defaultValue={ambassadorState?.values.experience ?? ""}
               required

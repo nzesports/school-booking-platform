@@ -564,7 +564,7 @@ export function BookingsExplorer({
         </div>
 
         <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(4,minmax(130px,160px))_auto] xl:items-end">
-          <label className="flex min-h-[36px] min-w-0 items-center gap-2.5 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! leading-5! text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
+          <label className="flex min-h-[36px] min-w-0 items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px]! leading-5! text-[color:var(--navy)] sm:col-span-2 xl:col-span-1">
             <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" />
             <input
               value={query}
@@ -573,7 +573,7 @@ export function BookingsExplorer({
                 setPage(1);
               }}
               placeholder="Search bookings, schools, or contacts..."
-              className="text-xs! leading-5! min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
+              className="text-[12px]! leading-5! min-w-0 flex-1 bg-transparent outline-none placeholder:text-[color:var(--text-soft)]"
             />
           </label>
 
@@ -697,7 +697,7 @@ export function BookingsExplorer({
                   id="bulk-booking-status"
                   name="status"
                   defaultValue="requested"
-                  className="min-h-[38px] rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs font-semibold text-[color:var(--navy)] outline-none"
+                  className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
                 >
                   {bulkStatusOptions.map(([value, label]) => (
                     <option key={value} value={value}>
@@ -963,7 +963,7 @@ export function BookingsExplorer({
                       onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
                       aria-expanded={open}
                       aria-controls={`booking-sessions-${booking.id}`}
-                      className="inline-flex min-h-[36px] w-full min-w-0 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#8db1ff] bg-white px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[#2563eb] transition hover:bg-[#f7faff] sm:w-auto"
+                      className="inline-flex min-h-[36px] w-full min-w-0 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#8db1ff] bg-white px-3 py-[9px] text-[12px] font-semibold leading-[16px] text-[#2563eb] transition hover:bg-[#f7faff] sm:w-auto"
                     >
                       {open ? "Hide sessions" : "View sessions"}
                       {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1369,7 +1369,7 @@ function WithdrawalReviewPanel({
             <input
               name="note"
               placeholder="Reply to the ambassador..."
-              className="min-h-[42px] rounded-[14px] border border-[#f2ddb0] bg-white px-3 text-sm text-[color:var(--navy)] outline-none"
+              className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
             />
             <PendingSubmitButton unstyled
               type="submit"
@@ -1749,7 +1749,7 @@ function AmbassadorSearchSelect({
             }
           }}
           placeholder={assignedName ?? "Search ambassadors..."}
-          className="h-[30px] min-h-[36px] min-w-0 flex-1 bg-transparent text-xs! leading-4! text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+          className="min-h-[36px] min-w-0 flex-1 bg-transparent text-[12px]! leading-4! text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
         />
         {text ? (
           <button
@@ -1946,7 +1946,7 @@ function ToolbarSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-[36px] w-full min-w-0 rounded-[10px] border border-[color:var(--border-soft)] bg-white px-3 text-xs! font-medium! leading-5! text-[color:var(--navy)] outline-none"
+        className="min-h-[36px] w-full min-w-0 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px]! font-medium! leading-5! text-[color:var(--navy)] outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

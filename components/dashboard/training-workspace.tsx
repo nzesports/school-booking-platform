@@ -522,7 +522,7 @@ export function TrainingWorkspace({
                     aria-autocomplete="list"
                     aria-expanded={guidanceSuggestionsOpen && guidanceSuggestions.length > 0}
                     aria-controls="guidance-search-suggestions"
-                    className="min-h-11 w-full rounded-[14px] border border-[color:var(--border-soft)] bg-[#f8fafc] pl-10 pr-4 text-sm text-[color:var(--navy)] outline-none transition focus:border-[#9fd4ad] focus:bg-white"
+                    className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-[#f8fafc] pl-10 pr-4 text-[12px] text-[color:var(--navy)] outline-none transition focus:border-[#9fd4ad] focus:bg-white"
                   />
                   {guidanceSuggestionsOpen && guidanceSuggestions.length > 0 ? (
                     <div id="guidance-search-suggestions" role="listbox" className="absolute inset-x-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-[14px] border border-[color:var(--border-soft)] bg-white p-1.5 shadow-[0_18px_40px_rgba(11,24,77,0.14)]">
@@ -888,14 +888,14 @@ export function ResourceLibraryWorkspace({
       ) : null}
 
       {showSearch ? (
-        <label className="mt-6 flex min-h-[56px] items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 shadow-[0_8px_24px_rgba(11,24,77,0.04)] focus-within:border-[color:var(--green)] focus-within:ring-4 focus-within:ring-[color:var(--green-soft)]">
+        <label className="mt-6 flex min-h-[36px] items-center gap-3 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 shadow-[0_8px_24px_rgba(11,24,77,0.04)] focus-within:border-[color:var(--green)] focus-within:ring-2 focus-within:ring-[color:var(--green-soft)]">
           <Search className="h-5 w-5 shrink-0 text-[#117a2e]" />
           <span className="sr-only">Search resources</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by title, presentation or keyword…"
-            className="min-w-0 flex-1 bg-transparent text-base text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
           />
           {query ? (
             <button
@@ -974,7 +974,7 @@ export function ResourceLibraryWorkspace({
 
               {showFilterControls ? (
                 <details className="group relative">
-                  <summary className="flex min-h-[36px] list-none items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] hover:border-[#9fd4ad]">
+                  <summary className="flex min-h-[36px] list-none items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-[9px] text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] hover:border-[#9fd4ad]">
                     <SlidersHorizontal className="h-4 w-4 text-[#117a2e]" />
                     Filter and sort
                   </summary>
@@ -986,7 +986,7 @@ export function ResourceLibraryWorkspace({
                         onChange={(event) =>
                           setActiveBucket(event.target.value as "all" | ResourceBucket)
                         }
-                        className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-base font-semibold text-[color:var(--navy)] outline-none"
+                        className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
                       >
                         <option value="all">All resource types</option>
                         {availableBuckets.map((bucket) => (
@@ -1003,7 +1003,7 @@ export function ResourceLibraryWorkspace({
                         <select
                           value={presentationFilter}
                           onChange={(event) => setPresentationFilter(event.target.value)}
-                          className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-base font-semibold text-[color:var(--navy)] outline-none"
+                          className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
                         >
                           <option value="all">All presentations</option>
                           {availablePresentations.map((presentation) => (
@@ -1020,7 +1020,7 @@ export function ResourceLibraryWorkspace({
                       <select
                         value={sortBy}
                         onChange={(event) => setSortBy(event.target.value as "newest" | "title")}
-                        className="min-h-[44px] rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3 text-base font-semibold text-[color:var(--navy)] outline-none"
+                        className="min-h-[36px] rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] font-semibold text-[color:var(--navy)] outline-none"
                       >
                         <option value="newest">Newest first</option>
                         <option value="title">Title A–Z</option>
@@ -1178,7 +1178,7 @@ function ResourceLibraryCard({ resource }: { resource: ResourceRecord }) {
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border bg-white px-4 py-2.5 text-[12px] font-semibold transition",
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border bg-white px-4 py-[9px] text-[12px] font-semibold transition",
               bucket.actionClassName
             )}
           >

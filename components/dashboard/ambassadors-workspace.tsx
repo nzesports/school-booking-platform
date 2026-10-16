@@ -334,7 +334,7 @@ export function AmbassadorsWorkspace({
           <form action={basePath} method="get" className="flex min-w-[240px] flex-1 flex-wrap gap-2">
             <input type="hidden" name="status" value={status} />
             <input type="hidden" name="sort" value={sort} />
-            <label className="flex min-h-[46px] min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border border-[color:var(--border-soft)] bg-[#f8fafc] px-4 text-sm text-[color:var(--navy)] focus-within:border-[rgba(24,168,59,0.45)] focus-within:bg-white">
+            <label className="flex min-h-[36px] min-w-0 flex-1 items-center gap-2.5 rounded-[8px] border border-[color:var(--border-soft)] bg-[#f8fafc] px-3 text-[12px] text-[color:var(--navy)] focus-within:border-[rgba(24,168,59,0.45)] focus-within:bg-white">
               <Search className="h-4 w-4 shrink-0 text-[color:var(--text-soft)]" aria-hidden="true" />
               <span className="sr-only">Search {activeStatus.label.toLocaleLowerCase()}</span>
               <input
@@ -1050,7 +1050,7 @@ export function AmbassadorProfileWorkspace({
                         defaultValue={ambassador.email}
                         placeholder="ambassador@example.com"
                         autoComplete="email"
-                        className="mt-2 w-full rounded-[14px] border border-[color:var(--border-soft)] bg-white px-4 py-3 text-sm text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]"
+                        className="min-h-[36px] mt-2 w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--text-dark)] outline-none transition focus:border-[color:rgba(24,168,59,0.34)] focus:ring-2 focus:ring-[rgba(24,168,59,0.1)]"
                       />
                     </label>
                     <PendingSubmitButton
@@ -1744,7 +1744,7 @@ function StatusChip({ tone, children }: { tone: "good" | "warn" | "neutral"; chi
 const reportRowGridClassName =
   "grid-cols-2 gap-x-4 px-5 lg:grid-cols-[110px_minmax(0,1fr)_90px_70px_110px_200px]";
 const compactActionClassName =
-  "min-h-[36px]! rounded-[8px]! px-4! py-2.5! text-[12px]! font-semibold! leading-[16px]! shadow-none!";
+  "min-h-[36px]! rounded-[8px]! px-4! py-[9px]! text-[12px]! font-semibold! leading-[16px]! shadow-none!";
 
 function SummaryChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
