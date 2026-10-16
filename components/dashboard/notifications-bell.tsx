@@ -124,7 +124,7 @@ export function NotificationsBell({
           unread.length > 0 ? `Notifications (${unread.length} unread)` : "Notifications"
         }
         className={cn(
-          "relative flex h-14 w-14 items-center justify-center rounded-2xl border border-[color:var(--border-soft)] bg-white/94 text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)] transition hover:bg-white",
+          "relative flex h-14 w-14 items-center justify-center rounded-2xl border border-[color:var(--border-soft)] bg-white/94 text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)] transition hover:bg-white",
           buttonClassName
         )}
       >
@@ -241,7 +241,7 @@ export function NotificationsBell({
                               type="button"
                               disabled={busyIds.includes(notification.id)}
                               onClick={() => void updateNotification(notification.id, "read")}
-                              className="relative z-10 mt-2 inline-flex min-h-[28px] items-center gap-1 rounded-md px-1 text-xs! font-medium! text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                              className="relative z-10 mt-2 inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px]! font-medium! text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
                             >
                               <CircleCheck className="h-3 w-3" />
                               Mark as read
@@ -258,7 +258,7 @@ export function NotificationsBell({
                     <Link
                       href={viewAllHref}
                       onClick={() => setOpen(false)}
-                      className="flex min-h-[40px] items-center justify-center rounded-[13px] bg-[#f6f9fd] text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#eef4fd]"
+                      className="flex min-h-[36px] items-center justify-center rounded-[8px] bg-[#f6f9fd] text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#eef4fd]"
                     >
                       View all activity
                     </Link>

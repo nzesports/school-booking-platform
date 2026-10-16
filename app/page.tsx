@@ -124,7 +124,7 @@ export default async function HomePage() {
 
               <div className="mt-5">
                 <BookPresentationButton
-                  className="min-h-[50px] rounded-[17px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_30px_rgba(24,168,59,0.26)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                  className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.26)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
                 >
                   Book Now
                   <ArrowRight className="h-4 w-4" />
@@ -258,14 +258,14 @@ export default async function HomePage() {
             </div>
 
             <div className="flex flex-wrap gap-3 lg:ml-auto lg:mr-24">
-              <BookPresentationButton className="min-h-[46px] rounded-[16px] border-[#149238] bg-[color:var(--green)] px-5 py-2.5 text-white shadow-[0_12px_28px_rgba(24,168,59,0.28)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+              <BookPresentationButton className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.28)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
                 Book a free school visit
                 <ArrowRight className="h-4 w-4" />
               </BookPresentationButton>
               <ButtonLink
                 href="/contact"
                 variant="secondary"
-                className="min-h-[46px] rounded-[16px] border-[rgba(20,146,56,0.4)] bg-transparent px-5 py-2.5 text-[#117a2e] shadow-none hover:bg-[rgba(24,168,59,0.06)]"
+                className="border-[rgba(20,146,56,0.4)] bg-transparent text-[#117a2e] shadow-none hover:bg-[rgba(24,168,59,0.06)]"
               >
                 Contact us
               </ButtonLink>

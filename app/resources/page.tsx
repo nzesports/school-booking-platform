@@ -243,7 +243,7 @@ function ResourceAction({
       rel="noreferrer"
       className={
         emphasis
-          ? "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-[16px] bg-[color:var(--green)] px-6 py-3 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(24,168,59,0.24)] transition hover:-translate-y-0.5 hover:bg-[#148f34]"
+          ? "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] bg-[color:var(--green)] px-4 py-2.5 text-[12px] font-semibold text-white shadow-[0_3px_10px_rgba(24,168,59,0.24)] transition hover:-translate-y-0.5 hover:bg-[#148f34]"
           : "inline-flex items-center gap-2 border-b border-[rgba(24,168,59,0.3)] pb-1.5 text-sm font-semibold text-[#117a2e] transition hover:border-[color:var(--green)] hover:text-[color:var(--green)]"
       }
     >

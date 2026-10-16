@@ -138,7 +138,7 @@ export function FeedbackHub({
             type="button"
             onClick={() => selectTab(option.value)}
             className={cn(
-              "inline-flex min-h-[40px] items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition",
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] px-4 text-[12px] font-semibold transition",
               option.value === tab
                 ? "border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                 : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -340,7 +340,7 @@ function FeedbackPagination({
             onClick={() => onPageChange(pageNumber)}
             aria-current={pageNumber === currentPage ? "page" : undefined}
             className={cn(
-              "flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+              "flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
               pageNumber === currentPage
                 ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                 : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:border-[rgba(4,15,75,0.2)]"

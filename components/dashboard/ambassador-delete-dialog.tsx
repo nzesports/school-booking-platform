@@ -57,7 +57,7 @@ export function AmbassadorDeleteDialog({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-[12px] px-2 text-sm font-semibold text-[#9d2424] transition hover:bg-[#fff0f0]"
+          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[#9d2424] transition hover:bg-[#fff0f0]"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
           Delete {recordType}

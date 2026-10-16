@@ -122,7 +122,7 @@ export function DashboardAccountControl({
               href={profile.href}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
             >
               <UserRound className="h-4 w-4" />
               Profile
@@ -133,7 +133,7 @@ export function DashboardAccountControl({
               href={settingsHref}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
             >
               <Settings className="h-4 w-4" />
               Settings
@@ -144,7 +144,7 @@ export function DashboardAccountControl({
               href={usersHref}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
             >
               <Users className="h-4 w-4" />
               Users
@@ -155,7 +155,7 @@ export function DashboardAccountControl({
               href={auditLogsHref}
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
             >
               <ShieldCheck className="h-4 w-4" />
               Audit logs
@@ -165,7 +165,7 @@ export function DashboardAccountControl({
             href="/contact"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
+            className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f4f8fc]"
           >
             <Headphones className="h-4 w-4" />
             Support
@@ -175,7 +175,7 @@ export function DashboardAccountControl({
               <PendingSubmitButton unstyled
                 type="submit"
                 role="menuitem"
-                className="flex min-h-11 w-full items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff4f3]"
+                className="flex w-full items-center text-[#b42318] transition hover:bg-[#fff4f3]"
               >
                 <LogOut className="h-4 w-4" />
                 Log out
@@ -185,7 +185,7 @@ export function DashboardAccountControl({
             <Link
               href="/"
               role="menuitem"
-              className="flex min-h-11 items-center gap-3 rounded-[13px] px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff4f3]"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[#b42318] transition hover:bg-[#fff4f3]"
             >
               <LogOut className="h-4 w-4" />
               Log out

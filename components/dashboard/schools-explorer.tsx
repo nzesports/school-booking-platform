@@ -1,6 +1,7 @@
 "use client";
 
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
+import { TruncatedText } from "@/components/ui/truncated-text";
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -30,15 +31,15 @@ import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
 const schoolTableColumns = [
-  { label: "School", width: "20%" },
-  { label: "Contact", width: "17%" },
+  { label: "School", width: "18%" },
+  { label: "Contact", width: "15%" },
   { label: "Region", width: "8%" },
-  { label: "Delivered", width: "10%" },
-  { label: "Presentations", width: "12%" },
-  { label: "Year groups", width: "9%" },
-  { label: "Last session", width: "8%" },
-  { label: "Next session", width: "10%" },
-  { label: "Bookings", width: "6%" }
+  { label: "Delivered", width: "9%" },
+  { label: "Presentations", width: "11%" },
+  { label: "Year groups", width: "10%" },
+  { label: "Last session", width: "10.5%" },
+  { label: "Next session", width: "10.5%" },
+  { label: "Bookings", width: "8%" }
 ] as const;
 
 export type SchoolDeliverySummary = {
@@ -216,7 +217,7 @@ export function SchoolsExplorer({
               setPage(1);
             }}
             className={cn(
-              "inline-flex min-h-[40px] items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition",
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] px-4 text-[12px] font-semibold transition",
               tab.value === scheduleTab
                 ? "border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                 : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -295,8 +296,8 @@ export function SchoolsExplorer({
           </div>
 
       {/* ------------------------------------------------ table */}
-          <div className="overflow-hidden rounded-[20px] border border-[color:var(--border-soft)] bg-white">
-        <table className="w-full table-fixed border-separate border-spacing-0">
+          <div className="max-w-full overflow-x-auto rounded-[20px] border border-[color:var(--border-soft)] bg-white">
+        <table className="w-full min-w-[1280px] table-fixed border-separate border-spacing-0">
           <colgroup>
             {schoolTableColumns.map((column) => (
               <col key={column.label} style={{ width: column.width }} />
@@ -307,7 +308,7 @@ export function SchoolsExplorer({
               {schoolTableColumns.map((column) => (
                 <th
                   key={column.label}
-                  className="whitespace-nowrap border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
+                  className="overflow-hidden text-ellipsis whitespace-nowrap border-b border-[color:rgba(4,15,75,0.08)] bg-[#f6f9fd] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]"
                 >
                   {column.label}
                 </th>
@@ -336,18 +337,14 @@ export function SchoolsExplorer({
                         </span>
                       )}
                       <span className="min-w-0 flex-1">
-                        <span
-                          className="block truncate font-semibold text-[color:var(--navy)]"
+                        <TruncatedText
+                          className="font-semibold text-[color:var(--navy)]"
                           title={summary.school.name}
-                        >
-                          {summary.school.name}
-                        </span>
-                        <span
-                          className="block truncate text-xs text-[color:var(--text-soft)]"
+                        />
+                        <TruncatedText
+                          className="text-xs text-[color:var(--text-soft)]"
                           title={summary.contactName ?? summary.school.city}
-                        >
-                          {summary.contactName ?? summary.school.city}
-                        </span>
+                        />
                       </span>
                     </span>
                   </td>
@@ -361,7 +358,7 @@ export function SchoolsExplorer({
                             title={summary.school.contactEmail}
                           >
                             <Mail className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{summary.school.contactEmail}</span>
+                            <TruncatedText title={summary.school.contactEmail} />
                           </a>
                         ) : null}
                         {summary.school.contactPhone ? (
@@ -371,7 +368,7 @@ export function SchoolsExplorer({
                             title={summary.school.contactPhone}
                           >
                             <Phone className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{summary.school.contactPhone}</span>
+                            <TruncatedText title={summary.school.contactPhone} />
                           </a>
                         ) : null}
                       </span>
@@ -382,16 +379,12 @@ export function SchoolsExplorer({
                     )}
                   </td>
                   <td className="overflow-hidden border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
-                    <span
-                      className="block truncate"
+                    <TruncatedText
                       title={
                         regionNameBySlug.get(summary.school.regionSlug) ??
                         summary.school.regionSlug
                       }
-                    >
-                      {regionNameBySlug.get(summary.school.regionSlug) ??
-                        summary.school.regionSlug}
-                    </span>
+                    />
                   </td>
                   <td className="overflow-hidden border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
                     <span className="flex min-w-0 items-center gap-2.5">
@@ -427,7 +420,7 @@ export function SchoolsExplorer({
                               title={title}
                             >
                               <ChipIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">{title}</span>
+                              <TruncatedText title={title} />
                             </span>
                           );
                         })}
@@ -458,14 +451,12 @@ export function SchoolsExplorer({
                       title={yearGroups.title}
                     >
                       <UsersRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                      <span className="truncate">{yearGroups.label}</span>
+                      <TruncatedText title={yearGroups.title}>{yearGroups.label}</TruncatedText>
                     </span>
                   </td>
                   <td className="overflow-hidden border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4 text-sm text-[color:var(--navy)]">
                     {delivered ? (
-                      <span className="block truncate" title={summary.lastDeliveredLabel}>
-                        {summary.lastDeliveredLabel}
-                      </span>
+                      <TruncatedText title={summary.lastDeliveredLabel} />
                     ) : (
                       <span className="text-[color:var(--text-soft)]">Not yet delivered</span>
                     )}
@@ -477,7 +468,7 @@ export function SchoolsExplorer({
                         title={summary.nextSessionLabel}
                       >
                         <CalendarDays className="h-4 w-4 shrink-0 text-[#18a83b]" />
-                        <span className="truncate">{summary.nextSessionLabel}</span>
+                        <TruncatedText title={summary.nextSessionLabel} />
                       </span>
                     ) : (
                       <span className="text-sm text-[color:var(--text-soft)]">None scheduled</span>
@@ -488,7 +479,7 @@ export function SchoolsExplorer({
                       type="button"
                       onClick={() => setBookingsSchool(summary.school)}
                       aria-label={`View bookings for ${summary.school.name}`}
-                      className="inline-flex min-h-[32px] items-center justify-center gap-1 whitespace-nowrap rounded-[10px] border border-[#c4dbfb] bg-white px-2.5 text-[11px] font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
+                      className="inline-flex min-h-[36px] items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#c4dbfb] bg-white px-4 text-[12px] font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
                     >
                       <CalendarDays className="h-3 w-3" />
                       View
@@ -526,7 +517,7 @@ export function SchoolsExplorer({
                 type="button"
                 onClick={() => setPage(pageNumber)}
                 className={cn(
-                  "flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+                  "flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
                   pageNumber === safePage
                     ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                     : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]"
@@ -626,7 +617,7 @@ function PendingSchoolMerges({
           </select>
           <PendingSubmitButton unstyled
             type="submit"
-            className="inline-flex min-h-[46px] items-center justify-center rounded-[16px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)]"
+            className="inline-flex items-center justify-center border border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)]"
           >
             Merge school
           </PendingSubmitButton>
@@ -819,7 +810,6 @@ function SchoolBookingsDialog({
                   <div className="mt-3 flex justify-end">
                     <SessionDetailsButton
                       session={session}
-                      className="min-h-[32px] rounded-[10px] px-2.5 py-1 text-xs"
                     />
                   </div>
                 </section>
@@ -832,7 +822,7 @@ function SchoolBookingsDialog({
       <div className="mt-4 flex justify-end">
         <Link
           href={`${basePath}/bookings?status=all&q=${encodeURIComponent(school.name)}`}
-          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#c4dbfb] bg-white px-4 text-sm font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
+          className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border border-[#c4dbfb] bg-white px-4 text-[12px] font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
         >
           <CalendarDays className="h-4 w-4" />
           Manage on the bookings page

@@ -197,7 +197,7 @@ export function SchoolFeedbackForm({
           <div className="flex justify-end border-t border-[color:var(--border-soft)] bg-[rgba(248,252,255,0.78)] px-6 py-5 md:px-7">
             <Button
               type="submit"
-              className="min-h-[48px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-6 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+              className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
             >
               <Send className="h-4 w-4" />
               Submit feedback

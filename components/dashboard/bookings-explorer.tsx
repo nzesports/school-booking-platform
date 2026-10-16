@@ -13,6 +13,9 @@ import {
   startOfWeek
 } from "date-fns";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -52,6 +55,107 @@ import { colourWithAlpha } from "@/lib/presentation-colors";
 import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
+
+// Sortable columns in the list header. "none" keeps the order the server sent
+// (booking creation order) so the default view is unchanged.
+const SORT_KEYS = ["date", "status", "school", "contact", "presentation", "location"] as const;
+
+type SortKey = (typeof SORT_KEYS)[number];
+type SortDirection = "asc" | "desc";
+type SortState = { key: SortKey | null; direction: SortDirection };
+
+const SORT_LABELS: Record<SortKey, string> = {
+  date: "Date",
+  status: "Status",
+  school: "School",
+  contact: "Contact",
+  presentation: "Presentation",
+  location: "Location"
+};
+
+const SORT_DIRECTION_LABELS: Record<SortKey, Record<SortDirection, string>> = {
+  date: { asc: "Oldest first", desc: "Newest first" },
+  status: { asc: "Earliest stage", desc: "Latest stage" },
+  school: { asc: "A–Z", desc: "Z–A" },
+  contact: { asc: "A–Z", desc: "Z–A" },
+  presentation: { asc: "A–Z", desc: "Z–A" },
+  location: { asc: "A–Z", desc: "Z–A" }
+};
+
+// Status sorts by lifecycle position rather than alphabetically, so a booking
+// moves down the list as it progresses instead of jumping around.
+const STATUS_ORDER = new Map<string, number>(
+  BOOKING_STATUS_OPTIONS.map(([value], index) => [value, index])
+);
+
+// Shared by the Location cell and the location sort so both read the same way.
+function bookingLocationLabel(booking: BookingRequestView) {
+  const primarySession = booking.sessions[0];
+  const sessionLocation = primarySession?.locationAddress?.trim();
+  const locationSlug =
+    booking.regionSlug !== "unassigned" ? booking.regionSlug : primarySession?.regionSlug;
+
+  if (primarySession?.deliveryMode === "online") {
+    return "Online (video call)";
+  }
+
+  if (locationSlug === "other" || locationSlug === "other-request-region") {
+    return sessionLocation && !/^new zealand$/i.test(sessionLocation)
+      ? sessionLocation
+      : "Other location";
+  }
+
+  if (locationSlug && locationSlug !== "unassigned") {
+    return primarySession?.regionName ?? titleCase(locationSlug);
+  }
+
+  return sessionLocation || "Location not recorded";
+}
+
+function bookingSortValue(booking: BookingRequestView, key: SortKey) {
+  switch (key) {
+    case "date": {
+      const startsAt = booking.sessions[0]?.startsAt;
+      // Bookings with no session have no date to compare, so they sort last in
+      // both directions rather than clustering at epoch 0.
+      return startsAt ? new Date(startsAt).getTime() : null;
+    }
+    case "status":
+      return STATUS_ORDER.get(schoolBookingStatus(booking.status)) ?? Number.MAX_SAFE_INTEGER;
+    case "school":
+      return booking.schoolName;
+    case "contact":
+      return booking.primaryContactName;
+    case "presentation":
+      return booking.sessions[0]?.presentationTitle ?? "";
+    case "location":
+      return bookingLocationLabel(booking);
+  }
+}
+
+function compareBookings(a: BookingRequestView, b: BookingRequestView, sort: SortState) {
+  if (!sort.key) {
+    return 0;
+  }
+
+  const left = bookingSortValue(a, sort.key);
+  const right = bookingSortValue(b, sort.key);
+
+  if (left === null || right === null) {
+    return left === right ? 0 : left === null ? 1 : -1;
+  }
+
+  const result =
+    typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right), undefined, {
+          sensitivity: "base",
+          numeric: true
+        });
+
+  return sort.direction === "asc" ? result : -result;
+}
+
 const AWAITING_REVIEW_STATUSES = new Set<string>(["requested", "tentative", "applied"]);
 
 function paginationItems(currentPage: number, pageCount: number) {
@@ -170,7 +274,7 @@ function BulkStatusSubmitButton({ count }: { count: number }) {
     <PendingSubmitButton unstyled
       type="submit"
       disabled={pending}
-      className="inline-flex min-h-[38px] items-center justify-center rounded-[10px] bg-[#246bff] px-4 text-xs font-semibold text-white transition hover:bg-[#1d5ce0] disabled:cursor-wait disabled:opacity-60"
+      className="inline-flex items-center justify-center bg-[#246bff] text-white transition hover:bg-[#1d5ce0] disabled:cursor-wait disabled:opacity-60"
     >
       {pending ? "Updating…" : `Update ${count} booking${count === 1 ? "" : "s"}`}
     </PendingSubmitButton>
@@ -283,6 +387,7 @@ export function BookingsExplorer({
   const [presentationFilter, setPresentationFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [sort, setSort] = useState<SortState>({ key: null, direction: "asc" });
   const [page, setPage] = useState(
     initialBookingIndex >= 0 ? Math.floor(initialBookingIndex / PAGE_SIZE) + 1 : 1
   );
@@ -348,6 +453,24 @@ export function BookingsExplorer({
     [bookings, query, regionFilter, presentationFilter, statusFilter, deliveryFilter]
   );
 
+  // Clicking a header cycles that column asc -> desc -> unsorted, so the
+  // server order is always reachable without a reset button.
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current.key !== key
+        ? { key, direction: "asc" }
+        : current.direction === "asc"
+          ? { key, direction: "desc" }
+          : { key: null, direction: "asc" }
+    );
+    setPage(1);
+  };
+
+  const sorted = useMemo(
+    () => (sort.key ? [...filtered].sort((a, b) => compareBookings(a, b, sort)) : filtered),
+    [filtered, sort]
+  );
+
   const calendarSessions = useMemo(
     () =>
       filtered
@@ -357,9 +480,9 @@ export function BookingsExplorer({
     [filtered]
   );
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
-  const pageBookings = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageBookings = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const visiblePaginationItems = paginationItems(safePage, pageCount);
   const allPageBookingsSelected =
     pageBookings.length > 0 && pageBookings.every((booking) => selectedBookingIds.has(booking.id));
@@ -414,7 +537,7 @@ export function BookingsExplorer({
               type="button"
               onClick={() => setViewMode("calendar")}
               className={cn(
-                "inline-flex min-h-[44px] items-center gap-2 px-3.5 text-sm font-semibold transition",
+                "inline-flex min-h-[36px] items-center gap-1.5 px-4 text-[12px] font-semibold transition",
                 viewMode === "calendar"
                   ? "bg-[color:var(--green-soft)] text-[#117a2e]"
                   : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -427,7 +550,7 @@ export function BookingsExplorer({
               type="button"
               onClick={() => setViewMode("list")}
               className={cn(
-                "inline-flex min-h-[44px] items-center gap-2 border-l border-[color:var(--border-soft)] px-3.5 text-sm font-semibold transition",
+                "inline-flex min-h-[36px] items-center gap-1.5 border-l border-[color:var(--border-soft)] px-4 text-[12px] font-semibold transition",
                 viewMode === "list"
                   ? "bg-[color:var(--green-soft)] text-[#117a2e]"
                   : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -503,6 +626,35 @@ export function BookingsExplorer({
               ...BOOKING_STATUS_OPTIONS.map(([value, label]) => ({ value, label }))
             ]}
           />
+          <div className="xl:hidden">
+            <ToolbarSelect
+              label="Sort by"
+              value={sort.key ? `${sort.key}:${sort.direction}` : "none"}
+              onChange={(value) => {
+                if (value === "none") {
+                  setSort({ key: null, direction: "asc" });
+                } else {
+                  const [key, direction] = value.split(":");
+                  setSort({ key: key as SortKey, direction: direction as SortDirection });
+                }
+
+                setPage(1);
+              }}
+              options={[
+                { value: "none", label: "Default order" },
+                ...SORT_KEYS.flatMap((key) => [
+                  {
+                    value: `${key}:asc`,
+                    label: `${SORT_LABELS[key]} · ${SORT_DIRECTION_LABELS[key].asc}`
+                  },
+                  {
+                    value: `${key}:desc`,
+                    label: `${SORT_LABELS[key]} · ${SORT_DIRECTION_LABELS[key].desc}`
+                  }
+                ])
+              ]}
+            />
+          </div>
           {hasActiveFilters ? (
             <button
               type="button"
@@ -514,7 +666,7 @@ export function BookingsExplorer({
                 setDeliveryFilter("all");
                 setPage(1);
               }}
-              className="inline-flex min-h-[36px] items-center gap-1 justify-self-start whitespace-nowrap px-1.5 text-xs! leading-5! font-semibold! text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
+              className="inline-flex min-h-[36px] items-center gap-1.5 justify-self-start whitespace-nowrap px-4 text-[12px]! font-semibold! text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
             >
               <X className="h-3.5 w-3.5" />
               Clear filters
@@ -575,7 +727,6 @@ export function BookingsExplorer({
                   pendingLabel="Deleting…"
                   aria-label={`Delete ${selectedBookingIds.size} selected booking${selectedBookingIds.size === 1 ? "" : "s"}`}
                   title="Delete selected bookings"
-                  className="min-h-[38px] rounded-[10px]"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                   Delete
@@ -612,7 +763,7 @@ export function BookingsExplorer({
           ) : null}
 
           <div className="max-w-full overflow-hidden">
-          <div className="hidden grid-cols-[32px_125px_170px_minmax(180px,1fr)_minmax(200px,1.05fr)_minmax(160px,0.8fr)_minmax(150px,0.8fr)_145px] items-center gap-6 bg-[#f6f9fd] py-3.5 pl-6 pr-9 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] 2xl:grid">
+          <div className="hidden grid-cols-[28px_110px_126px_minmax(100px,1fr)_minmax(118px,1.15fr)_minmax(92px,0.85fr)_minmax(76px,0.7fr)_124px] items-center gap-2.5 bg-[#f6f9fd] py-3 pl-4 pr-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)] xl:grid">
             <input
               type="checkbox"
               checked={allPageBookingsSelected}
@@ -635,12 +786,22 @@ export function BookingsExplorer({
               aria-label="Select all bookings on this page"
               className="h-4 w-4 rounded border-[color:var(--border-soft)] accent-[#18a83b]"
             />
-            <span>Date</span>
-            <span>Status</span>
-            <span className="pl-2.5">School</span>
-            <span>Contact</span>
-            <span>Presentation</span>
-            <span>Location</span>
+            {SORT_KEYS.map((key) => (
+              <SortableColumnHeader
+                key={key}
+                label={SORT_LABELS[key]}
+                hint={
+                  sort.key !== key
+                    ? `Sort by ${SORT_LABELS[key].toLowerCase()} · ${SORT_DIRECTION_LABELS[key].asc}`
+                    : sort.direction === "asc"
+                      ? `Sort by ${SORT_LABELS[key].toLowerCase()} · ${SORT_DIRECTION_LABELS[key].desc}`
+                      : "Clear sorting"
+                }
+                active={sort.key === key}
+                direction={sort.direction}
+                onToggle={() => toggleSort(key)}
+              />
+            ))}
             <span>Actions</span>
           </div>
           {pageBookings.map((booking) => {
@@ -649,21 +810,7 @@ export function BookingsExplorer({
             const uniquePresentations = Array.from(
               new Set(booking.sessions.map((session) => session.presentationTitle))
             );
-            const sessionLocation = primarySession?.locationAddress?.trim();
-            const locationSlug =
-              booking.regionSlug !== "unassigned"
-                ? booking.regionSlug
-                : primarySession?.regionSlug;
-            const locationLabel =
-              primarySession?.deliveryMode === "online"
-                ? "Online (video call)"
-                : locationSlug === "other" || locationSlug === "other-request-region"
-                ? sessionLocation && !/^new zealand$/i.test(sessionLocation)
-                  ? sessionLocation
-                  : "Other location"
-                : locationSlug && locationSlug !== "unassigned"
-                  ? primarySession?.regionName ?? titleCase(locationSlug)
-                  : sessionLocation || "Location not recorded";
+            const locationLabel = bookingLocationLabel(booking);
             // The booking param makes the server render the list view with
             // this card expanded, so the #booking anchor exists on load.
             const cardReturnTo = `${returnTo}&booking=${booking.id}#booking-${booking.id}`;
@@ -688,11 +835,11 @@ export function BookingsExplorer({
               >
                 <div
                   className={cn(
-                    "relative grid min-w-0 gap-x-6 gap-y-5 bg-white py-5 pl-12 pr-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[32px_125px_170px_minmax(180px,1fr)_minmax(200px,1.05fr)_minmax(160px,0.8fr)_minmax(150px,0.8fr)_145px] 2xl:items-center 2xl:gap-6 2xl:py-5 2xl:pl-6 2xl:pr-9",
+                    "relative grid min-w-0 gap-x-6 gap-y-5 bg-white py-5 pl-12 pr-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[28px_110px_126px_minmax(100px,1fr)_minmax(118px,1.15fr)_minmax(92px,0.85fr)_minmax(76px,0.7fr)_124px] xl:items-center xl:gap-2.5 xl:py-3 xl:pl-4 xl:pr-4",
                     open && "bg-[#fbfdff]"
                   )}
                 >
-                  <div className="absolute left-4 top-5 2xl:static">
+                  <div className="absolute left-4 top-5 xl:static">
                     <input
                       type="checkbox"
                       checked={selectedBookingIds.has(booking.id)}
@@ -715,7 +862,7 @@ export function BookingsExplorer({
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Date
                     </p>
                     {primarySession ? (
@@ -731,7 +878,7 @@ export function BookingsExplorer({
                   </div>
 
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Status
                     </p>
                     <StatusEmailForm action={updateStatusAction} className="min-w-0">
@@ -745,8 +892,8 @@ export function BookingsExplorer({
                     </StatusEmailForm>
                   </div>
 
-                  <div className="min-w-0 2xl:pl-2.5">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       School
                     </p>
                     <h3 className="text-[13px] font-semibold leading-5 text-[color:var(--navy)]">
@@ -769,7 +916,7 @@ export function BookingsExplorer({
                   </div>
 
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Contact
                     </p>
                     <p className="truncate text-[13px] font-medium text-[color:var(--navy)]">
@@ -783,7 +930,7 @@ export function BookingsExplorer({
                   </div>
 
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Presentation
                     </p>
                     {uniquePresentations.length > 0 ? (
@@ -798,7 +945,7 @@ export function BookingsExplorer({
                   </div>
 
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Location
                     </p>
                     <p className="flex items-start gap-1.5 text-[12px] leading-5 text-[color:var(--navy)]">
@@ -808,16 +955,15 @@ export function BookingsExplorer({
                   </div>
 
                   <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] 2xl:hidden">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Actions
                     </p>
                     <button
                       type="button"
-                      style={{ fontSize: "13px", lineHeight: "1.15" }}
                       onClick={() => setExpanded((current) => ({ ...current, [booking.id]: !open }))}
                       aria-expanded={open}
                       aria-controls={`booking-sessions-${booking.id}`}
-                      className="inline-flex min-h-[34px] w-full min-w-0 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[9px] border border-[#8db1ff] bg-white px-2 font-semibold text-[#2563eb] transition hover:bg-[#f7faff] sm:w-auto 2xl:w-full"
+                      className="inline-flex min-h-[36px] w-full min-w-0 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] border border-[#8db1ff] bg-white px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[#2563eb] transition hover:bg-[#f7faff] sm:w-auto"
                     >
                       {open ? "Hide sessions" : "View sessions"}
                       {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -835,7 +981,7 @@ export function BookingsExplorer({
                         <CalendarDays className="h-4 w-4 text-[color:var(--text-soft)]" />
                         Requested sessions
                       </p>
-                      <div className="mt-3 grid gap-2 2xl:hidden">
+                      <div className="mt-3 grid gap-2 xl:hidden">
                         {booking.sessions.map((session) => (
                           <CompactSessionCard
                             key={session.id}
@@ -854,8 +1000,8 @@ export function BookingsExplorer({
                           />
                         ))}
                       </div>
-                      <div className="mt-3 hidden overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white 2xl:block">
-                        <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0">
+                      <div className="mt-3 hidden overflow-x-auto rounded-[14px] border border-[color:var(--border-soft)] bg-white xl:block">
+                        <table className="w-full min-w-[980px] table-fixed border-separate border-spacing-0">
                         <colgroup>
                           <col className="w-[17%]" />
                           <col className="w-[13%]" />
@@ -930,7 +1076,7 @@ export function BookingsExplorer({
                                   />
                                   <PendingSubmitButton unstyled
                                     type="submit"
-                                    className="inline-flex h-8 min-h-[32px] shrink-0 items-center justify-center rounded-lg border border-[#dbe6f5] bg-white px-2.5 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
+                                    className="inline-flex shrink-0 items-center justify-center border border-[#dbe6f5] bg-white text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
                                   >
                                     Assign
                                   </PendingSubmitButton>
@@ -948,10 +1094,10 @@ export function BookingsExplorer({
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
                                 <SessionDetailsButton
                                   session={session}
-                                  className="h-8 min-h-[32px] rounded-lg border-[#dbe6f5] px-2.5 py-1 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none [&>svg]:h-3.5 [&>svg]:w-3.5"
+                                  className="border-[#dbe6f5] text-[#2563eb] shadow-none [&>svg]:h-3.5 [&>svg]:w-3.5"
                                   label={
                                     <>
-                                      <Eye className="h-3.5 w-3.5" />
+                                      <Eye />
                                       Details
                                     </>
                                   }
@@ -1019,7 +1165,7 @@ export function BookingsExplorer({
                       aria-label={`Go to page ${item}`}
                       onClick={() => setPage(item)}
                       className={cn(
-                        "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+                        "flex min-h-[36px] min-w-[36px] shrink-0 items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
                         item === safePage
                           ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                           : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:border-[rgba(37,99,235,0.25)] hover:bg-[#f7faff]"
@@ -1140,7 +1286,7 @@ function CompactSessionCard({
             />
             <PendingSubmitButton unstyled
               type="submit"
-              className="inline-flex h-8 min-h-[32px] items-center justify-center rounded-lg border border-[#dbe6f5] bg-white px-2.5 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
+              className="inline-flex items-center justify-center border border-[#dbe6f5] bg-white text-[#2563eb] shadow-none transition hover:bg-[#f4f8ff]"
             >
               Assign
             </PendingSubmitButton>
@@ -1148,10 +1294,10 @@ function CompactSessionCard({
         </div>
         <SessionDetailsButton
           session={session}
-          className="h-8 min-h-[32px] w-full rounded-lg border-[#dbe6f5] px-2.5 py-1 text-xs! font-semibold! leading-4! text-[#2563eb] shadow-none xl:w-auto"
+          className="w-full border-[#dbe6f5] text-[#2563eb] shadow-none xl:w-auto"
           label={
             <>
-              <Eye className="h-3.5 w-3.5" />
+              <Eye />
               Details
             </>
           }
@@ -1211,7 +1357,7 @@ function WithdrawalReviewPanel({
             <input type="hidden" name="decision" value="approve" />
             <PendingSubmitButton unstyled
               type="submit"
-              className="inline-flex min-h-[42px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]"
+              className="inline-flex w-full items-center justify-center border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]"
             >
               Approve withdrawal - reopen session
             </PendingSubmitButton>
@@ -1227,7 +1373,7 @@ function WithdrawalReviewPanel({
             />
             <PendingSubmitButton unstyled
               type="submit"
-              className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
+              className="inline-flex items-center justify-center border border-[#f2ddb0] bg-white text-[#9a5a00] transition hover:bg-[#fff2d8]"
             >
               Decline - keep assigned
             </PendingSubmitButton>
@@ -1388,7 +1534,7 @@ function BookingsCalendar({
                         onOpen={onOpenSession ? () => onOpenSession(session.id) : undefined}
                         returnTo={returnTo}
                         className={cn(
-                          "w-full truncate rounded-[8px] border px-1.5 py-1 text-left text-[11px] font-semibold leading-4 transition",
+                          "w-full truncate border text-left transition",
                           calendarToneStyles[calendarTone(session.status)]
                         )}
                         label={
@@ -1603,7 +1749,7 @@ function AmbassadorSearchSelect({
             }
           }}
           placeholder={assignedName ?? "Search ambassadors..."}
-          className="h-[30px] min-h-[30px] min-w-0 flex-1 bg-transparent text-xs! leading-4! text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
+          className="h-[30px] min-h-[36px] min-w-0 flex-1 bg-transparent text-xs! leading-4! text-[color:var(--navy)] outline-none placeholder:text-[color:var(--text-soft)]"
         />
         {text ? (
           <button
@@ -1738,6 +1884,48 @@ function AmbassadorSearchSelect({
 }
 
 /* ------------------------------------------------------------------ */
+
+function SortableColumnHeader({
+  label,
+  hint,
+  active,
+  direction,
+  onToggle
+}: {
+  label: string;
+  hint: string;
+  active: boolean;
+  direction: SortDirection;
+  onToggle: () => void;
+}) {
+  const SortIcon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={
+        active
+          ? `${label}, sorted ${direction === "asc" ? "ascending" : "descending"}`
+          : `Sort by ${label}`
+      }
+      title={hint}
+      className={cn(
+        "group -ml-1 inline-flex min-w-0 items-center gap-1 rounded-[6px] px-1 py-0.5 text-left uppercase tracking-[0.14em] transition hover:text-[color:var(--navy)]",
+        active ? "text-[color:var(--navy)]" : "text-[color:var(--text-soft)]"
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <SortIcon
+        aria-hidden="true"
+        className={cn(
+          "h-3 w-3 shrink-0 transition",
+          active ? "opacity-100" : "opacity-0 group-hover:opacity-60"
+        )}
+      />
+    </button>
+  );
+}
 
 function ToolbarSelect({
   label,

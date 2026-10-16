@@ -81,7 +81,7 @@ export function SchoolFeedbackCarousel({ testimonials }: { testimonials: Testimo
           type="button"
           onClick={() => scroll(-1)}
           aria-label="View previous school feedback"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_8px_18px_rgba(11,24,77,0.06)] transition hover:border-[rgba(24,168,59,0.35)] hover:text-[color:var(--green)]"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)] transition hover:border-[rgba(24,168,59,0.35)] hover:text-[color:var(--green)]"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -89,7 +89,7 @@ export function SchoolFeedbackCarousel({ testimonials }: { testimonials: Testimo
           type="button"
           onClick={() => scroll(1)}
           aria-label="View next school feedback"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_8px_18px_rgba(11,24,77,0.06)] transition hover:border-[rgba(24,168,59,0.35)] hover:text-[color:var(--green)]"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)] transition hover:border-[rgba(24,168,59,0.35)] hover:text-[color:var(--green)]"
         >
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </button>

@@ -199,7 +199,6 @@ export function SchoolResourceLibrary({ resources }: { resources: ResourceRecord
                         target="_blank"
                         rel="noreferrer"
                         variant="secondary"
-                        className="min-h-[38px] rounded-[12px] px-3"
                       >
                         <ExternalLink className="h-4 w-4" />
                         {openLabel(resource)}

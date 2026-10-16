@@ -106,7 +106,7 @@ export function ReportDetailsButton({
           setActiveReportId(initialReport.id);
           setOpen(true);
         }}
-        className={className ?? "min-h-[36px] rounded-[14px] px-3 py-1.5 text-xs"}
+        className={className ?? ""}
       >
         <Eye className="h-3.5 w-3.5" />
         {label}
@@ -319,7 +319,7 @@ export function ReportDetailsButton({
                     <input type="hidden" name="returnTo" value={reviewReturnTo ?? "/staff/reports"} />
                     <Button
                       type="submit"
-                      className="min-h-[42px] rounded-[12px] border-[#2563eb] bg-[#2563eb] px-4 py-2 text-sm text-white shadow-[0_10px_24px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
+                      className="border-[#2563eb] bg-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
                     >
                       <CheckCircle2 className="h-4 w-4" />
                       {report.paymentRequired && !report.paymentDetailsComplete
@@ -358,7 +358,7 @@ export function ReportDetailsButton({
                       href={mediaSrc(lightbox)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex min-h-[40px] items-center gap-2 rounded-[12px] bg-white/14 px-3.5 text-sm font-semibold text-white transition hover:bg-white/24"
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] bg-white/14 px-4 text-[12px] font-semibold text-white transition hover:bg-white/24"
                     >
                       Open original
                       <ExternalLink className="h-4 w-4" />

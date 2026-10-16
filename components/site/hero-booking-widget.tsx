@@ -324,7 +324,6 @@ export function HeroBookingWidget({
               });
               setNextSessionNumber((current) => current + 1);
             }}
-            className="rounded-full px-5 py-2.5 text-sm"
             disabled={sessions.length >= 5}
           >
             <Plus className="h-4 w-4" />
@@ -343,7 +342,6 @@ export function HeroBookingWidget({
                 sessions: normalizeSessions(sessions)
               });
             }}
-            className="min-h-[50px] rounded-[18px] px-5 py-2.5"
             disabled={!canLaunchRequest}
           >
             Book now

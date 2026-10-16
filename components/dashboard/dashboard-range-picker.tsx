@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 // Override the global form-control font reset so button and link rows match.
-const rangeOptionClassName = "flex min-h-[36px] w-full items-center rounded-[14px] px-3 py-2 text-left text-sm! font-semibold! leading-5! text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]";
+const rangeOptionClassName = "flex min-h-[36px] w-full items-center rounded-[8px] px-4 py-2.5 text-left text-[12px]! font-semibold! leading-[16px]! text-[color:var(--navy)] transition hover:bg-[color:var(--blue-soft)]";
 
 export function DashboardRangePicker({
   label,
@@ -78,7 +78,7 @@ export function DashboardRangePicker({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex min-h-[46px] cursor-pointer items-center gap-2 rounded-[14px] border border-[color:var(--border-soft)] bg-white/94 px-4 py-1.5 text-[13px] font-semibold text-[color:var(--navy)] shadow-[0_10px_25px_rgba(11,24,77,0.06)]"
+        className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white/94 px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.05)]"
         aria-expanded={open}
       >
         <CalendarRange className="h-4 w-4 text-[color:var(--green)]" />
@@ -166,7 +166,7 @@ export function DashboardRangePicker({
                   <button
                     type="submit"
                     disabled={!customDatesValid}
-                    className="inline-flex min-h-[40px] items-center justify-center rounded-[11px] bg-[color:var(--navy)] px-4 text-sm font-semibold text-white transition hover:bg-[#101c56] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex min-h-[36px] items-center justify-center rounded-[8px] bg-[color:var(--navy)] px-4 text-[12px] font-semibold text-white transition hover:bg-[#101c56] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Apply date range
                   </button>

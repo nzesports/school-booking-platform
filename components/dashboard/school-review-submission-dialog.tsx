@@ -62,7 +62,7 @@ export function SchoolReviewSubmissionButton({
         type="button"
         variant="secondary"
         onClick={() => setOpen(true)}
-        className={className ?? "min-h-[42px] rounded-[13px] px-4 text-[13px]"}
+        className={className ?? ""}
       >
         <Eye className="h-3.5 w-3.5" />
         View submission

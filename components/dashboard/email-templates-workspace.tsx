@@ -149,7 +149,7 @@ export function EmailTemplatesWorkspace({
         <Button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="min-h-[46px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white shadow-[0_12px_28px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
+          className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.18)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
         >
           <Plus className="h-4 w-4" />
           Create template
@@ -180,7 +180,7 @@ export function EmailTemplatesWorkspace({
                 type="button"
                 onClick={() => setCategory(option)}
                 className={cn(
-                  "inline-flex min-h-[32px] items-center rounded-full border px-3 text-xs font-semibold transition",
+                  "inline-flex min-h-[36px] items-center rounded-full border px-4 text-[12px] font-semibold transition",
                   option === category
                     ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                     : "border-[color:var(--border-soft)] bg-white text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -282,7 +282,7 @@ export function EmailTemplatesWorkspace({
                 <input type="hidden" name="templateKey" value={selected.key} />
                 <PendingSubmitButton unstyled
                   type="submit"
-                  className="inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] border border-[#c4dbfb] bg-white px-3 text-xs font-semibold text-[#1e4fae] transition hover:bg-[#f4f8ff]"
+                  className="inline-flex items-center border border-[#c4dbfb] bg-white text-[#1e4fae] transition hover:bg-[#f4f8ff]"
                 >
                   <Send className="h-3.5 w-3.5" />
                   Send test to me
@@ -379,7 +379,7 @@ export function EmailTemplatesWorkspace({
                     </label>
                     <Button
                       type="submit"
-                      className="min-h-[42px] rounded-[13px] border-[#149238] bg-[color:var(--green)] px-5 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                      className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
                     >
                       Save changes
                     </Button>
@@ -445,7 +445,7 @@ export function EmailTemplatesWorkspace({
                   </label>
                   <Button
                     type="submit"
-                    className="min-h-[44px] rounded-[13px] border-[#149238] bg-[color:var(--green)] px-5 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                    className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
                   >
                     Create template
                   </Button>

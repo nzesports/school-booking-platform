@@ -703,13 +703,12 @@ export function AmbassadorProfileWorkspace({
             setEditing({ personal: false, payment: false, tax: false, preferences: false });
             setFormVersion((version) => version + 1);
           }}
-          className="rounded-[14px]"
         >
           Discard changes
         </Button>
         <Button
           type="submit"
-          className="rounded-[14px] border-[#2563eb] bg-[#2563eb] text-white shadow-[0_12px_28px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
+          className="border-[#2563eb] bg-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
         >
           Save changes
         </Button>
@@ -782,7 +781,6 @@ function ProfileSection({
           type="button"
           variant={editing ? "primary" : "secondary"}
           onClick={onToggle}
-          className="min-h-[38px] rounded-[12px] px-3.5 py-1.5 text-xs"
         >
           <PencilLine className="h-3.5 w-3.5" />
           {editing ? "Editing" : "Edit"}

@@ -81,7 +81,7 @@ export function SchoolFeedbackDetailsButton({
           setActiveReviewId(initialReview.id);
           setOpen(true);
         }}
-        className={className ?? "min-h-[36px] rounded-[14px] px-3 py-1.5 text-xs"}
+        className={className ?? ""}
       >
         <Eye className="h-3.5 w-3.5" />
         {label}

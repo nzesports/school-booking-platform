@@ -77,7 +77,7 @@ export function AmbassadorNotesPanel({
           className={textareaClassName}
         />
         <div className="flex justify-end">
-          <PendingSubmitButton type="submit" pendingLabel="Posting…" className="min-h-[42px] rounded-[14px] px-5">
+          <PendingSubmitButton type="submit" pendingLabel="Posting…">
             <MessageSquare className="h-4 w-4" aria-hidden="true" />
             Post note
           </PendingSubmitButton>
@@ -140,7 +140,7 @@ export function AmbassadorNotesPanel({
                     className={textareaClassName}
                   />
                   <div className="flex justify-end">
-                    <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Replying…" className="min-h-[36px] rounded-[12px] px-4 text-xs!">
+                    <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Replying…">
                       Reply
                     </PendingSubmitButton>
                   </div>
@@ -196,7 +196,7 @@ function NoteBody({
                 <p className="text-xs text-[color:var(--text-dark)]">
                   {note.replies.length > 0 ? "Delete this note and its replies?" : "Delete this note?"}
                 </p>
-                <PendingSubmitButton type="submit" variant="danger" pendingLabel="Deleting…" className="mt-2 min-h-[32px] w-full rounded-[10px] text-xs!">
+                <PendingSubmitButton type="submit" variant="danger" pendingLabel="Deleting…" className="mt-2 w-full">
                   Delete note
                 </PendingSubmitButton>
               </form>

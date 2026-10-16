@@ -27,7 +27,7 @@ export function AmbassadorApplicationWithdrawDialog({
         type="button"
         variant="ghost"
         onClick={() => setOpen(true)}
-        className={className ?? "min-h-[40px] rounded-[14px] px-3 py-1.5 text-xs"}
+        className={className ?? ""}
       >
         Withdraw application
       </Button>

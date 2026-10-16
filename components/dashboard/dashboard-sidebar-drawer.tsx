@@ -41,7 +41,7 @@ export function DashboardSidebarDrawer({ children }: { children: ReactNode }) {
         aria-expanded={open}
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed left-4 top-4 z-[60] inline-flex h-12 w-12 items-center justify-center rounded-[16px] border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_12px_30px_rgba(11,24,77,0.16)] transition xl:hidden",
+          "fixed left-4 top-4 z-[60] inline-flex h-12 w-12 items-center justify-center rounded-[16px] border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.16)] transition xl:hidden",
           open && "pointer-events-none invisible opacity-0"
         )}
       >

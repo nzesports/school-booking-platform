@@ -149,7 +149,7 @@ function OutstandingReportRow({ session }: { session: BookingSessionView }) {
             {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}
           </p>
         </div>
-        <ButtonLink href={`/ambassador/report/${session.id}`} className="min-h-9 shrink-0 px-3 py-1.5">
+        <ButtonLink href={`/ambassador/report/${session.id}`} className="shrink-0">
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           Submit report
         </ButtonLink>
@@ -190,7 +190,7 @@ function SubmittedReportCard({ report }: { report: ReportSummary }) {
           <span className="rounded-full bg-[#eaf8ee] px-2.5 py-1 text-xs font-semibold text-[#117a2e]">
             {report.status === "reviewed" ? "Payment reviewed" : "Submitted"}
           </span>
-          <ReportDetailsButton report={report} label="View report" className="min-h-9 rounded-[11px] px-3 py-1.5 text-xs" />
+          <ReportDetailsButton report={report} label="View report" />
         </div>
       </div>
     </article>

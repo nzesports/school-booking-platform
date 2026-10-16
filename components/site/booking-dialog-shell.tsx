@@ -56,7 +56,7 @@ export function BookingDialogShell({
         type="button"
         onClick={onClose}
         aria-label="Close dialog"
-        className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-[rgba(4,15,75,0.6)] text-white shadow-[0_10px_24px_rgba(4,15,75,0.3)] lg:hidden"
+        className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-[rgba(4,15,75,0.6)] text-white shadow-[0_3px_10px_rgba(4,15,75,0.3)] lg:hidden"
       >
         <X className="h-4 w-4" />
       </button>
@@ -90,7 +90,7 @@ export function BookingDialogShell({
               type="button"
               variant="ghost"
               onClick={onClose}
-              className="absolute right-0 top-0 h-12 min-h-[48px] w-12 shrink-0 rounded-[16px] border border-[rgba(4,15,75,0.08)] bg-white/78 px-0 py-0"
+              className="absolute right-0 top-0 shrink-0 border border-[rgba(4,15,75,0.08)] bg-white/78"
             >
               <X className="h-4 w-4" />
             </Button>

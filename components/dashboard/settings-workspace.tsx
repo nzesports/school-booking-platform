@@ -328,7 +328,7 @@ function SettingsCard({
         <div className="flex justify-end">
           <PendingSubmitButton unstyled
             type="submit"
-            className="inline-flex min-h-[46px] items-center justify-center rounded-[14px] bg-[color:var(--green)] px-5 text-sm font-semibold text-white transition hover:bg-[#128a30]"
+            className="inline-flex items-center justify-center bg-[color:var(--green)] text-white transition hover:bg-[#128a30]"
           >
             Save changes
           </PendingSubmitButton>

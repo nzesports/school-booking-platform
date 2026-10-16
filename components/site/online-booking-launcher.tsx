@@ -35,7 +35,7 @@ export function OnlineBookingLauncher({
       <Button
         type="button"
         onClick={() => setRequest((current) => ({ id: (current?.id ?? 1) + 1 }))}
-        className="min-h-12 w-full"
+        className="w-full"
       >
         <MonitorPlay className="h-4 w-4" aria-hidden="true" />
         Start your online booking

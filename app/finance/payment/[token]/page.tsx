@@ -169,7 +169,7 @@ export default async function FinancePaymentPage({
           <PendingSubmitButton
             type="submit"
             pendingLabel="Recording payment..."
-            className="min-h-[50px] w-full rounded-[16px]"
+            className="w-full"
           >
             <CircleCheck className="h-5 w-5" />
             Confirm payment made

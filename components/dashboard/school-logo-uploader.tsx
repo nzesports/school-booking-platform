@@ -193,7 +193,7 @@ export function SchoolLogoUploader({
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
             {uploadLabel}
           </span>
-          <span className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white/92 px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[rgba(24,168,59,0.35)] hover:bg-[#f7fdf8]">
+          <span className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white/92 px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] transition hover:border-[rgba(24,168,59,0.35)] hover:bg-[#f7fdf8]">
             <ImagePlus className="h-4 w-4 text-[color:var(--green)]" />
             {chooseLabel}
           </span>
@@ -236,7 +236,7 @@ export function SchoolLogoUploader({
             type="button"
             variant="secondary"
             onClick={() => setCropOpen(true)}
-            className="min-h-[40px] w-fit rounded-[13px] px-4 text-xs"
+            className="w-fit"
           >
             <Move className="h-3.5 w-3.5" />
             Adjust crop

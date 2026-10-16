@@ -170,7 +170,7 @@ export function SiteFooter({
               autoComplete="email"
               className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-[color:var(--text-soft)]"
             />
-            <Button type="submit" className="h-11 min-h-[44px] w-11 rounded-[14px] px-0 py-0">
+            <Button type="submit">
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>

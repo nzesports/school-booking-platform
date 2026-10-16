@@ -1,5 +1,6 @@
 import type { TextareaHTMLAttributes } from "react";
 
+import { TEXTAREA_BASE } from "@/components/ui/field-base";
 import { cn } from "@/lib/utils";
 
 export function Textarea({
@@ -9,7 +10,7 @@ export function Textarea({
   return (
     <textarea
       className={cn(
-        "min-h-28 w-full rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-3 text-sm text-[color:var(--text-dark)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.55)] outline-none transition placeholder:text-[color:var(--text-soft)] focus:border-[color:rgba(24,168,59,0.34)] focus:ring-4 focus:ring-[rgba(24,168,59,0.1)]",
+        TEXTAREA_BASE,
         className
       )}
       {...props}

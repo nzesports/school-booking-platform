@@ -85,11 +85,18 @@ h2 {
   }
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
+/* Layered for the same reason as the `a` rule above. Unlayered, `font: inherit`
+   beats every Tailwind utility, so a button's text-[11px]/font-semibold/leading
+   classes were silently dropped and controls rendered at the body font size.
+   Inside @layer base it still resets controls that set no font utility, while
+   any utility on the element now wins. */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
 
 a[href],

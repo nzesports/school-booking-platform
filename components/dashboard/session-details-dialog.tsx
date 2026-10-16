@@ -201,7 +201,7 @@ export function SessionDetailsButton({
           onClick={openDialog}
           className={
             className ??
-            "min-h-[40px] rounded-[13px] border-transparent bg-[#e8f1fd] px-3.5 py-1.5 text-xs text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
+            "border-transparent bg-[#e8f1fd] text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
           }
         >
           {label ?? (
@@ -549,7 +549,7 @@ export function SessionDetailsButton({
                       <input type="hidden" name="decision" value="approve" />
                       <PendingSubmitButton unstyled
                         type="submit"
-                        className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#18a83b] bg-[#18a83b] px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(24,168,59,0.22)] transition hover:bg-[#12852f] sm:w-auto"
+                        className="inline-flex w-full items-center justify-center border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.18)] transition hover:bg-[#12852f] sm:w-auto"
                       >
                         Approve withdrawal - reopen session
                       </PendingSubmitButton>
@@ -573,7 +573,7 @@ export function SessionDetailsButton({
                       </label>
                       <PendingSubmitButton unstyled
                         type="submit"
-                        className="inline-flex min-h-[44px] items-center justify-center rounded-[12px] border border-[#f2ddb0] bg-white px-4 text-sm font-semibold text-[#9a5a00] transition hover:bg-[#fff2d8]"
+                        className="inline-flex items-center justify-center border border-[#f2ddb0] bg-white text-[#9a5a00] transition hover:bg-[#fff2d8]"
                       >
                         Decline - keep assigned
                       </PendingSubmitButton>
@@ -597,7 +597,7 @@ export function SessionDetailsButton({
                     type="button"
                     variant="secondary"
                     onClick={copyFeedbackLink}
-                    className="h-9 min-h-[36px] rounded-lg px-3 text-xs! font-semibold! leading-4! shadow-none"
+                    className="shadow-none"
                   >
                     {feedbackLinkCopied ? (
                       <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
@@ -624,7 +624,7 @@ export function SessionDetailsButton({
                       {...(provider.download
                         ? { download: provider.download }
                         : { target: "_blank", rel: "noreferrer" })}
-                      className="inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-[color:var(--border-soft)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
+                      className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
                     >
                       {provider.icon}
                       {provider.label}
@@ -860,7 +860,7 @@ function MeetingLinkSection({
                 setCopied(false);
               }
             }}
-            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[9px] px-2.5 text-xs font-semibold text-[color:var(--navy)] transition hover:bg-white"
+            className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] transition hover:bg-white"
           >
             {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy"}
@@ -872,7 +872,7 @@ function MeetingLinkSection({
               unstyled
               type="submit"
               pendingLabel="Removing..."
-              className="inline-flex h-8 shrink-0 items-center rounded-[9px] px-2.5 text-xs! font-semibold! text-[#9d2424] transition hover:bg-white"
+              className="inline-flex shrink-0 items-center text-[#9d2424] transition hover:bg-white"
             >
               Remove
             </PendingSubmitButton>

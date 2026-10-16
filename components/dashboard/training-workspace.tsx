@@ -634,7 +634,7 @@ function TrainingLessonRow({ lesson }: { lesson: TrainingModule["lessons"][numbe
         <span className="block truncate text-sm font-semibold text-[color:var(--navy)]">{lesson.title}</span>
       </span>
       {href ? (
-        <ButtonLink href={href} target="_blank" rel="noopener noreferrer" variant="secondary" className="min-h-9 rounded-[11px] px-3 py-1.5">
+        <ButtonLink href={href} target="_blank" rel="noopener noreferrer" variant="secondary">
           <Eye aria-hidden="true" />
           View
         </ButtonLink>
@@ -683,13 +683,13 @@ function TrainingResourceLink({
       {previewUrl || downloadUrl ? (
         <span className="flex shrink-0 flex-wrap items-center gap-2">
           {previewUrl ? (
-            <ButtonLink href={previewUrl} target="_blank" rel="noopener noreferrer" variant="secondary" className="min-h-9 rounded-[11px] px-3 py-1.5">
+            <ButtonLink href={previewUrl} target="_blank" rel="noopener noreferrer" variant="secondary">
               <Eye aria-hidden="true" />
               View
             </ButtonLink>
           ) : null}
           {downloadUrl ? (
-            <ButtonLink href={downloadUrl} className="min-h-9 rounded-[11px] px-3 py-1.5">
+            <ButtonLink href={downloadUrl}>
               <Download aria-hidden="true" />
               Download
             </ButtonLink>
@@ -953,7 +953,7 @@ export function ResourceLibraryWorkspace({
                     <button
                       type="button"
                       onClick={() => setActiveBucket("overview")}
-                      className="inline-flex min-h-[42px] items-center gap-1.5 rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3.5 text-base font-semibold text-[color:var(--navy)] hover:border-[#9fd4ad]"
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 text-[12px] font-semibold text-[color:var(--navy)] hover:border-[#9fd4ad]"
                     >
                       <ChevronLeft className="h-4 w-4" />
                       Shelves
@@ -974,7 +974,7 @@ export function ResourceLibraryWorkspace({
 
               {showFilterControls ? (
                 <details className="group relative">
-                  <summary className="flex min-h-[42px] list-none items-center gap-2 rounded-[12px] border border-[color:var(--border-soft)] bg-white px-3.5 text-base font-semibold text-[color:var(--navy)] hover:border-[#9fd4ad]">
+                  <summary className="flex min-h-[36px] list-none items-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-[color:var(--navy)] hover:border-[#9fd4ad]">
                     <SlidersHorizontal className="h-4 w-4 text-[#117a2e]" />
                     Filter and sort
                   </summary>
@@ -1099,7 +1099,7 @@ function ResourceShelf({
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-[176px] flex-col rounded-[22px] border border-[color:var(--border-soft)] bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-[#9fd4ad] hover:shadow-[0_14px_34px_rgba(11,24,77,0.08)]"
+      className="group flex min-h-[176px] flex-col rounded-[22px] border border-[color:var(--border-soft)] bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-[#9fd4ad] hover:shadow-[0_3px_10px_rgba(11,24,77,0.08)]"
     >
       <span className="flex h-12 w-12 items-center justify-center rounded-[15px] bg-[color:var(--green-soft)] text-[#117a2e]">
         <Icon className="h-5 w-5" />
@@ -1178,7 +1178,7 @@ function ResourceLibraryCard({ resource }: { resource: ResourceRecord }) {
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[12px] border bg-white px-4 py-2 text-base font-semibold transition",
+              "inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border bg-white px-4 py-2.5 text-[12px] font-semibold transition",
               bucket.actionClassName
             )}
           >

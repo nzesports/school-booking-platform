@@ -111,9 +111,9 @@ export function AuthSplitShell({
                       href={tab.href}
                       aria-current={tab.active ? "page" : undefined}
                       className={cn(
-                        "inline-flex min-h-[46px] items-center justify-center rounded-full px-5 text-sm font-semibold transition",
+                        "inline-flex min-h-[36px] items-center justify-center rounded-full px-4 text-[12px] font-semibold transition",
                         tab.active
-                          ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                          ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)]"
                           : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
                       )}
                     >

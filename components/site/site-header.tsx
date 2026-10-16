@@ -47,7 +47,7 @@ export function SiteHeader() {
             <ButtonLink
               href={portalPath}
               variant="secondary"
-              className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm sm:inline-flex"
+              className="hidden sm:inline-flex"
             >
               My portal
             </ButtonLink>
@@ -57,20 +57,20 @@ export function SiteHeader() {
                 mode="signup"
                 role="school"
                 variant="ghost"
-                className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm lg:inline-flex"
+                className="hidden lg:inline-flex"
               >
                 Sign up
               </AuthModalButton>
               <AuthModalButton
                 mode="login"
                 variant="secondary"
-                className="hidden min-h-[40px] rounded-[13px] px-4 py-2 text-sm sm:inline-flex"
+                className="hidden sm:inline-flex"
               >
                 Log in
               </AuthModalButton>
             </>
           )}
-          <BookPresentationButton className="hidden min-h-[40px] rounded-[13px] px-5 py-2 text-sm xl:inline-flex">
+          <BookPresentationButton className="hidden xl:inline-flex">
             Book a Presentation
           </BookPresentationButton>
 
@@ -101,14 +101,14 @@ export function SiteHeader() {
             ))}
 
             <div className="mt-2 grid gap-2 border-t border-[color:var(--border-soft)] pt-3">
-              <BookPresentationButton className="min-h-[42px] w-full rounded-[13px] px-4 py-1.5 text-[13px]">
+              <BookPresentationButton className="w-full">
                 Book a Presentation
               </BookPresentationButton>
               {portalPath ? (
                 <ButtonLink
                   href={portalPath}
                   variant="secondary"
-                  className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
+                  className="w-full"
                 >
                   My portal
                 </ButtonLink>
@@ -118,14 +118,14 @@ export function SiteHeader() {
                     mode="signup"
                     role="school"
                     variant="secondary"
-                    className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
+                    className="w-full"
                   >
                     Sign up
                   </AuthModalButton>
                   <AuthModalButton
                     mode="login"
                     variant="secondary"
-                    className="min-h-[40px] w-full rounded-[13px] px-3 py-1.5 text-[13px]"
+                    className="w-full"
                   >
                     Log in
                   </AuthModalButton>

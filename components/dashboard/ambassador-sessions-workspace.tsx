@@ -75,7 +75,7 @@ export function AmbassadorSessionsWorkspace({
               </h2>
             </div>
           </div>
-          {mode === "upcoming" ? <ButtonLink href="/ambassador/bookings?tab=open" variant="ghost" className="rounded-[13px]">Find more bookings <ArrowRight className="h-4 w-4" /></ButtonLink> : null}
+          {mode === "upcoming" ? <ButtonLink href="/ambassador/bookings?tab=open" variant="ghost">Find more bookings <ArrowRight className="h-4 w-4" /></ButtonLink> : null}
         </div>
 
         <div className="mt-6 grid gap-4">
@@ -122,7 +122,7 @@ function SessionCard({ session, mode, withdrawalAction }: { session: BookingSess
           {mode === "upcoming" ? (
             <AmbassadorWithdrawDialog session={session} action={withdrawalAction} returnTo="/ambassador/bookings?tab=upcoming" />
           ) : session.reportStatus === "not_submitted" ? (
-            <ButtonLink href={`/ambassador/report/${session.id}`} className="min-h-[40px] rounded-[13px] px-3.5">Submit report <ArrowRight className="h-4 w-4" /></ButtonLink>
+            <ButtonLink href={`/ambassador/report/${session.id}`}>Submit report <ArrowRight className="h-4 w-4" /></ButtonLink>
           ) : null}
         </div>
       </div>

@@ -143,7 +143,7 @@ export function AuthModalHost({
         type="button"
         onClick={closeAuth}
         aria-label="Close authentication dialog"
-        className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-[rgba(4,15,75,0.6)] text-white shadow-[0_10px_24px_rgba(4,15,75,0.3)] lg:hidden"
+        className="fixed right-3 top-3 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-[rgba(4,15,75,0.6)] text-white shadow-[0_3px_10px_rgba(4,15,75,0.3)] lg:hidden"
       >
         <X className="h-4 w-4" />
       </button>
@@ -193,7 +193,7 @@ export function AuthModalHost({
           <button
             type="button"
             onClick={closeAuth}
-            className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-[rgba(4,15,75,0.08)] bg-white/82 text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)] transition hover:bg-white"
+            className="absolute right-5 top-5 inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-[rgba(4,15,75,0.08)] bg-white/82 text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)] transition hover:bg-white"
             aria-label="Close authentication dialog"
           >
             <X className="h-4 w-4" />
@@ -205,9 +205,9 @@ export function AuthModalHost({
                 type="button"
                 onClick={() => openAuth({ mode: "login" })}
                 className={cn(
-                  "inline-flex min-h-[46px] items-center justify-center rounded-full px-5 text-sm font-semibold transition",
+                  "inline-flex min-h-[36px] items-center justify-center rounded-full px-4 text-[12px] font-semibold transition",
                   mode === "login"
-                    ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                    ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)]"
                     : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
                 )}
               >
@@ -217,9 +217,9 @@ export function AuthModalHost({
                 type="button"
                 onClick={() => openAuth({ mode: "signup", role })}
                 className={cn(
-                  "inline-flex min-h-[46px] items-center justify-center rounded-full px-5 text-sm font-semibold transition",
+                  "inline-flex min-h-[36px] items-center justify-center rounded-full px-4 text-[12px] font-semibold transition",
                   mode === "signup"
-                    ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                    ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)]"
                     : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
                 )}
               >
@@ -299,7 +299,7 @@ function UnavailablePanel({
         <button
           type="button"
           onClick={closeAuth}
-          className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)] transition hover:bg-[#fbfdff]"
+          className="inline-flex min-h-[36px] items-center justify-center rounded-[8px] border border-[rgba(4,15,75,0.12)] bg-white px-4 py-2.5 text-[12px] font-semibold text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)] transition hover:bg-[#fbfdff]"
         >
           Continue browsing
         </button>

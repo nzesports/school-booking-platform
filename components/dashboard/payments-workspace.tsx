@@ -150,7 +150,6 @@ export function PaymentsWorkspace({
                 <PendingSubmitButton
                   type="submit"
                   pendingLabel="Retrying..."
-                  className="min-h-[42px] rounded-[16px] px-4 py-2"
                 >
                   <RefreshCw className="h-4 w-4" />
                   Retry email

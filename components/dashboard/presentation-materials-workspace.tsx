@@ -269,7 +269,7 @@ function MaterialCard({ resource, tab }: { resource: ResourceRecord; tab: Materi
         {downloadUrl ? (
           <a
             href={downloadUrl}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] bg-[#117a2e] px-4 text-sm font-semibold text-white transition hover:bg-[#0d6726]"
+            className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] bg-[#117a2e] px-4 text-[12px] font-semibold text-white transition hover:bg-[#0d6726]"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Download

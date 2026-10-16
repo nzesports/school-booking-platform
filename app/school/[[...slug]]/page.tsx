@@ -98,7 +98,7 @@ function schoolDisplayStatus(status: BookingSessionView["status"]) {
 }
 
 const quickActionClassName =
-  "min-h-[52px] w-full justify-start gap-3 rounded-[14px] px-5 text-sm font-semibold";
+  "min-h-[44px] w-full justify-start gap-3 rounded-[14px] px-3.5 text-[13px] font-semibold";
 const quickActionLabelClassName = "text-sm font-semibold leading-none";
 
 export default async function SchoolPortalPage({
@@ -254,7 +254,7 @@ export default async function SchoolPortalPage({
         dateLabel="Upcoming term"
         headerAction={
           route === "bookings" ? (
-            <BookPresentationButton className="min-h-[44px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white shadow-[0_12px_28px_rgba(24,168,59,0.2)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+            <BookPresentationButton className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.16)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
               <Plus className="h-4 w-4" />
               Book presentation
             </BookPresentationButton>
@@ -320,7 +320,6 @@ export default async function SchoolPortalPage({
                     <div className="mt-5 flex flex-wrap gap-3">
                       <ButtonLink
                         href={`/school/bookings/${whatsNext.bookingId}`}
-                        className="min-h-[42px] rounded-[14px] px-4"
                       >
                         View details
                         <ArrowRight className="h-4 w-4" />
@@ -329,7 +328,6 @@ export default async function SchoolPortalPage({
                         <ButtonLink
                           href={`/school/review/${whatsNext.session.id}`}
                           variant="secondary"
-                          className="min-h-[42px] rounded-[14px] px-4"
                         >
                           <Star className="h-4 w-4" />
                           Leave feedback
@@ -338,7 +336,6 @@ export default async function SchoolPortalPage({
                         <ButtonLink
                           href={`/school/bookings/${whatsNext.bookingId}/sessions/${whatsNext.session.id}/reschedule`}
                           variant="secondary"
-                          className="min-h-[42px] rounded-[14px] px-4"
                         >
                           <CalendarClock className="h-4 w-4" />
                           Reschedule
@@ -395,7 +392,6 @@ export default async function SchoolPortalPage({
                     <ButtonLink
                       href="/school/bookings"
                       variant="ghost"
-                      className="min-h-[36px] rounded-[12px] px-3 py-1 text-[13px]"
                     >
                       View all
                       <ArrowRight className="h-4 w-4" />
@@ -521,7 +517,7 @@ export default async function SchoolPortalPage({
                               target={actionUrl.startsWith("/") ? undefined : "_blank"}
                               rel={actionUrl.startsWith("/") ? undefined : "noreferrer"}
                               variant="secondary"
-                              className="mt-3 min-h-[34px] rounded-[11px] px-3 py-1 text-[13px]"
+                              className="mt-3"
                             >
                               {isVideoResource ? <Play className="h-3.5 w-3.5 fill-current" /> : null}
                               {isVideoResource ? "Watch video" : "Download"}
@@ -533,7 +529,7 @@ export default async function SchoolPortalPage({
                     <ButtonLink
                       href="/school/resources"
                       variant="ghost"
-                      className="min-h-[36px] justify-start rounded-[12px] px-2 py-1 text-[13px]"
+                      className="justify-start"
                     >
                       View all resources
                       <ArrowRight className="h-4 w-4" />
@@ -625,7 +621,7 @@ export default async function SchoolPortalPage({
                     <div className="flex flex-wrap gap-3">
                       <ButtonLink
                         href={`/school/bookings/${whatsNext.bookingId}`}
-                        className="min-h-[42px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-4 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                        className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
                       >
                         View details
                       </ButtonLink>
@@ -633,7 +629,6 @@ export default async function SchoolPortalPage({
                         <ButtonLink
                           href={`/school/review/${whatsNext.session.id}`}
                           variant="secondary"
-                          className="min-h-[42px] rounded-[14px] px-4"
                         >
                           <Star className="h-4 w-4" />
                           Leave feedback
@@ -661,7 +656,7 @@ export default async function SchoolPortalPage({
             <ButtonLink
               href="/school/bookings"
               variant="ghost"
-              className="w-fit justify-start px-2 shadow-none"
+              className="w-fit justify-start shadow-none"
             >
               <ChevronLeft className="h-4 w-4" />
               Back to bookings
@@ -912,7 +907,6 @@ export default async function SchoolPortalPage({
                     </div>
                     <ButtonLink
                       href={`/school/review/${row.session.id}`}
-                      className="min-h-[38px] rounded-[12px] px-3"
                     >
                       <Star className="h-4 w-4" />
                       Leave feedback
@@ -1003,7 +997,6 @@ export default async function SchoolPortalPage({
                               }
                             : undefined
                         }
-                        className="min-h-[38px] rounded-[12px] px-3 text-[13px]"
                       />
                     </div>
                   );
@@ -1026,7 +1019,6 @@ export default async function SchoolPortalPage({
                 <ButtonLink
                   href="/school/reviews"
                   variant="secondary"
-                  className="min-h-[42px] rounded-[13px] px-4 text-[13px]"
                 >
                   Back to reviews
                 </ButtonLink>
@@ -1116,7 +1108,6 @@ export default async function SchoolPortalPage({
                     ) : (
                       <ButtonLink
                         href={`/school/review/${row.session.id}`}
-                        className="min-h-[40px] rounded-[13px] px-4"
                       >
                         <Star className="h-4 w-4" />
                         Leave feedback
@@ -1253,7 +1244,7 @@ export default async function SchoolPortalPage({
                 <div className="flex justify-end">
                   <Button
                     type="submit"
-                    className="min-h-[46px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-6 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+                    className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
                   >
                     Save profile
                   </Button>
@@ -1440,7 +1431,7 @@ function SchoolContactCallout({ className }: { className?: string }) {
       </div>
       <ButtonLink
         href="/contact"
-        className="mt-5 min-h-[50px] min-w-[144px] whitespace-nowrap rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_32px_rgba(24,168,59,0.22)] hover:border-[#0f7c2e] hover:bg-[#128a30] md:mt-0"
+        className="mt-5 whitespace-nowrap border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.18)] hover:border-[#0f7c2e] hover:bg-[#128a30] md:mt-0"
       >
         <Mail className="h-4 w-4" />
         Contact us

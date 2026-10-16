@@ -220,7 +220,7 @@ export default async function AmbassadorPortalPage({
               action={saveAmbassadorBookingAction}
               triggerLabel="Submit sourced booking"
               payoutLabels={payoutLabels}
-              triggerClassName="min-h-[44px] rounded-[14px] border-[#d8c8f4] bg-[#f8f5ff] px-4 text-[#6941c6] shadow-[0_10px_24px_rgba(105,65,198,0.10)] hover:border-[#c5afea] hover:bg-[#f1edfd]"
+              triggerClassName="min-h-[40px] rounded-[14px] border-[#d8c8f4] bg-[#f8f5ff] px-3.5 text-[#6941c6] shadow-[0_6px_16px_rgba(105,65,198,0.08)] hover:border-[#c5afea] hover:bg-[#f1edfd]"
               returnTo="/ambassador/bookings?tab=sourced"
             />
           ) : route === "training" || route.startsWith("training/") ? (
@@ -298,7 +298,7 @@ export default async function AmbassadorPortalPage({
 
         {route.startsWith("open-bookings/") ? (
           <Card className="rounded-[34px]">
-            <ButtonLink href="/ambassador/bookings" variant="ghost" className="mb-5 min-h-[38px] rounded-[12px] px-2">
+            <ButtonLink href="/ambassador/bookings" variant="ghost" className="mb-5">
               <ArrowLeft className="h-4 w-4" /> Back to open bookings
             </ButtonLink>
             {selectedOpenSession ? (
@@ -516,7 +516,7 @@ function MaterialsConsentForm({
           <input type="checkbox" name="accepted" required className="mt-1" />
           <span>I have read and agree to the NZ Esports materials conditions above.</span>
         </label>
-        <Button type="submit" className="w-fit rounded-[14px]">
+        <Button type="submit" className="w-fit">
           <ShieldCheck className="h-4 w-4" aria-hidden="true" />
           Sign and open materials
         </Button>

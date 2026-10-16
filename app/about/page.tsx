@@ -74,14 +74,14 @@ export default function AboutPage() {
               and with purpose.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <BookPresentationButton className="min-h-[48px] rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_30px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+              <BookPresentationButton className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
                 Book a school presentation
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </BookPresentationButton>
               <ButtonLink
                 href="/resources"
                 variant="secondary"
-                className="min-h-[48px] rounded-[16px] bg-white/75 px-6"
+                className="bg-white/75"
               >
                 Explore resources
               </ButtonLink>
@@ -300,7 +300,7 @@ export default function AboutPage() {
               Let&apos;s help students see where gaming can take them.
             </h2>
           </div>
-          <BookPresentationButton className="min-h-[50px] shrink-0 rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_14px_30px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
+          <BookPresentationButton className="shrink-0 border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]">
             Book a presentation
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </BookPresentationButton>

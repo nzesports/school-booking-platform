@@ -102,7 +102,7 @@ export function PortalProfileWorkspace({
         <div className="flex justify-end">
           <Button
             type="submit"
-            className="min-h-[46px] rounded-[14px] border-[#149238] bg-[color:var(--green)] px-6 text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
+            className="border-[#149238] bg-[color:var(--green)] text-white hover:border-[#0f7c2e] hover:bg-[#128a30]"
           >
             Save profile
           </Button>

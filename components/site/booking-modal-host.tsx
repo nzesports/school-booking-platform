@@ -389,14 +389,12 @@ function BookingModalFlow({
                 type="button"
                 variant="secondary"
                 onClick={openCoordinatorEnquiry}
-                className="min-h-[54px] rounded-[18px] px-6 py-3 text-base"
               >
                 No, fewer than {MINIMUM_IN_PERSON_STUDENTS}
               </Button>
               <Button
                 type="button"
                 onClick={() => setStep(resumeStep)}
-                className="min-h-[54px] rounded-[18px] px-7 py-3 text-base"
               >
                 Yes, {MINIMUM_IN_PERSON_STUDENTS}+ students
                 <ArrowRight className="h-4 w-4" />
@@ -653,7 +651,6 @@ function BookingModalFlow({
                   });
                   setNextSessionNumber((current) => current + 1);
                 }}
-                className="min-h-[54px] rounded-[18px] px-6 py-3 text-base"
                 disabled={sessions.length >= 5}
               >
                 <Plus className="h-4 w-4" />
@@ -672,7 +669,6 @@ function BookingModalFlow({
                     setIsReturningToDetails(false);
                     setStep("review");
                   }}
-                  className="min-h-[54px] rounded-[18px] px-7 py-3 text-base"
                   disabled={!canContinueToReview}
                 >
                   {isReturningToDetails ? "Save and return to details" : "Continue to details"}
@@ -737,7 +733,6 @@ function BookingModalFlow({
                   setIsReturningToDetails(true);
                   setStep("plan");
                 }}
-                className="min-h-[46px] rounded-[16px] px-5 py-2.5 text-sm"
               >
                 <PencilLine className="h-4 w-4" />
                 {reviewSessions.length === 1 ? "Edit session" : "Edit sessions"}
@@ -887,7 +882,7 @@ function BookingModalFlow({
                   type="button"
                   variant="secondary"
                   onClick={openCoordinatorEnquiry}
-                  className="min-h-[46px] shrink-0 rounded-[16px] px-5 py-2.5 text-sm"
+                  className="shrink-0"
                 >
                   Contact our Schools Coordinator
                 </Button>
@@ -967,11 +962,10 @@ function BookingModalFlow({
                     setIsReturningToDetails(true);
                     setStep("plan");
                   }}
-                  className="min-h-[48px] rounded-[18px] px-6 py-2.5"
                 >
                   Back to booking
                 </Button>
-                <PendingSubmitButton type="submit" pendingLabel="Sending request..." className="min-h-[48px] rounded-[18px] px-6 py-2.5" disabled={contactDefaultsLoading || isBelowStudentMinimum}>
+                <PendingSubmitButton type="submit" pendingLabel="Sending request..." disabled={contactDefaultsLoading || isBelowStudentMinimum}>
                   <Send className="h-4 w-4" />
                   Send request
                 </PendingSubmitButton>

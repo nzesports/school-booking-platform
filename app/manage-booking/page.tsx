@@ -82,7 +82,7 @@ export default async function ManageBookingPage({ searchParams }: {
               <label htmlFor="booking-email" className="block text-sm font-medium">Booking email address</label>
               <Input id="booking-email" name="email" type="email" required maxLength={254} autoComplete="email" autoCapitalize="none" spellCheck={false} className="mt-2 h-12" />
             </div>
-            <PendingSubmitButton type="submit" className="min-h-12 w-full" pendingLabel="Finding booking...">View booking<ArrowRight className="h-4 w-4" aria-hidden="true" /></PendingSubmitButton>
+            <PendingSubmitButton type="submit" className="w-full" pendingLabel="Finding booking...">View booking<ArrowRight className="h-4 w-4" aria-hidden="true" /></PendingSubmitButton>
           </form>
         </div>
         <div className="flex items-center justify-center gap-2 border-t border-slate-100 bg-slate-50/70 px-6 py-4 text-xs text-[color:var(--text-muted)]"><ShieldCheck className="h-4 w-4 shrink-0 text-green-700" aria-hidden="true" />Private access. No account or password needed.</div>

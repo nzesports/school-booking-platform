@@ -348,12 +348,12 @@ export function AmbassadorsWorkspace({
             <PendingSubmitButton
               unstyled
               type="submit"
-              className="inline-flex min-h-[46px] items-center justify-center rounded-[14px] bg-[color:var(--navy)] px-5 text-sm font-semibold text-white transition hover:bg-[#0b1d6b]"
+              className="inline-flex items-center justify-center bg-[color:var(--navy)] text-white transition hover:bg-[#0b1d6b]"
             >
               Search
             </PendingSubmitButton>
             {trimmedQuery ? (
-              <ButtonLink href={listHref(status, sort, false)} variant="ghost" className="min-h-[46px] rounded-[14px]">
+              <ButtonLink href={listHref(status, sort, false)} variant="ghost">
                 Clear
               </ButtonLink>
             ) : null}
@@ -375,7 +375,7 @@ export function AmbassadorsWorkspace({
                   href={listHref(status, value)}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "inline-flex min-h-[36px] items-center justify-center rounded-[10px] px-3.5 text-sm font-semibold transition",
+                    "inline-flex min-h-[36px] items-center justify-center rounded-[8px] px-4 text-[12px] font-semibold transition",
                     active
                       ? "bg-white text-[color:var(--navy)] shadow-[0_2px_8px_rgba(11,24,77,0.08)]"
                       : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -408,7 +408,7 @@ export function AmbassadorsWorkspace({
             {trimmedQuery ? `No matches for “${trimmedQuery}”` : activeStatus.empty}
           </p>
           {trimmedQuery ? (
-            <ButtonLink href={listHref(status, sort, false)} variant="ghost" className="mt-4 rounded-[14px]">
+            <ButtonLink href={listHref(status, sort, false)} variant="ghost" className="mt-4">
               Clear search
             </ButtonLink>
           ) : null}
@@ -551,7 +551,7 @@ function RosterCard({
       ) : null}
 
       <div className="mt-auto pt-5">
-        <ButtonLink href={href} variant="secondary" className="w-full rounded-[14px]">
+        <ButtonLink href={href} variant="secondary" className="w-full">
           View profile
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </ButtonLink>
@@ -635,7 +635,7 @@ function ApplicationCard({ ambassador, href }: { ambassador: AmbassadorProfile; 
         <ButtonLink
           href={href}
           variant={declined ? "secondary" : "primary"}
-          className="w-full rounded-[14px]"
+          className="w-full"
         >
           {declined ? "View application" : "Review application"}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -801,13 +801,13 @@ export function AmbassadorProfileWorkspace({
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               {ambassador.email ? (
-                <ButtonLink href={`mailto:${ambassador.email}`} variant="secondary" className="rounded-[14px]">
+                <ButtonLink href={`mailto:${ambassador.email}`} variant="secondary">
                   <Mail className="h-4 w-4" aria-hidden="true" />
                   Email
                 </ButtonLink>
               ) : null}
               {ambassador.phone ? (
-                <ButtonLink href={`tel:${ambassador.phone}`} variant="secondary" className="rounded-[14px]">
+                <ButtonLink href={`tel:${ambassador.phone}`} variant="secondary">
                   <Phone className="h-4 w-4" aria-hidden="true" />
                   Call
                 </ButtonLink>
@@ -1056,7 +1056,7 @@ export function AmbassadorProfileWorkspace({
                     <PendingSubmitButton
                       type="submit"
                       pendingLabel="Sending portal invite..."
-                      className="mt-3 min-h-[46px] w-full rounded-[14px]"
+                      className="mt-3 w-full"
                     >
                       Invite and connect profile
                     </PendingSubmitButton>
@@ -1088,7 +1088,7 @@ export function AmbassadorProfileWorkspace({
                       type="submit"
                       variant={invitePending ? "primary" : "secondary"}
                       pendingLabel={invitePending ? "Resending invite..." : "Sending link..."}
-                      className="mt-3 min-h-[46px] w-full rounded-[14px]"
+                      className="mt-3 w-full"
                     >
                       <RotateCw className="h-4 w-4" aria-hidden="true" />
                       {invitePending ? "Resend portal invite" : "Send password setup link"}
@@ -1744,7 +1744,7 @@ function StatusChip({ tone, children }: { tone: "good" | "warn" | "neutral"; chi
 const reportRowGridClassName =
   "grid-cols-2 gap-x-4 px-5 lg:grid-cols-[110px_minmax(0,1fr)_90px_70px_110px_200px]";
 const compactActionClassName =
-  "min-h-[30px]! rounded-[10px]! px-2.5! py-1! text-xs! font-semibold! leading-4! shadow-none!";
+  "min-h-[36px]! rounded-[8px]! px-4! py-2.5! text-[12px]! font-semibold! leading-[16px]! shadow-none!";
 
 function SummaryChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
@@ -1805,7 +1805,7 @@ function DecisionForm({
         type="submit"
         pendingLabel={pendingLabel}
         variant={variant}
-        className="min-h-[48px] w-full rounded-[14px]"
+        className="w-full"
       >
         <Icon className="h-4 w-4" aria-hidden="true" />
         {label}

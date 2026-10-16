@@ -511,7 +511,6 @@ export default async function StaffPortalPage({
               <ButtonLink
                 href={`/staff/ambassadors?status=${ambassadorListStatusFor(selectedAmbassador)}`}
                 variant="ghost"
-                className="min-h-[42px] rounded-[14px] px-4 py-2"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to ambassadors
@@ -925,7 +924,7 @@ export default async function StaffPortalPage({
                 </ButtonLink>
                 <PendingSubmitButton unstyled
                   type="submit"
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                  className="inline-flex items-center justify-center border border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(94,134,165,0.14)]"
                 >
                   {isCreatingResource ? "Create Resource" : "Update Resource"}
                 </PendingSubmitButton>
@@ -1016,7 +1015,7 @@ export default async function StaffPortalPage({
                         <input type="hidden" name="redirectTo" value="/staff/activity" />
                         <PendingSubmitButton unstyled
                           type="submit"
-                          className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                          className="inline-flex items-center justify-center border border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)]"
                         >
                           Mark as read
                         </PendingSubmitButton>

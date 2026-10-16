@@ -501,7 +501,7 @@ export function ResourcesWorkspace({
               <Button
                 type="button"
                 onClick={() => setPackEditorOpen(true)}
-                className="min-h-[40px] rounded-[12px] px-4 shadow-none"
+                className="shadow-none"
               >
                 <Plus className="h-4 w-4" /> Add pack
               </Button>
@@ -538,7 +538,7 @@ export function ResourcesWorkspace({
                       aria-label={`Delete ${pack.title} training pack`}
                       aria-haspopup="dialog"
                       onClick={() => setPackPendingDeletion(pack)}
-                      className="h-8 min-h-0 w-8 rounded-[10px] border-[#f4b7b3] bg-[#fff7f6] px-0 py-0 text-[#c93b32] shadow-none hover:border-[#e88f88] hover:bg-[#fff0ee]"
+                      className="border-[#f4b7b3] bg-[#fff7f6] text-[#c93b32] shadow-none hover:border-[#e88f88] hover:bg-[#fff0ee]"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -559,7 +559,7 @@ export function ResourcesWorkspace({
                 <Button
                   type="button"
                   onClick={() => setResourcePickerPack(pack)}
-                  className="min-h-[38px] rounded-[11px] px-3 py-1.5 shadow-none"
+                  className="shadow-none"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add to pack
                 </Button>
@@ -568,7 +568,7 @@ export function ResourcesWorkspace({
                   variant="secondary"
                   onClick={() => viewTrainingPack(pack.id)}
                   aria-pressed={selectedPackId === pack.id}
-                  className="min-h-[38px] rounded-[11px] border-[#bfe6d2] px-3 py-1.5 text-[#117a2e] shadow-none hover:bg-[#f0fbf5]"
+                  className="border-[#bfe6d2] text-[#117a2e] shadow-none hover:bg-[#f0fbf5]"
                 >
                   {selectedPackId === pack.id ? "Close pack" : "Open pack"}
                 </Button>
@@ -610,7 +610,7 @@ export function ResourcesWorkspace({
             type="button"
             variant="secondary"
             onClick={() => selectedPack ? setResourcePickerPack(selectedPack.pack) : openNewResource({ category: "training" })}
-            className="rounded-[14px] border-[#bfe6d2] bg-white text-[#117a2e] hover:bg-[#eaf8ee]"
+            className="border-[#bfe6d2] bg-white text-[#117a2e] hover:bg-[#eaf8ee]"
           >
             <Plus className="h-4 w-4" />
             {selectedPack ? "Add to this pack" : "Add general resource"}
@@ -1740,7 +1740,6 @@ function ResourceEditorDialog({
                     event.preventDefault();
                   }
                 }}
-                className="rounded-[14px]"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete resource
@@ -1748,7 +1747,7 @@ function ResourceEditorDialog({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={onClose} className="rounded-[14px]">
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
             <Button
@@ -1758,7 +1757,7 @@ function ResourceEditorDialog({
               disabled={audiences.length === 0}
               variant="secondary"
               title="Save this resource as a draft visible only to Staff and Super Admin"
-              className="rounded-[14px] border-[#ecd59f] bg-[#fffaf0] text-[#9a5a00] hover:bg-[#fff5df]"
+              className="border-[#ecd59f] bg-[#fffaf0] text-[#9a5a00] hover:bg-[#fff5df]"
             >
               <PencilLine className="h-4 w-4" />
               {resourceStatus === "draft" ? "Save draft" : "Save as draft"}
@@ -1770,7 +1769,6 @@ function ResourceEditorDialog({
                 value="archived"
                 disabled={audiences.length === 0}
                 variant="secondary"
-                className="rounded-[14px]"
               >
                 <Clock3 className="h-4 w-4" />
                 Save to archive
@@ -1781,7 +1779,7 @@ function ResourceEditorDialog({
               name="lifecycle"
               value="published"
               disabled={audiences.length === 0}
-              className="rounded-[14px] border-[#117a2e] bg-[#117a2e] text-white shadow-[0_12px_28px_rgba(17,122,46,0.22)] hover:border-[#0d6726] hover:bg-[#0d6726]"
+              className="border-[#117a2e] bg-[#117a2e] text-white shadow-[0_3px_10px_rgba(17,122,46,0.22)] hover:border-[#0d6726] hover:bg-[#0d6726]"
             >
               {pending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CircleCheck className="h-4 w-4" />}
               {resource
@@ -1913,7 +1911,7 @@ function PageButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex h-9 min-w-9 items-center justify-center rounded-[10px] border px-2 text-sm font-semibold transition",
+        "flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
         active
           ? "border-[#2563eb] bg-[#2563eb] text-white"
           : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] disabled:opacity-40"

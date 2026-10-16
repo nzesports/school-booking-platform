@@ -61,14 +61,14 @@ export function BookingEmailsPanel({ sessionId }: { sessionId: string }) {
         loading={busy}
         pendingLabel="Preparing…"
         onClick={() => void run(false)}
-        className="ml-auto min-h-[32px] rounded-lg px-3 py-1 text-xs shadow-none"
+        className="ml-auto shadow-none"
       >
         Preview email
       </Button>}
       {data?.feedbackAvailable && !preview && <Button
         type="button" variant="secondary" loading={busy} pendingLabel="Preparing…"
         onClick={() => void run(false, "feedback")}
-        className="ml-auto min-h-[32px] rounded-lg px-3 py-1 text-xs shadow-none"
+        className="ml-auto shadow-none"
       >Preview school feedback email</Button>}
     </div>
     {data?.booking.manual_email_only && <p className="text-xs text-slate-500">{data.booking.import_batch_id ? "Status emails are sent when you update this booking." : "Emails for this booking are sent manually."}</p>}

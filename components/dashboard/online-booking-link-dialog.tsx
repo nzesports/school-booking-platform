@@ -44,7 +44,7 @@ export function OnlineBookingLinkDialog({
         type="button"
         variant="secondary"
         onClick={() => setOpen(true)}
-        className="min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
+        className="border-[#c4dbfb] text-[#1e4fae] shadow-[0_3px_10px_rgba(37,99,235,0.08)]"
       >
         <MonitorPlay className="h-4 w-4" />
         Online booking link
@@ -73,7 +73,7 @@ export function OnlineBookingLinkDialog({
                     <button
                       type="button"
                       onClick={copyLink}
-                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-[color:var(--navy)] px-3.5 text-sm font-semibold text-white transition hover:bg-[#101c56]"
+                      className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-[8px] bg-[color:var(--navy)] px-4 py-2.5 text-[12px] font-semibold leading-[16px] text-white transition hover:bg-[#101c56]"
                     >
                       {copied ? (
                         <Check className="h-4 w-4" aria-hidden="true" />
@@ -108,7 +108,7 @@ export function OnlineBookingLinkDialog({
                       unstyled
                       type="submit"
                       pendingLabel="Replacing..."
-                      className="inline-flex items-center gap-1.5 rounded-[8px] px-1 py-1 text-xs! font-semibold! text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
+                      className="inline-flex items-center text-[color:var(--text-soft)] transition hover:text-[color:var(--navy)]"
                     >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                       Replace link

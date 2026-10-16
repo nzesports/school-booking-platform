@@ -94,7 +94,7 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
               type="button"
               onClick={() => setFilter(option.value)}
               className={cn(
-                "inline-flex min-h-[36px] items-center justify-center rounded-[11px] px-3.5 text-sm font-semibold transition",
+                "inline-flex min-h-[36px] items-center justify-center rounded-[8px] px-4 text-[12px] font-semibold transition",
                 option.value === filter
                   ? "border border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
                   : "text-[color:var(--text-soft)] hover:text-[color:var(--navy)]"
@@ -152,7 +152,6 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                   <span className="flex flex-wrap items-center gap-2">
                     <ButtonLink
                       href={`/school/bookings/${row.bookingId}`}
-                      className="min-h-[36px] rounded-[12px] px-3 py-1"
                     >
                       <Eye className="h-4 w-4" />
                       View details
@@ -161,7 +160,6 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                       <ButtonLink
                         href={`/school/bookings/${row.bookingId}/sessions/${row.session.id}/reschedule`}
                         variant="ghost"
-                        className="min-h-[36px] rounded-[12px] px-3 py-1"
                       >
                         <CalendarClock className="h-4 w-4" />
                         Reschedule
@@ -179,7 +177,6 @@ export function SchoolBookingsExplorer({ rows }: { rows: SchoolSessionRow[] }) {
                     <ButtonLink
                       href={`/school/review/${row.session.id}`}
                       variant="secondary"
-                      className="min-h-[36px] rounded-[12px] px-3 py-1"
                     >
                       <Star className="h-4 w-4" />
                       Leave feedback

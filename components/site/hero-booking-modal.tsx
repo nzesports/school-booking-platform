@@ -106,7 +106,6 @@ export function HeroBookingModal({
                   type="button"
                   variant="secondary"
                   onClick={onClose}
-                  className="min-h-[46px] rounded-[16px] px-5 py-2.5 text-sm"
                 >
                   <PencilLine className="h-4 w-4" />
                   {editLabel}
@@ -287,11 +286,10 @@ export function HeroBookingModal({
                     type="button"
                     variant="secondary"
                     onClick={onClose}
-                    className="min-h-[48px] rounded-[18px] px-6 py-2.5"
                   >
                     Back to booking
                   </Button>
-                  <Button type="submit" className="min-h-[48px] rounded-[18px] px-6 py-2.5">
+                  <Button type="submit">
                     <Send className="h-4 w-4" />
                     Send request
                   </Button>

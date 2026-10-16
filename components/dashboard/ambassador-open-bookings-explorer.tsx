@@ -311,7 +311,7 @@ export function AmbassadorOpenBookingsExplorer({
                     aria-label={`Page ${item}`}
                     aria-current={item === safePage ? "page" : undefined}
                     className={cn(
-                      "flex h-10 min-w-10 items-center justify-center rounded-[12px] border px-3 text-sm font-semibold transition",
+                      "flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
                       item === safePage
                         ? "border-[#a9d8b6] bg-[#eaf8ee] text-[#117a2e]"
                         : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:bg-[#f6f9fd]"
@@ -512,7 +512,7 @@ function BookingCardActions({
         {reportDue ? (
           <ButtonLink
             href={`/ambassador/report/${session.id}`}
-            className="min-h-[42px] w-full shadow-none"
+            className="w-full shadow-none"
           >
             <FileText className="h-4 w-4" />
             Submit report

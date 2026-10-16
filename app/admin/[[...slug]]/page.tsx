@@ -634,7 +634,6 @@ export default async function AdminPortalPage({
               <ButtonLink
                 href={ambassadorListHref}
                 variant="ghost"
-                className="min-h-[42px] rounded-[14px] px-4 py-2"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to ambassadors
@@ -708,7 +707,6 @@ export default async function AdminPortalPage({
               <ButtonLink
                 href={composeOpen ? usersHref() : usersHref("compose=1")}
                 variant={composeOpen ? "secondary" : "primary"}
-                className="min-w-[148px]"
               >
                 <Plus className="h-4 w-4" />
                 {composeOpen ? "Close" : "Add user"}
@@ -732,9 +730,9 @@ export default async function AdminPortalPage({
                   key={tab.key}
                   href={tab.href}
                   className={cn(
-                    "inline-flex min-h-[42px] items-center justify-center whitespace-nowrap rounded-full px-5 text-sm font-semibold transition",
+                    "inline-flex min-h-[36px] items-center justify-center whitespace-nowrap rounded-full px-4 text-[12px] font-semibold transition",
                     usersTab === tab.key
-                      ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                      ? "bg-[linear-gradient(135deg,rgba(175,213,237,0.92),rgba(234,248,238,0.96))] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.08)]"
                       : "text-[color:var(--text-soft)] hover:bg-white hover:text-[color:var(--navy)]"
                   )}
                 >
@@ -751,7 +749,7 @@ export default async function AdminPortalPage({
                 <ButtonLink
                   href={usersHref()}
                   variant="ghost"
-                  className="absolute right-3 top-1/2 min-h-0 -translate-y-1/2 rounded-full px-2.5 py-1 text-base leading-none"
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
                 >
                   ×
                 </ButtonLink>
@@ -773,7 +771,7 @@ export default async function AdminPortalPage({
                       </InfoTooltip>
                     </h3>
                   </div>
-                  <ButtonLink href="/admin/users" variant="ghost" className="min-h-[40px] px-3 py-2">
+                  <ButtonLink href="/admin/users" variant="ghost">
                     Dismiss
                   </ButtonLink>
                 </div>
@@ -828,7 +826,7 @@ export default async function AdminPortalPage({
                   <div className="grid items-end">
                     <PendingSubmitButton unstyled
                       type="submit"
-                      className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                      className="inline-flex items-center justify-center border border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(94,134,165,0.14)]"
                     >
                       Send invite
                     </PendingSubmitButton>
@@ -989,7 +987,7 @@ export default async function AdminPortalPage({
                             <ButtonLink
                               href={`/admin/ambassadors/${user.ambassadorProfileId}`}
                               variant="ghost"
-                              className="min-h-[30px] rounded-[10px] px-2 py-1 text-xs font-semibold text-[#4a5fd5]"
+                              className="text-[#4a5fd5]"
                             >
                               Review ambassador
                             </ButtonLink>
@@ -1019,7 +1017,7 @@ export default async function AdminPortalPage({
                             <PendingSubmitButton unstyled
                               type="submit"
                               form={accessFormId}
-                              className="inline-flex min-h-[42px] items-center justify-center rounded-[14px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
+                              className="inline-flex items-center justify-center border border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
                             >
                               Save
                             </PendingSubmitButton>
@@ -1027,7 +1025,6 @@ export default async function AdminPortalPage({
                               <ButtonLink
                                 href={usersHref()}
                                 variant="secondary"
-                                className="min-h-[42px] rounded-[14px] px-4 py-2"
                               >
                                 Cancel
                               </ButtonLink>
@@ -1035,7 +1032,6 @@ export default async function AdminPortalPage({
                               <ButtonLink
                                 href={usersHref(`delete=${user.id}`)}
                                 variant="danger"
-                                className="min-h-[42px] rounded-[14px] px-4 py-2"
                               >
                                 <Trash2 className="h-4 w-4" />
                                 Delete
@@ -1073,11 +1069,11 @@ export default async function AdminPortalPage({
                         <div className="flex flex-wrap gap-3">
                           <PendingSubmitButton unstyled
                             type="submit"
-                            className="inline-flex min-h-[46px] items-center justify-center rounded-[18px] border border-[#f3b4b4] bg-[#fff0f0] px-5 py-2.5 text-sm font-semibold text-[#9d2424] shadow-[0_10px_24px_rgba(157,36,36,0.1)]"
+                            className="inline-flex items-center justify-center border border-[#f3b4b4] bg-[#fff0f0] text-[#9d2424] shadow-[0_3px_10px_rgba(157,36,36,0.08)]"
                           >
                             Permanently delete user
                           </PendingSubmitButton>
-                          <ButtonLink href={usersHref()} variant="secondary" className="min-h-[46px]">
+                          <ButtonLink href={usersHref()} variant="secondary">
                             Keep user
                           </ButtonLink>
                         </div>
@@ -1182,7 +1178,6 @@ export default async function AdminPortalPage({
                           <ButtonLink
                             href={`/admin/feedback?presentation=${item.presentation.id}`}
                             variant="ghost"
-                            className="min-h-[34px] rounded-[12px] px-3 py-1.5"
                           >
                             {item.presentation.title}
                           </ButtonLink>
@@ -1261,7 +1256,6 @@ export default async function AdminPortalPage({
                               <ButtonLink
                                 href={`/admin/presentations/${presentation.id}`}
                                 variant="ghost"
-                                className="min-h-[38px] rounded-[14px] px-3 py-1.5"
                               >
                                 Edit content
                               </ButtonLink>
@@ -1269,7 +1263,6 @@ export default async function AdminPortalPage({
                                 <ButtonLink
                                   href={`/presentations/${presentation.slug}`}
                                   variant="secondary"
-                                  className="min-h-[38px] rounded-[14px] px-3 py-1.5"
                                   target="_blank"
                                 >
                                   Preview
@@ -1599,7 +1592,7 @@ export default async function AdminPortalPage({
                     type="submit"
                     name="intent"
                     value="draft"
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                    className="inline-flex items-center justify-center border border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)]"
                   >
                     Save Draft
                   </PendingSubmitButton>
@@ -1607,7 +1600,7 @@ export default async function AdminPortalPage({
                     type="submit"
                     name="intent"
                     value="publish"
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#95d2ab] bg-[linear-gradient(135deg,#30b45f,#18a83b)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(24,168,59,0.2)]"
+                    className="inline-flex items-center justify-center border border-[#95d2ab] bg-[linear-gradient(135deg,#30b45f,#18a83b)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.16)]"
                   >
                     {isCreatingPresentation ? "Create Presentation" : "Update Presentation"}
                   </PendingSubmitButton>
@@ -1980,7 +1973,7 @@ export default async function AdminPortalPage({
                 </ButtonLink>
                 <PendingSubmitButton unstyled
                   type="submit"
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]"
+                  className="inline-flex items-center justify-center border border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(94,134,165,0.14)]"
                 >
                   {isCreatingResource ? "Create Resource" : "Update Resource"}
                 </PendingSubmitButton>
@@ -2028,7 +2021,7 @@ export default async function AdminPortalPage({
                       <input type="checkbox" name="isActive" defaultChecked={section.isActive} />
                       Section is active
                     </label>
-                    <PendingSubmitButton unstyled type="submit" className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[#a2cae3] bg-[#afd5ed] px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_12px_28px_rgba(94,134,165,0.18)]">
+                    <PendingSubmitButton unstyled type="submit" className="inline-flex items-center justify-center border border-[#a2cae3] bg-[#afd5ed] text-[color:var(--navy)] shadow-[0_3px_10px_rgba(94,134,165,0.14)]">
                       Save section
                     </PendingSubmitButton>
                   </div>
@@ -2175,7 +2168,7 @@ export default async function AdminPortalPage({
                         <input type="hidden" name="redirectTo" value="/admin/activity" />
                         <PendingSubmitButton unstyled
                           type="submit"
-                          className="inline-flex min-h-[48px] items-center justify-center rounded-[18px] border border-[color:rgba(4,15,75,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-[color:var(--navy)] shadow-[0_10px_24px_rgba(11,24,77,0.08)]"
+                          className="inline-flex items-center justify-center border border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] shadow-[0_3px_10px_rgba(11,24,77,0.06)]"
                         >
                           Mark as read
                         </PendingSubmitButton>

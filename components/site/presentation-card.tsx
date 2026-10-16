@@ -60,7 +60,6 @@ export function PresentationCard({ presentation }: { presentation: PresentationT
 
           <BookPresentationButton
             presentationSlug={presentation.slug}
-            className="min-h-[48px] rounded-[20px] px-5 py-2.5 text-sm"
           >
             Book now
           </BookPresentationButton>

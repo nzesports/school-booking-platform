@@ -52,7 +52,7 @@ export function AmbassadorOpenSessionDialog({
           onClick={() => setOpen(true)}
           className={
             className ??
-            "min-h-[42px] rounded-[14px] border-transparent bg-[#e8f1fd] px-4 text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
+            "border-transparent bg-[#e8f1fd] text-[#1e4fae] shadow-none hover:bg-[#dceafe]"
           }
         >
           {label ?? (session.myApplicationStatus === "applied" ? "Review application" : "View & apply")}
@@ -104,7 +104,6 @@ export function AmbassadorOpenSessionDialog({
                       sessionId={session.id}
                       action={withdrawAction}
                       returnTo={returnTo}
-                      className="min-h-[46px]"
                     />
                   ) : null}
                 </div>

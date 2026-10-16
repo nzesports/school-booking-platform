@@ -53,7 +53,7 @@ export function RegionsManager({
           <input type="hidden" name="isActive" value="on" />
           <Button
             type="submit"
-            className="rounded-[14px] border-[#2563eb] bg-[#2563eb] text-white shadow-[0_12px_28px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
+            className="border-[#2563eb] bg-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
           >
             <Plus className="h-4 w-4" />
             Add region
@@ -131,7 +131,7 @@ export function RegionsManager({
                 <PendingSubmitButton unstyled
                   type="submit"
                   form={formId}
-                  className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[color:rgba(4,15,75,0.12)] bg-white px-4 text-sm font-semibold text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
+                  className="inline-flex items-center justify-center border border-[color:rgba(4,15,75,0.12)] bg-white text-[color:var(--navy)] transition hover:border-[color:rgba(4,15,75,0.24)]"
                 >
                   Save
                 </PendingSubmitButton>
@@ -140,7 +140,7 @@ export function RegionsManager({
                   <input type="hidden" name="id" value={region.id} />
                   <PendingSubmitButton unstyled
                     type="submit"
-                    className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[12px] border border-[#f3b4b4] bg-[#fff6f6] px-3.5 text-sm font-semibold text-[#9d2424] transition hover:bg-[#fff0f0]"
+                    className="inline-flex items-center justify-center border border-[#f3b4b4] bg-[#fff6f6] text-[#9d2424] transition hover:bg-[#fff0f0]"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete

@@ -73,7 +73,7 @@ export function ManualBookingDialog({
           type="button"
           variant="secondary"
           onClick={() => { setSubmissionId(crypto.randomUUID()); setRecordOnly(false); setDeliveryMode("in_person"); setOpen(true); }}
-          className="min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
+          className="border-[#c4dbfb] text-[#1e4fae] shadow-[0_3px_10px_rgba(37,99,235,0.08)]"
         >
           <CirclePlus className="h-4 w-4" />
           Log booking

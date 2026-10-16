@@ -196,7 +196,7 @@ export function ContactForm({
         <PendingSubmitButton
           type="submit"
           pendingLabel="Sending message..."
-          className="min-h-[48px] rounded-[16px] border-[#149238] bg-[color:var(--green)] px-6 text-white shadow-[0_12px_28px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
+          className="border-[#149238] bg-[color:var(--green)] text-white shadow-[0_3px_10px_rgba(24,168,59,0.24)] hover:border-[#0f7c2e] hover:bg-[#128a30]"
         >
           {submitLabel}
           <Send className="h-4 w-4" aria-hidden="true" />

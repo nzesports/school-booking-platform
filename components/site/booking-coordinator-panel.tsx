@@ -53,7 +53,6 @@ export function BookingCoordinatorPanel({
           type="button"
           variant="secondary"
           onClick={onBack}
-          className="min-h-[48px] rounded-[18px] px-6 py-2.5"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to booking

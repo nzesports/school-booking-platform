@@ -28,7 +28,7 @@ export function ManualSchoolDialog({
         type="button"
         variant="secondary"
         onClick={() => setOpen(true)}
-        className="min-h-[50px] rounded-[16px] border-[#c4dbfb] bg-[#e8f1fd] px-5 text-[#1e4fae] hover:bg-[#dcebfc]"
+        className="border-[#c4dbfb] bg-[#e8f1fd] text-[#1e4fae] hover:bg-[#dcebfc]"
       >
         <Plus className="h-4 w-4" />
         Add school

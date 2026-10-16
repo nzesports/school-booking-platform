@@ -116,11 +116,10 @@ export function AutoSaveBookingStatus({
           defaultValue={displayStatus}
           disabled={pending}
           aria-busy={pending}
-          style={compact ? { fontSize: "13px", lineHeight: "1.15" } : undefined}
           onChange={(event) => event.currentTarget.form?.requestSubmit()}
           className={cn(
-            "w-full min-w-0 appearance-none rounded-[9px] border pl-8 pr-7 font-semibold outline-none transition-colors",
-            compact ? "min-h-[34px]" : "min-h-[40px] text-sm",
+            "w-full min-w-0 appearance-none rounded-[8px] border pl-8 pr-7 font-semibold outline-none transition-colors",
+            compact ? "min-h-[36px] py-2.5 text-[12px] leading-[16px]" : "min-h-[40px] text-sm",
             bookingStatusControlStyles[displayStatus] ??
               "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)]",
             pending && "cursor-wait opacity-60"

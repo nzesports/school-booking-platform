@@ -30,7 +30,7 @@ export function FeedbackDialogNavigation({
         type="button"
         onClick={onPrevious}
         disabled={!onPrevious}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[10px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
+        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
       >
         <ChevronLeft className="h-4 w-4" />
         Previous
@@ -42,7 +42,7 @@ export function FeedbackDialogNavigation({
         type="button"
         onClick={onNext}
         disabled={!onNext}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[10px] px-3 text-sm font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
+        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
       >
         Next
         <ChevronRight className="h-4 w-4" />

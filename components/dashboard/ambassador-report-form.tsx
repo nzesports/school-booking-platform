@@ -228,7 +228,6 @@ export function AmbassadorReportForm({
         <div className="flex justify-end border-t border-[color:var(--border-soft)] pt-5">
           <Button
             type="submit"
-            className="px-6"
           >
             <FileCheck2 className="h-4 w-4" aria-hidden="true" />
             Submit report

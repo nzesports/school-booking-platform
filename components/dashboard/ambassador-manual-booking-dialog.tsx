@@ -64,7 +64,7 @@ export function AmbassadorManualBookingDialog({
           onClick={() => setOpen(true)}
           className={
             triggerClassName ??
-            "min-h-[46px] rounded-[14px] border-[#c4dbfb] px-4 text-[#1e4fae] shadow-[0_10px_24px_rgba(37,99,235,0.1)]"
+            "border-[#c4dbfb] text-[#1e4fae] shadow-[0_3px_10px_rgba(37,99,235,0.08)]"
           }
         >
           <CalendarPlus2 className="h-4 w-4" />

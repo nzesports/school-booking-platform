@@ -550,7 +550,7 @@ export function OperationsAnalytics({
             <p className="text-sm font-semibold text-[color:var(--navy)]">
               Outstanding payment submissions
             </p>
-            <ButtonLink href={`${basePath}/payments`} variant="ghost" className="min-h-[40px] px-3 py-2">
+            <ButtonLink href={`${basePath}/payments`} variant="ghost">
               Open payments
               <ArrowRight className="h-4 w-4" />
             </ButtonLink>
@@ -940,7 +940,7 @@ function PipelineCard({
     <div className="relative">
       <Link
         href={href}
-        className="grid h-full justify-items-center gap-3 rounded-[24px] border border-[color:rgba(4,15,75,0.08)] bg-white/94 px-4 py-5 text-center shadow-[0_14px_32px_rgba(11,24,77,0.05)] transition hover:border-[color:rgba(4,15,75,0.16)]"
+        className="grid h-full justify-items-center gap-3 rounded-[24px] border border-[color:rgba(4,15,75,0.08)] bg-white/94 px-4 py-5 text-center shadow-[0_3px_10px_rgba(11,24,77,0.05)] transition hover:border-[color:rgba(4,15,75,0.16)]"
       >
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(180deg,#f6fbff,#edf7ff)]">
           {icon}
@@ -1427,7 +1427,7 @@ function OpsTile({
   return (
     <Link
       href={href}
-      className="grid gap-2 rounded-[24px] border border-[color:rgba(4,15,75,0.08)] bg-white/94 px-4 py-4 shadow-[0_14px_32px_rgba(11,24,77,0.05)] transition hover:border-[color:rgba(4,15,75,0.16)]"
+      className="grid gap-2 rounded-[24px] border border-[color:rgba(4,15,75,0.08)] bg-white/94 px-4 py-4 shadow-[0_3px_10px_rgba(11,24,77,0.05)] transition hover:border-[color:rgba(4,15,75,0.16)]"
     >
       <div className="flex items-center gap-2.5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[linear-gradient(180deg,#f6fbff,#edf7ff)]">

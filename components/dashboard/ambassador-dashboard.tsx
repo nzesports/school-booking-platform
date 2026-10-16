@@ -229,7 +229,7 @@ export function AmbassadorDashboard({
             {reports.slice(0, 3).map((report) => (
               <div key={report.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[color:var(--border-soft)] px-4 py-3">
                 <div className="min-w-0"><p className="truncate font-semibold text-[color:var(--navy)]">{report.schoolName}</p><p className="mt-1 text-xs text-[color:var(--text-soft)]">{report.attendeeCount} attendees · {formatShortDate(report.submittedAt)}</p></div>
-                <ReportDetailsButton report={report} label="View" className="min-h-[38px] rounded-[12px] px-3 py-1.5 text-xs" />
+                <ReportDetailsButton report={report} label="View" />
               </div>
             ))}
           </div>
@@ -320,7 +320,7 @@ function PresentationDownloadCard({
         {href ? (
           <ButtonLink
             href={materialsConsentAccepted ? href : "/ambassador/materials"}
-            className="w-full rounded-[12px] shadow-none"
+            className="w-full shadow-none"
           >
             {materialsConsentAccepted ? <Download className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
             {materialsConsentAccepted ? "Download presentation" : "Review agreement"}
@@ -442,7 +442,7 @@ export function EarningsYearChart({ payments }: { payments: PaymentRecord[] }) {
 }
 
 function SectionHeader({ icon, iconClassName, kicker, title, actionHref, actionLabel }: { icon: ReactNode; iconClassName: string; kicker: string; title: string; actionHref?: string; actionLabel?: string }) {
-  return <div className="flex flex-wrap items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-3.5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${iconClassName}`}>{icon}</span><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">{kicker}</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">{title}</h2></div></div>{actionHref && actionLabel ? <ButtonLink href={actionHref} variant="ghost" className="min-h-[40px] rounded-[13px] px-3">{actionLabel}<ArrowRight className="h-4 w-4" /></ButtonLink> : null}</div>;
+  return <div className="flex flex-wrap items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-3.5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${iconClassName}`}>{icon}</span><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">{kicker}</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">{title}</h2></div></div>{actionHref && actionLabel ? <ButtonLink href={actionHref} variant="ghost">{actionLabel}<ArrowRight className="h-4 w-4" /></ButtonLink> : null}</div>;
 }
 
 function OpportunityCard({ session, applyAction, withdrawApplicationAction }: { session: BookingSessionView; applyAction: FormAction; withdrawApplicationAction: FormAction }) {
@@ -457,7 +457,7 @@ function ScheduleRow({ session, requestWithdrawalAction }: { session: BookingSes
 }
 
 function AttentionRow({ icon, label, value, href }: { icon: ReactNode; label: string; value: number; href: string }) {
-  return <ButtonLink href={href} variant="ghost" className="min-h-[52px] justify-between rounded-[15px] border border-[color:var(--border-soft)] bg-white px-3.5 shadow-none hover:bg-[#f8fafd]"><span className="inline-flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#f1f5f9] text-[color:var(--navy)]">{icon}</span>{label}</span><span className={value > 0 ? "flex h-7 min-w-7 items-center justify-center rounded-full bg-[#fff5df] px-2 text-xs font-semibold text-[#9a5a00]" : "flex h-7 min-w-7 items-center justify-center rounded-full bg-[#eaf8ee] px-2 text-xs font-semibold text-[#117a2e]"}>{value}</span></ButtonLink>;
+  return <ButtonLink href={href} variant="ghost" className="justify-between border border-[color:var(--border-soft)] bg-white shadow-none hover:bg-[#f8fafd]"><span className="inline-flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#f1f5f9] text-[color:var(--navy)]">{icon}</span>{label}</span><span className={value > 0 ? "flex h-7 min-w-7 items-center justify-center rounded-full bg-[#fff5df] px-2 text-xs font-semibold text-[#9a5a00]" : "flex h-7 min-w-7 items-center justify-center rounded-full bg-[#eaf8ee] px-2 text-xs font-semibold text-[#117a2e]"}>{value}</span></ButtonLink>;
 }
 
 function QuickLink({ icon, title, detail, href, tone }: { icon: ReactNode; title: string; detail: string; href: string; tone: "blue" | "violet" | "green" }) {
@@ -466,7 +466,7 @@ function QuickLink({ icon, title, detail, href, tone }: { icon: ReactNode; title
     <ButtonLink
       href={href}
       variant="secondary"
-      className="min-h-[76px] justify-start rounded-[18px] border-[color:rgba(4,15,75,0.09)] bg-white/92 p-3.5 text-left shadow-[0_10px_24px_rgba(11,24,77,0.05)] hover:bg-white"
+      className="justify-start border-[color:rgba(4,15,75,0.09)] bg-white/92 text-left shadow-[0_3px_10px_rgba(11,24,77,0.05)] hover:bg-white"
     >
       <span className="flex min-w-0 flex-1 items-center gap-3">
         <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] ${tones[tone]}`}>

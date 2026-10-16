@@ -57,7 +57,7 @@ export default async function PresentationDetailPage({
       <ButtonLink
         href="/#presentations"
         variant="secondary"
-        className="mb-5 min-h-[36px] rounded-[13px] px-3.5 py-1.5 text-[13px]"
+        className="mb-5"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to presentations
