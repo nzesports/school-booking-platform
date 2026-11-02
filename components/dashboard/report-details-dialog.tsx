@@ -18,19 +18,29 @@ import {
   Quote,
   ShieldCheck,
   Star,
+  TriangleAlert,
   Trophy,
   UserRound,
   UsersRound,
   X
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { FeedbackDialogNavigation } from "@/components/dashboard/feedback-dialog-navigation";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import type { ReportSummary } from "@/lib/domain/types";
-import { cn, formatTime, formatWeekdayDate } from "@/lib/utils";
+import {
+  classifyReportGroup,
+  EXTENDED_PAIR_CENTS,
+  MAX_EXTRA_PAYMENT_CENTS,
+  SHORT_PAIR_CENTS
+} from "@/lib/payment-breakdown";
+import { formatSessionTimes } from "@/lib/same-day-sessions";
+import { cn, formatCurrency, formatTime, formatWeekdayDate } from "@/lib/utils";
 
 type ReportMediaItem = { id?: string; url: string; type: string; title?: string };
 
@@ -48,6 +58,13 @@ function formatNzDate(iso?: string, withTime = false) {
   }
 
   return withTime ? `${formatWeekdayDate(iso)}, ${formatTime(iso)}` : formatWeekdayDate(iso);
+}
+
+// "45 min", "2 hr", "2 hr 30 min".
+function formatGap(minutes: number) {
+  const hours = Math.floor(Math.max(0, minutes) / 60);
+  const rest = Math.max(0, minutes) % 60;
+  return [hours > 0 ? `${hours} hr` : "", rest > 0 || hours === 0 ? `${rest} min` : ""].filter(Boolean).join(" ");
 }
 
 function yesNo(value?: boolean) {
@@ -77,11 +94,17 @@ export function ReportDetailsButton({
   const [activeReportId, setActiveReportId] = useState(initialReport.id);
   const [lightbox, setLightbox] = useState<ReportMediaItem | null>(null);
   const navigationAnchorRef = useRef<HTMLDivElement>(null);
+  const reviewFormId = useId();
+  // Per report, so stepping between reports keeps each one's choice.
+  const [skipPaymentByReport, setSkipPaymentByReport] = useState<Record<string, boolean>>({});
   const reportCollection = reports?.length ? reports : [initialReport];
   const matchedReportIndex = reportCollection.findIndex((item) => item.id === activeReportId);
   const reportIndex = matchedReportIndex >= 0 ? matchedReportIndex : 0;
   const report = reportCollection[reportIndex] ?? initialReport;
   const media = report.media ?? [];
+  const coveredSessions = report.coveredSessions ?? [];
+  const coveredGroup = classifyReportGroup(coveredSessions);
+  const skipPayment = skipPaymentByReport[report.id] ?? false;
 
   const showReport = (index: number) => {
     const nextReport = reportCollection[index];
@@ -93,8 +116,8 @@ export function ReportDetailsButton({
     setLightbox(null);
     setActiveReportId(nextReport.id);
     navigationAnchorRef.current
-      ?.closest('[role="dialog"]')
-      ?.parentElement?.scrollTo({ top: 0, behavior: "smooth" });
+      ?.closest("[data-dialog-scroll]")
+      ?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -121,36 +144,53 @@ export function ReportDetailsButton({
               onClose={() => setOpen(false)}
               maxWidthClassName="max-w-[880px]"
               overlayClassName="z-[80]"
-              compact
+              pinnedHeader
+              headerActions={
+                <FeedbackDialogNavigation
+                  current={reportIndex + 1}
+                  total={reportCollection.length}
+                  onPrevious={reportIndex > 0 ? () => showReport(reportIndex - 1) : undefined}
+                  onNext={
+                    reportIndex < reportCollection.length - 1
+                      ? () => showReport(reportIndex + 1)
+                      : undefined
+                  }
+                />
+              }
+              headerBelow={
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pb-4 text-sm text-[color:var(--text-soft)] sm:pb-5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays className="h-4 w-4" />
+                    {coveredSessions.length > 1
+                      ? `Delivered ${formatNzDate(report.deliveredAt ?? report.sessionStartsAt)}`
+                      : `Delivered ${formatNzDate(report.deliveredAt ?? report.sessionStartsAt, true)}`}
+                  </span>
+                  {coveredSessions.length > 1 ? (
+                    <>
+                      <span className="text-[color:var(--green)]">•</span>
+                      <span data-testid="report-covered-sessions">
+                        <strong className="font-semibold text-[color:var(--navy)]">
+                          {coveredSessions.length === 2 ? "Double session" : `${coveredSessions.length} sessions`}
+                        </strong>
+                        : {formatSessionTimes(coveredSessions)}
+                        {coveredSessions.length === 2 && coveredGroup.gapMinutes !== undefined
+                          ? ` (${formatGap(coveredGroup.gapMinutes)} between)`
+                          : ""}
+                      </span>
+                    </>
+                  ) : null}
+                  <span className="text-[color:var(--green)]">•</span>
+                  <span>Submitted {formatNzDate(report.submittedAt)}</span>
+                  {report.ambassadorName ? (
+                    <>
+                      <span className="text-[color:var(--green)]">•</span>
+                      <span>by {report.ambassadorName}</span>
+                    </>
+                  ) : null}
+                </div>
+              }
             >
-              <div
-                ref={navigationAnchorRef}
-                className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[color:var(--text-soft)]"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-4 w-4" />
-                  Delivered {formatNzDate(report.deliveredAt ?? report.sessionStartsAt, true)}
-                </span>
-                <span className="text-[color:var(--green)]">•</span>
-                <span>Submitted {formatNzDate(report.submittedAt)}</span>
-                {report.ambassadorName ? (
-                  <>
-                    <span className="text-[color:var(--green)]">•</span>
-                    <span>by {report.ambassadorName}</span>
-                  </>
-                ) : null}
-              </div>
-
-              <FeedbackDialogNavigation
-                current={reportIndex + 1}
-                total={reportCollection.length}
-                onPrevious={reportIndex > 0 ? () => showReport(reportIndex - 1) : undefined}
-                onNext={
-                  reportIndex < reportCollection.length - 1
-                    ? () => showReport(reportIndex + 1)
-                    : undefined
-                }
-              />
+              <div ref={navigationAnchorRef} />
 
               {/* -------------------------------------------- 1. overview */}
               <SectionHeading icon={<UsersRound className="h-4 w-4" />} index={1}>
@@ -276,7 +316,11 @@ export function ReportDetailsButton({
                 <JourneyStep
                   done
                   label={`Ambassador allocated${report.ambassadorName ? ` — ${report.ambassadorName}` : ""}`}
-                  detail={`Session scheduled ${formatNzDate(report.sessionStartsAt, true)}`}
+                  detail={
+                    coveredSessions.length > 1
+                      ? `${coveredSessions.length} sessions scheduled ${formatNzDate(report.sessionStartsAt)}: ${formatSessionTimes(coveredSessions)}`
+                      : `Session scheduled ${formatNzDate(report.sessionStartsAt, true)}`
+                  }
                 />
                 <JourneyStep
                   done
@@ -300,21 +344,46 @@ export function ReportDetailsButton({
                 />
               </div>
 
+              {reviewAction &&
+              report.status !== "reviewed" &&
+              report.paymentRequired &&
+              report.paymentAmountCents ? (
+                <PaymentAmountFields
+                  key={report.id}
+                  formId={reviewFormId}
+                  standardAmountCents={report.paymentAmountCents}
+                  additionalSessionCents={report.paymentAdditionalSessionCents ?? 0}
+                  paymentTier={report.paymentTier}
+                  customReview={
+                    report.paymentReviewRequired && !report.paymentCustomReviewedAt
+                      ? { reason: report.paymentReviewReason, gapMinutes: report.paymentReviewGapMinutes }
+                      : undefined
+                  }
+                  sameDayPaymentCount={report.sameDayPaymentCount ?? 0}
+                  ambassadorName={report.ambassadorName}
+                  schoolName={report.schoolName}
+                  skipPayment={skipPayment}
+                  onSkipPaymentChange={(value) =>
+                    setSkipPaymentByReport((current) => ({ ...current, [report.id]: value }))
+                  }
+                />
+              ) : null}
+
               {/* -------------------------------------------- footer */}
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-[#eef4fd] px-4 py-3">
                 <p className="flex items-center gap-2.5 text-sm text-[#1e4fae]">
                   <Info className="h-4 w-4 shrink-0" />
                   Status:{" "}
                   {report.status === "reviewed"
-                    ? report.paymentRequired
-                      ? "Approved and prepared for finance."
-                      : "Approved — no payment was required."
-                    : report.paymentRequired && !report.paymentDetailsComplete
+                    ? reviewedPaymentStatus(report)
+                    : report.paymentRequired && skipPayment
+                      ? "Submitted — will be approved with no payment."
+                      : report.paymentRequired && !report.paymentDetailsComplete
                       ? `Payment details missing: ${(report.missingPaymentDetails ?? []).join(", ")}.`
                       : "Submitted — awaiting staff approval."}
                 </p>
                 {reviewAction && report.status !== "reviewed" ? (
-                  <form action={reviewAction}>
+                  <form id={reviewFormId} action={reviewAction}>
                     <input type="hidden" name="reportId" value={report.id} />
                     <input type="hidden" name="returnTo" value={reviewReturnTo ?? "/staff/reports"} />
                     <Button
@@ -322,11 +391,11 @@ export function ReportDetailsButton({
                       className="border-[#2563eb] bg-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.28)] hover:border-[#1d4fd7] hover:bg-[#1d4fd7]"
                     >
                       <CheckCircle2 className="h-4 w-4" />
-                      {report.paymentRequired && !report.paymentDetailsComplete
+                      {report.paymentRequired && skipPayment
+                        ? "Approve report (no payment)"
+                        : report.paymentRequired && !report.paymentDetailsComplete
                         ? "Request payment details"
-                        : report.paymentRequired
-                          ? "Approve report & send to finance"
-                          : "Approve report"}
+                        : "Approve report"}
                     </Button>
                   </form>
                 ) : null}
@@ -395,6 +464,206 @@ export function ReportDetailsButton({
         : null}
     </>
   );
+}
+
+// Inputs join the approve form through its id. The server action and the
+// approval RPC both enforce the same rules; these fields only guide staff.
+const MAX_EXTRA_DOLLARS = MAX_EXTRA_PAYMENT_CENTS / 100;
+
+// Add-ons staff choose on top of the standard amount (delivery fee plus any
+// sourcing bonus), sent as the extra with the add-on's label as the note.
+// The report's tier preselects the matching one.
+const PAYMENT_ADD_ONS = [
+  { key: "none", addCents: 0, label: "No add-on" },
+  { key: "pair_within_60", addCents: SHORT_PAIR_CENTS, label: "Extra session (less than 2 hours apart)" },
+  { key: "pair_120_to_240", addCents: EXTENDED_PAIR_CENTS, label: "Extra session (2 to 4 hours apart)" }
+] as const;
+
+export function PaymentAmountFields({
+  formId,
+  standardAmountCents,
+  additionalSessionCents,
+  paymentTier,
+  customReview,
+  sameDayPaymentCount,
+  ambassadorName,
+  schoolName,
+  skipPayment,
+  onSkipPaymentChange
+}: {
+  formId: string;
+  standardAmountCents: number;
+  additionalSessionCents: number;
+  paymentTier?: string;
+  // Set while the payment awaits a staff custom review (0056).
+  customReview?: { reason?: string; gapMinutes?: number };
+  sameDayPaymentCount: number;
+  ambassadorName?: string;
+  schoolName: string;
+  skipPayment: boolean;
+  onSkipPaymentChange: (value: boolean) => void;
+}) {
+  // Payments created before 0057 may already include the second-session
+  // amount; the add-on replaces it, so only the difference is sent.
+  const baseCents = standardAmountCents - additionalSessionCents;
+  const [choice, setChoice] = useState<string>(
+    PAYMENT_ADD_ONS.find((option) => option.key === paymentTier)?.key ?? "none"
+  );
+  const selectedAddOn = PAYMENT_ADD_ONS.find((option) => option.key === choice);
+  const [otherAmount, setOtherAmount] = useState("");
+  const addOnCents = selectedAddOn
+    ? selectedAddOn.addCents
+    : /^\d+$/.test(otherAmount.trim())
+      ? Number(otherAmount.trim()) * 100
+      : 0;
+  const extraDollars = (addOnCents - additionalSessionCents) / 100;
+
+  return (
+    <div className="mt-5 rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-4 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+        Payment
+      </p>
+
+      {sameDayPaymentCount > 0 ? (
+        <p className="mt-3 flex items-start gap-2 rounded-[12px] border border-[#f5d48a] bg-[#fffaf0] px-3.5 py-2.5 text-sm text-[#8a5a00]">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          {ambassadorName ?? "This ambassador"} has {sameDayPaymentCount} other{" "}
+          {sameDayPaymentCount === 1 ? "session" : "sessions"} at {schoolName} that day that this payment doesn&apos;t
+          cover.
+        </p>
+      ) : null}
+
+      <div className="mt-3 grid gap-2 text-sm text-[color:var(--navy)]">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name={`payment-mode-${formId}`}
+            checked={!skipPayment}
+            onChange={() => onSkipPaymentChange(false)}
+          />
+          <span>
+            Pay this session — {formatCurrency(baseCents)} standard
+            {!skipPayment && addOnCents > 0
+              ? ` + ${formatCurrency(addOnCents)} add-on = ${formatCurrency(baseCents + addOnCents)} final total`
+              : ""}
+          </span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name={`payment-mode-${formId}`}
+            checked={skipPayment}
+            onChange={() => onSkipPaymentChange(true)}
+          />
+          No payment — covered by another report&apos;s extra amount
+        </label>
+        {skipPayment ? <input type="hidden" form={formId} name="skipPayment" value="yes" /> : null}
+      </div>
+
+      {!skipPayment ? (
+        <label className="mt-3 grid gap-1 text-xs font-semibold text-[color:var(--navy)]">
+          Add-on
+          <Select value={choice} onChange={(event) => setChoice(event.target.value)}>
+            {PAYMENT_ADD_ONS.map((option) => (
+              <option key={option.key} value={option.key} disabled={option.addCents < additionalSessionCents}>
+                {option.addCents > 0 ? `+${formatCurrency(option.addCents)} — ${option.label}` : option.label}
+              </option>
+            ))}
+            <option value="other">Other — enter an amount and note</option>
+          </Select>
+        </label>
+      ) : null}
+
+      {/* Flagged payments require an explicit review, even for a $0 add-on. */}
+      {!skipPayment && selectedAddOn && (extraDollars > 0 || customReview) ? (
+        <>
+          <input type="hidden" form={formId} name="extraAmount" value={extraDollars} />
+          <input type="hidden" form={formId} name="paymentNote" value={selectedAddOn.label} />
+        </>
+      ) : null}
+      {!skipPayment && customReview ? (
+        <label data-testid="custom-review-panel" className="mt-3 flex items-start gap-2 rounded-[12px] border border-[#f5d48a] bg-[#fffaf0] px-3.5 py-2.5 text-sm text-[#8a5a00]">
+          <input type="checkbox" form={formId} name="customReviewConfirmed" value="yes" required className="mt-1" />
+          <span>These sessions need a custom payment review. I have reviewed the sessions and explicitly approved the selected add-on, including $0 if no add-on is due.</span>
+        </label>
+      ) : null}
+      {!skipPayment && !selectedAddOn ? (
+        <input type="hidden" form={formId} name="extraAmount" value={Math.max(0, extraDollars)} />
+      ) : null}
+
+      {skipPayment || !selectedAddOn ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+          {!skipPayment ? (
+            <label className="grid gap-1 text-xs font-semibold text-[color:var(--navy)]">
+              Add-on amount (NZD)
+              <Input
+                form={formId}
+                type="number"
+                inputMode="numeric"
+                min={additionalSessionCents / 100}
+                max={MAX_EXTRA_DOLLARS}
+                step={1}
+                placeholder="0"
+                required
+                value={otherAmount}
+                onChange={(event) => setOtherAmount(event.target.value)}
+              />
+            </label>
+          ) : null}
+          <label
+            className={cn(
+              "grid gap-1 text-xs font-semibold text-[color:var(--navy)]",
+              skipPayment && "sm:col-span-2"
+            )}
+          >
+            Note for finance
+            <Input
+              form={formId}
+              name="paymentNote"
+              placeholder={skipPayment ? "e.g. Paid as a $50 add-on on the 9:00 session" : "e.g. Third session in the afternoon"}
+              required
+              minLength={3}
+              maxLength={500}
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Follows the payment after approval, so the dialog never claims a paid
+// report is still "prepared for finance".
+function reviewedPaymentStatus(report: ReportSummary) {
+  if (!report.paymentRequired) {
+    return "Approved — no payment was required.";
+  }
+
+  if (report.paymentStatus === "paid") {
+    return report.paidAt ? `Approved and paid on ${formatNzDate(report.paidAt)}.` : "Approved and paid.";
+  }
+
+  if (report.paymentStatus === "not_eligible") {
+    return report.paymentNote
+      ? `Approved with no payment: ${report.paymentNote}`
+      : "Approved with no payment.";
+  }
+
+  if (report.paymentStatus === "approved") {
+    if (!report.financeEmailStatus) {
+      return "Approved — ready to send to finance from the Payments tab.";
+    }
+
+    if (report.financeEmailStatus === "sent") {
+      return report.sentToFinanceAt
+        ? `Approved and sent to finance on ${formatNzDate(report.sentToFinanceAt)}. Waiting for finance to pay.`
+        : "Approved and sent to finance. Waiting for finance to pay.";
+    }
+
+    return "Approved, but the finance email didn't go through. Resend it from the Payments tab.";
+  }
+
+  return "Approved.";
 }
 
 function SectionHeading({

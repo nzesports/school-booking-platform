@@ -31,6 +31,7 @@ import { AmbassadorProfileTabs } from "@/components/dashboard/ambassador-profile
 import type { AmbassadorNote } from "@/lib/services/ambassador-notes";
 import type { PortalLoginStatus } from "@/lib/services/portal-login-status";
 import { isDeliveredSession } from "@/lib/services/dashboard-insights";
+import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
@@ -725,7 +726,10 @@ export function AmbassadorProfileWorkspace({
   const ambassadorPayments = payments.filter(
     (payment) => payment.ambassadorProfileId === ambassador.id
   );
-  const outstandingPayments = ambassadorPayments.filter((payment) =>
+  // Totals leave out payments still awaiting a staff custom review (0056):
+  // their amount is only the recognised part, not an earned/payable figure.
+  const countedPayments = ambassadorPayments.filter((payment) => !isAwaitingCustomReview(payment));
+  const outstandingPayments = countedPayments.filter((payment) =>
     outstandingPaymentStatuses.has(payment.status)
   );
   const outstandingCents = outstandingPayments.reduce(
@@ -736,11 +740,11 @@ export function AmbassadorProfileWorkspace({
     .filter((booking) => booking.sourcedByAmbassadorId === ambassador.id)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const sourcedSchoolCount = new Set(sourcedBookings.map((booking) => booking.schoolName)).size;
-  const sourcingBonusCents = ambassadorPayments.reduce(
+  const sourcingBonusCents = countedPayments.reduce(
     (total, payment) => total + payment.sourcingBonusCents,
     0
   );
-  const totalEarningsCents = ambassadorPayments.reduce(
+  const totalEarningsCents = countedPayments.reduce(
     (total, payment) => total + payment.amountCents,
     0
   );
@@ -1329,7 +1333,7 @@ export function AmbassadorProfileWorkspace({
             emptyMessage="No schools or bookings are attributed to this volunteer yet."
             rows={sourcedBookings.map((booking) => {
               const bookingSessionIds = new Set(booking.sessions.map((session) => session.id));
-              const bonus = ambassadorPayments
+              const bonus = countedPayments
                 .filter((payment) => bookingSessionIds.has(payment.bookingSessionId))
                 .reduce((total, payment) => total + payment.sourcingBonusCents, 0);
               return [

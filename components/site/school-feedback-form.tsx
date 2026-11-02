@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatSessionTimes } from "@/lib/same-day-sessions";
 import { cn, formatShortDate, formatTime } from "@/lib/utils";
 
 // The post-session feedback form, shared between the school portal
@@ -30,6 +31,7 @@ export function SchoolFeedbackForm({
   presentationTitle,
   startsAt,
   ambassadorName,
+  sessions = [],
   feedbackToken
 }: {
   action: (formData: FormData) => void | Promise<void>;
@@ -40,6 +42,8 @@ export function SchoolFeedbackForm({
   presentationTitle?: string;
   startsAt?: string;
   ambassadorName?: string;
+  // All of the booking's sessions that day, when it had more than one.
+  sessions?: Array<{ startsAt: string; endsAt?: string | null }>;
   // Signature from the public email link; the portal form doesn't need one.
   feedbackToken?: string;
 }) {
@@ -65,7 +69,16 @@ export function SchoolFeedbackForm({
                 </span>
                 <span className="inline-flex items-center gap-2">
                   <CalendarClock className="h-4 w-4 text-[color:var(--navy)]/70" />
-                  {formatTime(startsAt)}
+                  {sessions.length > 1 ? (
+                    <span>
+                      <strong className="font-semibold text-[color:var(--navy)]">
+                        {sessions.length === 2 ? "Double session" : `${sessions.length} sessions`}
+                      </strong>
+                      : {formatSessionTimes(sessions)}
+                    </span>
+                  ) : (
+                    formatTime(startsAt)
+                  )}
                 </span>
                 {ambassadorName ? (
                   <span className="inline-flex items-center gap-2">

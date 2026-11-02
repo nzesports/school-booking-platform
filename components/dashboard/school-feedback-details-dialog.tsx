@@ -99,19 +99,20 @@ export function SchoolFeedbackDetailsButton({
               maxWidthClassName="max-w-[720px]"
               overlayClassName="z-[80]"
               compact
+              headerActions={
+                <FeedbackDialogNavigation
+                  current={reviewIndex + 1}
+                  total={reviewCollection.length}
+                  onPrevious={reviewIndex > 0 ? () => showReview(reviewIndex - 1) : undefined}
+                  onNext={
+                    reviewIndex < reviewCollection.length - 1
+                      ? () => showReview(reviewIndex + 1)
+                      : undefined
+                  }
+                />
+              }
             >
               <div ref={navigationAnchorRef} className="h-0" />
-              <FeedbackDialogNavigation
-                current={reviewIndex + 1}
-                total={reviewCollection.length}
-                onPrevious={reviewIndex > 0 ? () => showReview(reviewIndex - 1) : undefined}
-                onNext={
-                  reviewIndex < reviewCollection.length - 1
-                    ? () => showReview(reviewIndex + 1)
-                    : undefined
-                }
-                className="mt-5"
-              />
               <div className="mt-5 grid gap-4">
                 <div className="grid gap-3 sm:grid-cols-3">
                   <InfoTile

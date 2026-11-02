@@ -1,9 +1,18 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CalendarCheck2, CalendarX2, Clock3, CheckCircle2, UsersRound } from "lucide-react";
+import {
+  CalendarCheck2,
+  CalendarClock,
+  CalendarX2,
+  CheckCircle2,
+  Clock3,
+  UserMinus,
+  UsersRound
+} from "lucide-react";
 
 import {
   assignAmbassadorAction,
+  confirmRescheduledSessionAction,
   bulkUpdateBookingStatusAction,
   bulkDeleteBookingsAction,
   createSessionTeamsLinkAction,
@@ -37,6 +46,7 @@ import {
   type DashboardCustomRange,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
+import { isReschedulingSession, isWithdrawalSession } from "@/lib/session-status";
 import { cn } from "@/lib/utils";
 
 export function BookingLifecyclePanel({
@@ -71,10 +81,23 @@ export function BookingLifecyclePanel({
   // session has ended. Confirmed means confirmed/assigned and still to come.
   const isCompleted = (session: BookingSessionView) => isDeliveredSession(session, now);
   const isCancelled = (session: BookingSessionView) => isCancelledSession(session);
+  // Sessions waiting on a reschedule (requested, or a date the school moved
+  // that staff haven't confirmed) or an ambassador withdrawal get their own
+  // groups so they never hide inside Confirmed or Pending.
+  const isRescheduling = (session: BookingSessionView) =>
+    isReschedulingSession(session) && !isCompleted(session) && !isCancelled(session);
+  const isWithdrawal = (session: BookingSessionView) =>
+    isWithdrawalSession(session) && !isCompleted(session);
   const isConfirmed = (session: BookingSessionView) =>
-    ["confirmed", "ambassador_assigned"].includes(session.status) && !isCompleted(session);
+    ["confirmed", "ambassador_assigned"].includes(session.status) &&
+    !isCompleted(session) &&
+    !isRescheduling(session);
   const isPending = (session: BookingSessionView) =>
-    !isCompleted(session) && !isCancelled(session) && !isConfirmed(session);
+    !isCompleted(session) &&
+    !isCancelled(session) &&
+    !isConfirmed(session) &&
+    !isRescheduling(session) &&
+    !isWithdrawal(session);
   const hasReport = (status: string) => ["submitted", "reviewed"].includes(status);
   // Same rule as the dashboard's "no student number" flag.
   const isMissingStudents = (session: BookingSessionView) =>
@@ -87,6 +110,8 @@ export function BookingLifecyclePanel({
       if (metric === "cancelled") return isCancelled(session);
       if (metric === "pending") return isPending(session);
       if (metric === "confirmed") return isConfirmed(session);
+      if (metric === "rescheduling") return isRescheduling(session);
+      if (metric === "withdrawal") return isWithdrawal(session);
       if (metric === "reports") return hasReport(session.reportStatus);
       if (metric === "missing-reports") return isCompleted(session) && !hasReport(session.reportStatus);
       if (metric === "missing-students") return isMissingStudents(session);
@@ -105,21 +130,12 @@ export function BookingLifecyclePanel({
   const cancelledCount = sessions.filter(isCancelled).length;
   const confirmedCount = sessions.filter(isConfirmed).length;
   const pendingCount = sessions.filter(isPending).length;
+  const reschedulingCount = sessions.filter(isRescheduling).length;
+  const withdrawalCount = sessions.filter(isWithdrawal).length;
 
   return (
     <div className="grid gap-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <LifecycleStatTile
-          accentClassName="border-l-[3px] border-l-[#2563eb]"
-          icon={<UsersRound className="h-5 w-5" />}
-          iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
-          href={metricHref("all")}
-          active={metric === "all"}
-          activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
-          label="Sessions"
-          value={String(sessions.length)}
-          info="Total in selected period"
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#18a83b]"
           icon={<CalendarCheck2 className="h-5 w-5" />}
@@ -140,7 +156,29 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#f5f1fd] hover:bg-[#f1edfd]"
           label="Confirmed"
           value={String(confirmedCount)}
-          info="Confirmed, not yet completed"
+          info="Confirmed or ambassador assigned, still to come"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#ea580c]"
+          icon={<CalendarClock className="h-5 w-5" />}
+          iconClassName="bg-[#fff1e6] text-[#c2410c]"
+          href={metricHref("rescheduling")}
+          active={metric === "rescheduling"}
+          activeClassName="bg-[#fff5ec] hover:bg-[#fff1e6]"
+          label="Rescheduling"
+          value={String(reschedulingCount)}
+          info="A school asked to move the date, or moved it themselves and the new date needs confirming"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#db2777]"
+          icon={<UserMinus className="h-5 w-5" />}
+          iconClassName="bg-[#fdf0f6] text-[#be185d]"
+          href={metricHref("withdrawal")}
+          active={metric === "withdrawal"}
+          activeClassName="bg-[#fdf2f8] hover:bg-[#fdf0f6]"
+          label="Withdrawal"
+          value={String(withdrawalCount)}
+          info="The assigned ambassador asked to withdraw and staff need to decide"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#d97706]"
@@ -151,7 +189,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fff9eb] hover:bg-[#fff5df]"
           label="Pending"
           value={String(pendingCount)}
-          info="Awaiting confirmation or resolution"
+          info="Requested, tentative or applied: not confirmed with the school yet"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#dc2626]"
@@ -163,6 +201,17 @@ export function BookingLifecyclePanel({
           label="Cancelled"
           value={String(cancelledCount)}
           info="Cancelled or declined"
+        />
+        <LifecycleStatTile
+          accentClassName="border-l-[3px] border-l-[#2563eb]"
+          icon={<UsersRound className="h-5 w-5" />}
+          iconClassName="bg-[#e8f1fd] text-[#1e4fae]"
+          href={metricHref("all")}
+          active={metric === "all"}
+          activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
+          label="All sessions"
+          value={String(sessions.length)}
+          info={`Every session in the selected period, whatever its status: ${completedCount} completed + ${confirmedCount} confirmed + ${reschedulingCount} rescheduling + ${withdrawalCount} withdrawal + ${pendingCount} pending + ${cancelledCount} cancelled.`}
         />
       </div>
 
@@ -207,6 +256,7 @@ export function BookingLifecyclePanel({
         resolveWithdrawalAction={resolveSessionWithdrawalAction}
         resolveRescheduleAction={resolveSessionRescheduleAction}
         updateStudentCountsAction={updateSessionStudentCountsAction}
+        confirmRescheduleAction={confirmRescheduledSessionAction}
         updateMeetingLinkAction={updateSessionMeetingLinkAction}
         createTeamsLinkAction={createSessionTeamsLinkAction}
         updateStatusInPlaceAction={updateBookingStatusInPlaceAction}

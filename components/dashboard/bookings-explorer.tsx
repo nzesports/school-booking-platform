@@ -33,7 +33,14 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from "react";
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 
@@ -45,6 +52,18 @@ import {
   schoolBookingStatus
 } from "@/components/dashboard/booking-status-control";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
+import { RescheduleConfirmPanel } from "@/components/dashboard/reschedule-confirm-panel";
+import {
+  WITHDRAWAL_REASON_LABELS,
+  WithdrawalDecisionForms
+} from "@/components/dashboard/withdrawal-decision-forms";
+import { bookingSourceLabel } from "@/lib/booking-source";
+import {
+  isReschedulingSession,
+  isWithdrawalSession,
+  needsRescheduleConfirmation,
+  sessionDisplayStatus
+} from "@/lib/session-status";
 import type { SessionDialogAction } from "@/components/dashboard/session-update-notices";
 import type {
   BookingRequestView,
@@ -207,6 +226,7 @@ const statusPillStyles: Record<string, string> = {
   cancelled: "bg-[#fdecec] text-[#b3372e]",
   declined: "bg-[#f5eaf0] text-[#8b2c58]",
   reschedule_requested: "bg-[#fff0e4] text-[#b54708]",
+  rescheduled: "bg-[#fff0e4] text-[#b54708]",
   requested: "bg-[#fff5df] text-[#9a5a00]"
 };
 
@@ -219,6 +239,10 @@ const calendarToneStyles: Record<CalendarTone, string> = {
   red: "border-[#f3c1c1] bg-[#fdecec] text-[#b3372e] hover:bg-[#fbdfdf]",
   grey: "border-[color:var(--border-soft)] bg-[#f1f5f9] text-[#64748b] hover:bg-[#e8eef5]"
 };
+
+function isActiveSession(session: { status: string }) {
+  return session.status !== "cancelled" && session.status !== "declined";
+}
 
 function subscribeToHashChange(onChange: () => void) {
   window.addEventListener("hashchange", onChange);
@@ -234,7 +258,7 @@ function calendarTone(status: string): CalendarTone {
     return "red";
   }
 
-  if (["reschedule_requested", "withdrawal_requested"].includes(status)) {
+  if (["reschedule_requested", "rescheduled", "withdrawal_requested"].includes(status)) {
     return "amber";
   }
 
@@ -262,7 +286,13 @@ export function StatusPill({ value }: { value: string }) {
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {value === "requested" ? "Pending" : value === "closed" ? "Completed" : titleCase(value)}
+      {value === "requested"
+        ? "Pending"
+        : value === "closed"
+          ? "Completed"
+          : value === "rescheduled"
+            ? "Rescheduled – confirm date"
+            : titleCase(value)}
     </span>
   );
 }
@@ -297,6 +327,7 @@ export function BookingsExplorer({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   updateStudentCountsAction,
+  confirmRescheduleAction,
   updateMeetingLinkAction,
   createTeamsLinkAction,
   updateStatusInPlaceAction,
@@ -319,6 +350,7 @@ export function BookingsExplorer({
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   updateStudentCountsAction?: SessionDialogAction;
+  confirmRescheduleAction?: SessionDialogAction;
   updateMeetingLinkAction?: SessionDialogAction;
   createTeamsLinkAction?: SessionDialogAction;
   updateStatusInPlaceAction?: SessionDialogAction;
@@ -357,6 +389,39 @@ export function BookingsExplorer({
       || left.id.localeCompare(right.id);
   }), [inputBookings]);
   const ambassadorSchedule = useMemo(() => buildAmbassadorSchedule(allBookings), [allBookings]);
+  // Separate bookings for one school on the same NZ day are linked to each
+  // other in the list, so back-to-back visits don't read as unrelated rows.
+  const sameDayBookingsById = useMemo(() => {
+    const bookingsByDay = new Map<string, BookingRequestView[]>();
+
+    for (const booking of bookings) {
+      const days = new Set(
+        booking.sessions
+          .filter(isActiveSession)
+          .map((session) => `${session.schoolId ?? booking.schoolName}|${formatShortDate(session.startsAt)}`)
+      );
+
+      for (const day of days) {
+        bookingsByDay.set(day, [...(bookingsByDay.get(day) ?? []), booking]);
+      }
+    }
+
+    const siblings = new Map<string, Map<string, BookingRequestView>>();
+
+    for (const group of bookingsByDay.values()) {
+      for (const booking of group) {
+        for (const other of group) {
+          if (other.id !== booking.id) {
+            const bookingSiblings = siblings.get(booking.id) ?? new Map<string, BookingRequestView>();
+            bookingSiblings.set(other.id, other);
+            siblings.set(booking.id, bookingSiblings);
+          }
+        }
+      }
+    }
+
+    return new Map([...siblings].map(([bookingId, others]) => [bookingId, [...others.values()]]));
+  }, [bookings]);
   // Deep links like /bookings?q=School+Name (e.g. "View bookings" on the
   // schools page) land pre-filtered on the list view. Deep links with
   // ?booking=<id> (notifications, post-update redirects) land on the list
@@ -483,6 +548,41 @@ export function BookingsExplorer({
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageBookings = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Same-day links can point at a booking on another page or hidden by the
+  // current filters: clear the filters if needed, select its page, expand it,
+  // then scroll once it has rendered.
+  const [scrollRequest, setScrollRequest] = useState<{ bookingId: string } | null>(null);
+  const jumpToBooking = (bookingId: string) => {
+    let index = sorted.findIndex((booking) => booking.id === bookingId);
+
+    if (index < 0) {
+      index = bookings.findIndex((booking) => booking.id === bookingId);
+
+      if (index < 0) {
+        return;
+      }
+
+      setQuery("");
+      setRegionFilter("all");
+      setPresentationFilter("all");
+      setStatusFilter("all");
+      setDeliveryFilter("all");
+      setSort({ key: null, direction: "asc" });
+    }
+
+    setPage(Math.floor(index / PAGE_SIZE) + 1);
+    setExpanded((current) => ({ ...current, [bookingId]: true }));
+    setScrollRequest({ bookingId });
+  };
+
+  useEffect(() => {
+    if (scrollRequest) {
+      document
+        .getElementById(`booking-${scrollRequest.bookingId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [scrollRequest]);
   const visiblePaginationItems = paginationItems(safePage, pageCount);
   const allPageBookingsSelected =
     pageBookings.length > 0 && pageBookings.every((booking) => selectedBookingIds.has(booking.id));
@@ -523,6 +623,7 @@ export function BookingsExplorer({
           resolveWithdrawalAction={resolveWithdrawalAction}
           resolveRescheduleAction={resolveRescheduleAction}
           updateStudentCountsAction={updateStudentCountsAction}
+          confirmRescheduleAction={confirmRescheduleAction}
           updateMeetingLinkAction={updateMeetingLinkAction}
           createTeamsLinkAction={createTeamsLinkAction}
           updateStatusInPlaceAction={updateStatusInPlaceAction}
@@ -689,6 +790,15 @@ export function BookingsExplorer({
                     value={bookingRequestId}
                   />
                 ))}
+                {/* The whole batch is refused if any of these changed since. */}
+                {selectedBookings.map((booking) => (
+                  <input
+                    key={`expected-${booking.id}`}
+                    type="hidden"
+                    name={`expectedStatus.${booking.id}`}
+                    value={booking.status}
+                  />
+                ))}
                 <input type="hidden" name="returnTo" value={`${returnTo}#bookings-panel`} />
                 <label className="sr-only" htmlFor="bulk-booking-status">
                   New status for selected bookings
@@ -807,6 +917,21 @@ export function BookingsExplorer({
           {pageBookings.map((booking) => {
             const open = isExpanded(booking.id);
             const primarySession = booking.sessions[0];
+            const primaryDay = primarySession ? formatShortDate(primarySession.startsAt) : null;
+            const activeSessionCount = booking.sessions.filter(isActiveSession).length;
+            // Every session on the displayed day, earliest first, so a
+            // back-to-back booking shows all of its times rather than one.
+            const primaryDaySessions = booking.sessions
+              .filter(
+                (session) =>
+                  formatShortDate(session.startsAt) === primaryDay &&
+                  (session.id === primarySession?.id || isActiveSession(session))
+              )
+              .reverse();
+            const otherDaySessionCount = booking.sessions.filter(
+              (session) => isActiveSession(session) && formatShortDate(session.startsAt) !== primaryDay
+            ).length;
+            const sameDayBookings = sameDayBookingsById.get(booking.id) ?? [];
             const uniquePresentations = Array.from(
               new Set(booking.sessions.map((session) => session.presentationTitle))
             );
@@ -866,12 +991,23 @@ export function BookingsExplorer({
                       Date
                     </p>
                     {primarySession ? (
-                      <p className="text-[13px] font-semibold text-[color:var(--navy)]">
+                      <div className="text-[13px] font-semibold text-[color:var(--navy)]">
                         {formatShortDate(primarySession.startsAt, true)}
-                        <span className="mt-1 block whitespace-nowrap text-[11px] font-medium text-[color:var(--text-soft)]">
-                          {formatTime(primarySession.startsAt)} – {formatTime(primarySession.endsAt)}
-                        </span>
-                      </p>
+                        {primaryDaySessions.map((session) => (
+                          <span
+                            key={session.id}
+                            className="mt-1 block whitespace-nowrap text-[11px] font-medium text-[color:var(--text-soft)]"
+                          >
+                            {formatTime(session.startsAt)} – {formatTime(session.endsAt)}
+                          </span>
+                        ))}
+                        {activeSessionCount > 1 ? (
+                          <span className="mt-1.5 inline-flex rounded-full bg-[#eef4fd] px-2 py-0.5 text-[10px] font-semibold text-[#1e4fae]">
+                            {activeSessionCount} sessions
+                            {otherDaySessionCount > 0 ? ` · ${otherDaySessionCount} on other days` : ""}
+                          </span>
+                        ) : null}
+                      </div>
                     ) : (
                       <p className="text-sm text-[color:var(--text-soft)]">No session date</p>
                     )}
@@ -881,8 +1017,17 @@ export function BookingsExplorer({
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)] xl:hidden">
                       Status
                     </p>
-                    <StatusEmailForm action={updateStatusAction} className="min-w-0">
+                    <StatusEmailForm
+                      action={updateStatusAction}
+                      className="min-w-0"
+                      emailHistory={{
+                        count: booking.schoolEmailsSentCount ?? 0,
+                        lastSentAt: booking.lastSchoolEmailSentAt
+                      }}
+                    >
                       <input type="hidden" name="bookingRequestId" value={booking.id} />
+                      {/* Refused if the status changed after this page loaded. */}
+                      <input type="hidden" name="expectedStatus" value={booking.status} />
                       <input type="hidden" name="returnTo" value={cardReturnTo} />
                       <AutoSaveBookingStatus
                         currentStatus={booking.status}
@@ -890,6 +1035,17 @@ export function BookingsExplorer({
                         compact
                       />
                     </StatusEmailForm>
+                    {/* The dropdown is the booking's status; this flags sessions
+                        inside it that need a staff decision. */}
+                    {booking.sessions.some(isWithdrawalSession) ? (
+                      <span className="mt-1.5 inline-flex rounded-full bg-[#fdf0f6] px-2 py-0.5 text-[10px] font-semibold text-[#be185d]">
+                        Withdrawal requested
+                      </span>
+                    ) : booking.sessions.some(isReschedulingSession) ? (
+                      <span className="mt-1.5 inline-flex rounded-full bg-[#fff1e6] px-2 py-0.5 text-[10px] font-semibold text-[#c2410c]">
+                        Rescheduling
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="min-w-0">
@@ -904,13 +1060,31 @@ export function BookingsExplorer({
                         Ref {booking.referenceCode}
                       </p>
                     ) : null}
-                    {booking.recordOnly ? (
+                    <p className="mt-0.5 text-[11px] text-[color:var(--text-soft)]">
+                      {bookingSourceLabel(booking.source, booking.sourcedByAmbassadorName)}
+                    </p>
+                    {sameDayBookings.map((other) => (
+                      <button
+                        key={other.id}
+                        type="button"
+                        onClick={() => jumpToBooking(other.id)}
+                        className="mt-1 flex items-center gap-1 text-left text-[11px] font-semibold text-[#2563eb] hover:underline"
+                      >
+                        <CalendarDays className="h-3 w-3 shrink-0" />
+                        Same day as {other.referenceCode ? `Ref ${other.referenceCode}` : "another booking"}
+                      </button>
+                    ))}
+                    {booking.schoolEmailsSentCount ? (
                       <span
                         className="mt-1 inline-flex items-center gap-1 rounded-full border border-[color:var(--border-soft)] bg-[#f4f6fa] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--text-soft)]"
-                        title="Record only: no emails are sent for this booking"
+                        title={
+                          booking.lastSchoolEmailSentAt
+                            ? `Last emailed ${formatShortDate(booking.lastSchoolEmailSentAt)}. Open a session's Emails tab to see them.`
+                            : "Open a session's Emails tab to see them."
+                        }
                       >
                         <Mail className="h-3 w-3" />
-                        No emails
+                        {booking.schoolEmailsSentCount} {booking.schoolEmailsSentCount === 1 ? "email" : "emails"} sent
                       </span>
                     ) : null}
                   </div>
@@ -993,6 +1167,7 @@ export function BookingsExplorer({
                             resolveWithdrawalAction={resolveWithdrawalAction}
                             resolveRescheduleAction={resolveRescheduleAction}
                             updateStudentCountsAction={updateStudentCountsAction}
+                            confirmRescheduleAction={confirmRescheduleAction}
                             updateMeetingLinkAction={updateMeetingLinkAction}
                             createTeamsLinkAction={createTeamsLinkAction}
                             onOpenSession={setOpenSessionId}
@@ -1088,7 +1263,7 @@ export function BookingsExplorer({
                                 </span>
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
-                                <StatusPill value={session.status} />
+                                <StatusPill value={sessionDisplayStatus(session)} />
                                 <SessionChangeSummary session={session} compact />
                               </td>
                               <td className="border-b border-l border-[color:rgba(4,15,75,0.06)] px-4 py-3.5">
@@ -1105,6 +1280,7 @@ export function BookingsExplorer({
                                   resolveWithdrawalAction={resolveWithdrawalAction}
                                   resolveRescheduleAction={resolveRescheduleAction}
                                   updateStudentCountsAction={updateStudentCountsAction}
+                                  confirmRescheduleAction={confirmRescheduleAction}
                                   updateMeetingLinkAction={updateMeetingLinkAction}
                                   createTeamsLinkAction={createTeamsLinkAction}
                                   onOpen={() => setOpenSessionId(session.id)}
@@ -1119,6 +1295,16 @@ export function BookingsExplorer({
                                     session={session}
                                     action={resolveWithdrawalAction}
                                     returnTo={cardReturnTo}
+                                  />
+                                </td>
+                              </tr>
+                            ) : null}
+                            {confirmRescheduleAction && needsRescheduleConfirmation(session) ? (
+                              <tr>
+                                <td colSpan={7} className="border-b border-[color:rgba(4,15,75,0.06)] px-4 py-4">
+                                  <RescheduleConfirmPanel
+                                    session={session}
+                                    action={confirmRescheduleAction}
                                   />
                                 </td>
                               </tr>
@@ -1208,6 +1394,7 @@ function CompactSessionCard({
   resolveWithdrawalAction,
   resolveRescheduleAction,
   updateStudentCountsAction,
+  confirmRescheduleAction,
   updateMeetingLinkAction,
   createTeamsLinkAction,
   onOpenSession,
@@ -1221,6 +1408,7 @@ function CompactSessionCard({
   resolveWithdrawalAction: (formData: FormData) => void | Promise<void>;
   resolveRescheduleAction: (formData: FormData) => void | Promise<void>;
   updateStudentCountsAction?: SessionDialogAction;
+  confirmRescheduleAction?: SessionDialogAction;
   updateMeetingLinkAction?: SessionDialogAction;
   createTeamsLinkAction?: SessionDialogAction;
   onOpenSession?: (sessionId: string) => void;
@@ -1243,7 +1431,7 @@ function CompactSessionCard({
             </p>
           </div>
         </div>
-        <StatusPill value={session.status} />
+        <StatusPill value={sessionDisplayStatus(session)} />
       </div>
 
       <SessionChangeSummary session={session} compact />
@@ -1305,6 +1493,7 @@ function CompactSessionCard({
           resolveWithdrawalAction={resolveWithdrawalAction}
           resolveRescheduleAction={resolveRescheduleAction}
           updateStudentCountsAction={updateStudentCountsAction}
+          confirmRescheduleAction={confirmRescheduleAction}
           updateMeetingLinkAction={updateMeetingLinkAction}
           createTeamsLinkAction={createTeamsLinkAction}
           onOpen={onOpenSession ? () => onOpenSession(session.id) : undefined}
@@ -1319,6 +1508,12 @@ function CompactSessionCard({
             action={resolveWithdrawalAction}
             returnTo={returnTo}
           />
+        </div>
+      ) : null}
+
+      {confirmRescheduleAction && needsRescheduleConfirmation(session) ? (
+        <div className="mt-3">
+          <RescheduleConfirmPanel session={session} action={confirmRescheduleAction} />
         </div>
       ) : null}
     </article>
@@ -1340,6 +1535,9 @@ function WithdrawalReviewPanel({
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#9a5a00]">
             {session.assignedAmbassadorName ?? "Ambassador"} asked to withdraw
+            {session.withdrawalReasonType
+              ? ` · ${WITHDRAWAL_REASON_LABELS[session.withdrawalReasonType]}`
+              : ""}
           </p>
           <p className="mt-1 text-sm leading-6 text-[#8f680f]">
             {session.withdrawalReason ? `"${session.withdrawalReason}"` : "No reason provided."}
@@ -1351,33 +1549,7 @@ function WithdrawalReviewPanel({
           ) : null}
         </div>
         <div className="grid gap-3 sm:min-w-[380px]">
-          <form action={action}>
-            <input type="hidden" name="bookingSessionId" value={session.id} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-            <input type="hidden" name="decision" value="approve" />
-            <PendingSubmitButton unstyled
-              type="submit"
-              className="inline-flex w-full items-center justify-center border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]"
-            >
-              Approve withdrawal - reopen session
-            </PendingSubmitButton>
-          </form>
-          <form action={action} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <input type="hidden" name="bookingSessionId" value={session.id} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-            <input type="hidden" name="decision" value="decline" />
-            <input
-              name="note"
-              placeholder="Reply to the ambassador..."
-              className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
-            />
-            <PendingSubmitButton unstyled
-              type="submit"
-              className="inline-flex items-center justify-center border border-[#f2ddb0] bg-white text-[#9a5a00] transition hover:bg-[#fff2d8]"
-            >
-              Decline - keep assigned
-            </PendingSubmitButton>
-          </form>
+          <WithdrawalDecisionForms session={session} action={action} returnTo={returnTo} />
         </div>
       </div>
     </div>
@@ -1535,7 +1707,7 @@ function BookingsCalendar({
                         returnTo={returnTo}
                         className={cn(
                           "w-full truncate border text-left transition",
-                          calendarToneStyles[calendarTone(session.status)]
+                          calendarToneStyles[calendarTone(sessionDisplayStatus(session))]
                         )}
                         label={
                           <>

@@ -1,52 +1,49 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
+// "1 of 5" with up/down buttons, for a dialog header beside its close button
+// (BookingDialogShell's headerActions).
 export function FeedbackDialogNavigation({
   current,
   total,
   onPrevious,
-  onNext,
-  className
+  onNext
 }: {
   current: number;
   total: number;
   onPrevious?: () => void;
   onNext?: () => void;
-  className?: string;
 }) {
   if (total <= 1) {
     return null;
   }
 
   return (
-    <div
-      className={cn(
-        "sticky top-3 z-10 mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[color:var(--border-soft)] bg-white/95 px-3 py-2 shadow-[0_10px_24px_rgba(11,24,77,0.1)] backdrop-blur",
-        className
-      )}
-    >
-      <button
-        type="button"
-        onClick={onPrevious}
-        disabled={!onPrevious}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Previous
-      </button>
-      <span className="text-xs font-semibold text-[color:var(--text-soft)]">
+    <div className="flex shrink-0 items-center gap-1.5">
+      <span className="whitespace-nowrap px-1 text-xs font-semibold text-[color:var(--text-soft)]">
         {current} of {total}
       </span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        onClick={onPrevious}
+        disabled={!onPrevious}
+        aria-label="Previous"
+        className="shrink-0 border border-[rgba(4,15,75,0.08)] bg-white disabled:opacity-35"
+      >
+        <ChevronUp className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
         onClick={onNext}
         disabled={!onNext}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-[8px] px-4 text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-[#f1f5f9] disabled:cursor-not-allowed disabled:opacity-35"
+        aria-label="Next"
+        className="shrink-0 border border-[rgba(4,15,75,0.08)] bg-white disabled:opacity-35"
       >
-        Next
-        <ChevronRight className="h-4 w-4" />
-      </button>
+        <ChevronDown className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

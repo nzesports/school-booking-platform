@@ -1,5 +1,6 @@
 "use client";
 
+import { TruncatedText } from "@/components/ui/truncated-text";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import {
   ChevronDown,
@@ -95,12 +96,8 @@ export function DashboardAccountControl({
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-[color:var(--navy)]">
-            {profile.name}
-          </span>
-          <span className="block truncate text-xs text-[color:var(--text-soft)]">
-            {profile.subtitle}
-          </span>
+          <TruncatedText title={profile.name} className="text-sm font-semibold text-[color:var(--navy)]" />
+          <TruncatedText title={profile.subtitle} className="text-xs text-[color:var(--text-soft)]" />
         </span>
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-[color:var(--text-soft)] transition ${open ? "rotate-180" : ""}`}

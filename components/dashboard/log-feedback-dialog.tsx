@@ -4,6 +4,7 @@ import { Check, ChevronDown, MessageSquarePlus, Plus, Search } from "lucide-reac
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { ReportMediaUpload } from "@/components/dashboard/report-media-upload";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
@@ -132,6 +133,7 @@ export function LogFeedbackDialog({
       {open
         ? createPortal(
             <BookingDialogShell
+              closeOnOverlayClick={false}
               kicker="Staff entry"
               title="Log presentation feedback"
               onClose={() => setOpen(false)}
@@ -393,16 +395,7 @@ export function LogFeedbackDialog({
                   title="Photos, video & evidence"
                   help="Add presentation photos, video, PDFs, or a signed media release. These files will appear in the report's media gallery for staff and admins."
                 >
-                  <p className="text-xs text-[color:var(--text-soft)]">
-                    Up to 15 files, 5 MB each.
-                  </p>
-                  <input
-                    type="file"
-                    name="mediaFiles"
-                    multiple
-                    accept=".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.avi,.pdf"
-                    className="min-h-[36px] w-full rounded-[8px] border border-dashed border-[color:var(--border-soft)] bg-white px-3 py-[9px] text-[12px] text-[color:var(--navy)]"
-                  />
+                  <ReportMediaUpload uploader="staff" />
                   <label className="flex items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-[#f6f9fd] px-4 py-3 text-sm text-[color:var(--navy)]">
                     <input type="checkbox" name="mediaConsentObtained" />
                     Media consent was checked or obtained where needed.

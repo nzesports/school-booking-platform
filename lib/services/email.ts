@@ -48,6 +48,51 @@ export function renderEmailEventHtml(event: Pick<EmailEventInput, "html" | "book
   return renderBrandedEmail(referenceMarker + body, { includeUnsubscribe: event.includeUnsubscribe });
 }
 
+// Local test server: deliver into the Docker stack's Mailpit inbox instead of
+// Brevo, so whole email flows can be tried without anything leaving the
+// machine. Never used when a Brevo key is present.
+async function sendToLocalInbox(
+  event: EmailEventInput,
+  loggableEvent: Omit<EmailEventInput, "attachments" | "cc" | "replyTo" | "includeUnsubscribe">
+) {
+  const htmlContent = renderEmailEventHtml(event);
+
+  try {
+    const response = await fetch(`${config.localMailApiUrl!.replace(/\/$/, "")}/api/v1/send`, {
+      method: "POST",
+      signal: AbortSignal.timeout(5_000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        From: { Email: config.brevoSenderEmail, Name: config.brevoSenderName },
+        To: [{ Email: event.recipientEmail }],
+        Cc: (event.cc ?? []).map((email) => ({ Email: email })),
+        ReplyTo: event.replyTo ? [{ Email: event.replyTo.email, Name: event.replyTo.name }] : [],
+        Subject: event.subject,
+        HTML: htmlContent
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Local inbox returned ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { ID?: string };
+    return {
+      id: payload.ID ?? `email-${randomUUID()}`,
+      status: "sent" as const,
+      renderedHtml: htmlContent,
+      ...loggableEvent
+    };
+  } catch (error) {
+    return {
+      id: `email-${randomUUID()}`,
+      status: "failed" as const,
+      error: `Local test inbox unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
+      ...loggableEvent
+    };
+  }
+}
+
 export async function sendTransactionalEmail(event: EmailEventInput) {
   // Keep attachment payloads out of the returned event so callers/logs
   // don't hold large base64 blobs.
@@ -62,6 +107,10 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
   if (policy?.manualOnly && context?.manualBookingId !== policy.id
       && !(policy.imported && context?.statusChangeBookingId === policy.id)) {
     return { id: `email-${randomUUID()}`, status: "suppressed_manual_only" as const, ...loggableEvent };
+  }
+
+  if (!config.isBrevoConfigured && config.isLocalMailConfigured) {
+    return sendToLocalInbox(event, loggableEvent);
   }
 
   if (!config.isBrevoConfigured) {
@@ -93,6 +142,14 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
     }
   }
 
+  // Kept on the result so logEmail can store exactly what the school received.
+  const htmlContent = renderEmailEventHtml({ ...event, bookingReference: reference, includeUnsubscribe });
+  // Test server: everything goes to the one test inbox, with the real
+  // recipients named in the subject so each flow can still be checked.
+  const redirectTo = config.testEmailRedirectTo;
+  const intendedRecipients = [event.recipientEmail, ...(cc ?? []).map((email) => `cc ${email}`)].join(", ");
+  const subject = redirectTo ? `[TEST → ${intendedRecipients}] ${event.subject}` : event.subject;
+  const deliveryCc = redirectTo ? [] : cc;
   let response: Response;
   try {
     response = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -107,11 +164,11 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
           name: config.brevoSenderName,
           email: config.brevoSenderEmail
         },
-        to: [{ email: event.recipientEmail }],
-        subject: event.subject,
+        to: [{ email: redirectTo ?? event.recipientEmail }],
+        subject,
         // Every email ships inside the branded shell. Inbound contact notices
         // omit newsletter-only unsubscribe controls.
-        htmlContent: renderEmailEventHtml({ ...event, bookingReference: reference, includeUnsubscribe }),
+        htmlContent,
         ...(includeUnsubscribe === false
           ? {}
           : {
@@ -121,7 +178,7 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
             }),
         ...(replyTo ? { replyTo } : {}),
         // Brevo rejects empty arrays for these keys, so only include them when populated.
-        ...(cc && cc.length > 0 ? { cc: cc.map((email) => ({ email })) } : {}),
+        ...(deliveryCc && deliveryCc.length > 0 ? { cc: deliveryCc.map((email) => ({ email })) } : {}),
         ...(attachments && attachments.length > 0
           ? {
               attachment: attachments.map((attachment) => ({
@@ -162,6 +219,7 @@ export async function sendTransactionalEmail(event: EmailEventInput) {
   return {
     id: payload.messageId ?? `email-${randomUUID()}`,
     status: "sent" as const,
+    renderedHtml: htmlContent,
     ...loggableEvent
   };
 }

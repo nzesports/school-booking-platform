@@ -38,6 +38,8 @@ import type {
 import { nzYearMonth, summarizeStudentReach } from "@/lib/services/dashboard-insights";
 import type { ResourceRecord } from "@/lib/services/portal";
 import { colourWithAlpha } from "@/lib/presentation-colors";
+import { groupSameDaySessions, sessionGroupSummary } from "@/lib/same-day-sessions";
+import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { MONTH_ABBREVIATIONS, formatCurrency, formatDate, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
@@ -85,10 +87,10 @@ export function AmbassadorDashboard({
   const appliedCount = openSessions.filter(
     (session) => session.myApplicationStatus === "applied"
   ).length;
-  const sourcingBonusCents = payments.reduce(
-    (total, payment) => total + payment.sourcingBonusCents,
-    0
-  );
+  // Payments awaiting a staff custom review (0056) aren't earned totals yet.
+  const sourcingBonusCents = payments
+    .filter((payment) => !isAwaitingCustomReview(payment))
+    .reduce((total, payment) => total + payment.sourcingBonusCents, 0);
 
   return (
     <div className="grid gap-5">
@@ -189,7 +191,7 @@ export function AmbassadorDashboard({
       <Card className="rounded-[30px]">
         <SectionHeader icon={<BookOpenCheck className="h-5 w-5" />} iconClassName="bg-[#e8f1fd] text-[#1e4fae]" kicker="Available bookings" title="Choose your next school presentation" actionHref="/ambassador/bookings" actionLabel="View all bookings" />
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {openSessions.slice(0, 3).map((session) => <OpportunityCard key={session.id} session={session} applyAction={applyAction} withdrawApplicationAction={withdrawApplicationAction} />)}
+          {groupSameDaySessions(openSessions).slice(0, 3).map((group) => <OpportunityCard key={group[0].id} session={group[0]} daySessions={group} applyAction={applyAction} withdrawApplicationAction={withdrawApplicationAction} />)}
           {openSessions.length === 0 ? <EmptyPreview copy="No open opportunities currently match your profile." /> : null}
         </div>
       </Card>
@@ -384,7 +386,7 @@ export function EarningsYearChart({ payments }: { payments: PaymentRecord[] }) {
     const month = index + 1;
     const amountCents = payments.reduce((total, payment) => {
       const paymentDate = nzYearMonth(payment.createdAt);
-      return paymentDate.year === currentYear && paymentDate.month === month
+      return paymentDate.year === currentYear && paymentDate.month === month && !isAwaitingCustomReview(payment)
         ? total + payment.amountCents
         : total;
     }, 0);
@@ -445,10 +447,11 @@ function SectionHeader({ icon, iconClassName, kicker, title, actionHref, actionL
   return <div className="flex flex-wrap items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-3.5"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${iconClassName}`}>{icon}</span><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[color:var(--green)]">{kicker}</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-[color:var(--navy)]">{title}</h2></div></div>{actionHref && actionLabel ? <ButtonLink href={actionHref} variant="ghost">{actionLabel}<ArrowRight className="h-4 w-4" /></ButtonLink> : null}</div>;
 }
 
-function OpportunityCard({ session, applyAction, withdrawApplicationAction }: { session: BookingSessionView; applyAction: FormAction; withdrawApplicationAction: FormAction }) {
+function OpportunityCard({ session, daySessions, applyAction, withdrawApplicationAction }: { session: BookingSessionView; daySessions: BookingSessionView[]; applyAction: FormAction; withdrawApplicationAction: FormAction }) {
   const accent = session.presentationAccentColor ?? "#18A83B";
   const applied = session.myApplicationStatus === "applied";
-  return <article className="flex h-full flex-col rounded-[22px] border p-5" style={{ borderColor: colourWithAlpha(accent, 0.3), backgroundColor: colourWithAlpha(accent, 0.06) }}><div className="flex items-start justify-between gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-white shadow-[0_8px_20px_rgba(4,15,75,0.08)]" style={{ color: accent }}><Presentation className="h-[18px] w-[18px]" /></span><StatusBadge value={applied ? "applied" : "tentative"} label={applied ? "Applied" : "Open"} /></div><p className="mt-5 text-xs font-semibold uppercase tracking-[0.13em]" style={{ color: accent }}>{session.presentationTitle}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">{session.schoolName}</h3><div className="mt-4 grid gap-2 text-sm text-[color:var(--text-soft)]"><span className="inline-flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" style={{ color: accent }} />{formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)}</span><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4" style={{ color: accent }} />{session.regionName ?? titleCase(session.regionSlug)}</span><span className="inline-flex items-center gap-2"><UsersRound className="h-4 w-4" style={{ color: accent }} />{session.expectedStudentCount} students · {session.yearLevels}</span></div><AmbassadorOpenSessionDialog session={session} action={applyAction} withdrawAction={withdrawApplicationAction} returnTo="/ambassador" label={applied ? "Review application" : "View and apply"} className="mt-5 w-full border-transparent bg-white text-[#1e4fae] shadow-[0_8px_22px_rgba(4,15,75,0.08)]" /></article>;
+  const { presentationTitles, yearLevels, studentCount } = sessionGroupSummary(daySessions);
+  return <article className="flex h-full flex-col rounded-[22px] border p-5" style={{ borderColor: colourWithAlpha(accent, 0.3), backgroundColor: colourWithAlpha(accent, 0.06) }}><div className="flex items-start justify-between gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-white shadow-[0_8px_20px_rgba(4,15,75,0.08)]" style={{ color: accent }}><Presentation className="h-[18px] w-[18px]" /></span><StatusBadge value={applied ? "applied" : "tentative"} label={applied ? "Applied" : "Open"} /></div><p className="mt-5 text-xs font-semibold uppercase tracking-[0.13em]" style={{ color: accent }}>{presentationTitles.join(" + ")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">{session.schoolName}</h3><div className="mt-4 grid gap-2 text-sm text-[color:var(--text-soft)]"><span className="inline-flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" style={{ color: accent }} />{formatWeekdayDate(session.startsAt, true)} · {daySessions.map((item) => formatTime(item.startsAt)).join(" & ")}</span><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4" style={{ color: accent }} />{session.regionName ?? titleCase(session.regionSlug)}</span><span className="inline-flex items-center gap-2"><UsersRound className="h-4 w-4" style={{ color: accent }} />{studentCount} students{daySessions.length > 1 ? " in total" : ""} · {yearLevels.join(" / ")}</span></div><AmbassadorOpenSessionDialog session={session} daySessions={daySessions} action={applyAction} withdrawAction={withdrawApplicationAction} returnTo="/ambassador" label={applied ? "Review application" : "View and apply"} className="mt-5 w-full border-transparent bg-white text-[#1e4fae] shadow-[0_8px_22px_rgba(4,15,75,0.08)]" /></article>;
 }
 
 function ScheduleRow({ session, requestWithdrawalAction }: { session: BookingSessionView; requestWithdrawalAction: FormAction }) {

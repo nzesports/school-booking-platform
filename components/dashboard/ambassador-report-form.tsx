@@ -20,9 +20,46 @@ import { StarRatingInput } from "@/components/site/star-rating-input";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Input } from "@/components/ui/input";
+import { TruncatedText } from "@/components/ui/truncated-text";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
-import { formatDate } from "@/lib/utils";
+import { additionalCentsForTier, classifyReportGroup, reviewReasonLabel } from "@/lib/payment-breakdown";
+import { sameDayKey, sessionGroupSummary } from "@/lib/same-day-sessions";
+import { formatCurrency, formatDate, formatTime } from "@/lib/utils";
+
+// What the day's sessions add to the one delivery fee, if the report meets the
+// attendance threshold (0056 tiers, gap measured from the first session's end
+// to the second's start). Indicative only: the amount is set when the report
+// is saved, and anything outside the two automatic tiers is set by staff.
+export function GroupPaymentNote({ sessions }: { sessions: BookingSessionView[] }) {
+  const group = classifyReportGroup(sessions);
+
+  if (group.tier === "single") {
+    return null;
+  }
+
+  if (group.tier === "custom_review") {
+    return (
+      <p
+        data-testid="group-payment-note"
+        className="rounded-[14px] border border-[#f5d48a] bg-[#fffaf0] px-4 py-3 text-sm text-[#8a5a00]"
+      >
+        Payment for these sessions is set by staff after a review, not automatically. {reviewReasonLabel(group.reviewReason, group.gapMinutes)}
+      </p>
+    );
+  }
+
+  return (
+    <p
+      data-testid="group-payment-note"
+      className="rounded-[14px] border border-[#b9e2c7] bg-[#f4fbf6] px-4 py-3 text-sm text-[#1d6f35]"
+    >
+      Payment: one delivery fee plus {formatCurrency(additionalCentsForTier(group.tier))} for the second session, which
+      starts {group.gapMinutes} minutes after the first one ends
+      {group.tier === "pair_within_60" ? " (less than 2 hours)" : " (2 to 4 hours)"}.
+    </p>
+  );
+}
 
 const RATING_ROWS = [
   { name: "attendanceRating", label: "Attendance" },
@@ -71,6 +108,15 @@ export function AmbassadorReportForm({
   const initialSession = sessions.find((session) => session.id === initialSessionId) ?? sessions[0];
   const [selectedSessionId, setSelectedSessionId] = useState(initialSession?.id ?? "");
   const session = sessions.find((item) => item.id === selectedSessionId) ?? initialSession;
+  // Back-to-back sessions of one booking on the same day share one report.
+  const dayKey = sameDayKey;
+  const daySessions = (item: BookingSessionView) =>
+    sessions
+      .filter((other) => dayKey(other) === dayKey(item))
+      .sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+  const options = sessions.filter((item) => daySessions(item)[0]?.id === item.id);
+  const sessionDay = session ? daySessions(session) : [];
+  const summary = sessionGroupSummary(sessionDay, true);
 
   if (!session) {
     return (
@@ -85,7 +131,7 @@ export function AmbassadorReportForm({
   return (
     <div className="surface-panel rounded-[32px] p-6 md:p-7">
       <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-        {`${session.presentationTitle} at ${session.schoolName}`}
+        {`${summary.presentationTitles.join(" + ")} at ${session.schoolName}`}
       </h2>
 
       <form key={session.id} action={action} className="mt-5 grid gap-5">
@@ -96,20 +142,35 @@ export function AmbassadorReportForm({
           <label className="grid gap-1.5">
             <span className="text-sm font-semibold text-[color:var(--navy)]">Select the session you’re reporting on</span>
             <select
-              value={session.id}
+              value={sessionDay[0]?.id ?? session.id}
               onChange={(event) => setSelectedSessionId(event.target.value)}
               className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none focus:border-[#9fd4ad]"
             >
-              {sessions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.schoolName} · {option.presentationTitle} · {formatDate(option.startsAt)}
-                </option>
-              ))}
+              {options.map((option) => {
+                const group = daySessions(option);
+
+                return (
+                  <option key={option.id} value={option.id}>
+                    {option.schoolName} · {formatDate(option.startsAt)}
+                    {group.length > 1
+                      ? ` · ${group.length} sessions (${group.map((item) => formatTime(item.startsAt)).join(" & ")})`
+                      : ` · ${option.presentationTitle}`}
+                  </option>
+                );
+              })}
             </select>
           </label>
+          {sessionDay.length > 1 ? (
+            <p className="rounded-[14px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
+              This one report covers all {sessionDay.length} sessions you delivered at {session.schoolName} on this
+              day ({sessionDay.map((item) => formatTime(item.startsAt)).join(" and ")}). Enter the total number of
+              students across them.
+            </p>
+          ) : null}
+          <GroupPaymentNote sessions={sessionDay} />
           <div className="grid gap-3 rounded-[18px] bg-[#f6f9fd] p-4 sm:grid-cols-2 lg:grid-cols-4">
             <BookingFact label="School" value={session.schoolName} />
-            <BookingFact label="Presentation" value={session.presentationTitle} />
+            <BookingFact label="Presentation" value={summary.presentationTitles.join(" + ")} />
             <BookingFact label="Location" value={session.regionName ?? session.regionSlug} />
             <BookingFact label="School contact" value={session.contactName ?? "Recorded by the school team"} />
           </div>
@@ -160,7 +221,7 @@ export function AmbassadorReportForm({
                 name="attendeeCount"
                 type="number"
                 min={0}
-                defaultValue={session.actualStudentCount ?? session.expectedStudentCount}
+                defaultValue={summary.studentCount}
                 placeholder="e.g. 230"
                 required
               />
@@ -168,7 +229,7 @@ export function AmbassadorReportForm({
             <ReportField label="What age groups were presented to? *">
               <Input
                 name="ageGroups"
-                defaultValue={session.yearLevels}
+                defaultValue={summary.yearLevels.join(" / ")}
                 placeholder="e.g. Years 7 to 8"
                 required
               />
@@ -178,7 +239,7 @@ export function AmbassadorReportForm({
         </ReportSection>
 
         <ReportSection title="Presentation photos / videos" icon={Images}>
-          <ReportMediaUpload />
+          <ReportMediaUpload uploader="ambassador" />
           <label className="flex items-center gap-3 rounded-[16px] border border-[color:var(--border-soft)] bg-[#f6f9fd] px-4 py-3 text-sm text-[color:var(--navy)]">
             <input type="checkbox" name="mediaConsentObtained" />
             Media consent was checked or obtained where needed.
@@ -276,7 +337,7 @@ function BookingFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-[color:var(--navy)]" title={value}>{value}</p>
+      <TruncatedText className="mt-1 text-sm font-semibold text-[color:var(--navy)]" title={value}>{value}</TruncatedText>
     </div>
   );
 }

@@ -42,7 +42,18 @@ import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
+import { nzDayKey } from "@/lib/same-day-sessions";
+import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { formatCurrency, toYouTubeEmbedUrl } from "@/lib/utils";
+
+// Same rule as isAwaitingCustomReview, on a raw payments row.
+function rawPaymentAwaitingReview(payment: Record<string, unknown>) {
+  return isAwaitingCustomReview({
+    reviewRequired: Boolean(payment.review_required),
+    customReviewedAt: (payment.custom_reviewed_at as string | null) ?? null,
+    status: String(payment.status)
+  });
+}
 
 export type ResourceCategory = "resource" | "training" | "presentation_material";
 export type ResourceSharingScope = "internal" | "public";
@@ -245,7 +256,9 @@ async function loadPlatformDataUncached() {
     trainingLessons,
     trainingPacks,
     packResources,
-    sessionRescheduleHistory
+    sessionRescheduleHistory,
+    schoolEmailLogs,
+    manualSchoolEmailSends
   ] = await Promise.all([
     fetchAllRows("profiles", (from, to) =>
       admin
@@ -293,7 +306,22 @@ async function loadPlatformDataUncached() {
     ),
     // Online-session columns (0050) are optional so the portal keeps working
     // if the code ships before that migration is applied.
-    loadBookingSessions(`${bookingSessionSelectWithWithdrawals}, delivery_mode, meeting_url`)
+    loadBookingSessions(
+      `${bookingSessionSelectWithWithdrawals}, delivery_mode, meeting_url, reschedule_confirmation_needed_at, withdrawal_reason_type`
+    )
+      // 0052 columns are optional too.
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "";
+
+        if (
+          message.includes("reschedule_confirmation_needed_at") ||
+          message.includes("withdrawal_reason_type")
+        ) {
+          return loadBookingSessions(`${bookingSessionSelectWithWithdrawals}, delivery_mode, meeting_url`);
+        }
+
+        throw error;
+      })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "";
 
@@ -464,7 +492,26 @@ async function loadPlatformDataUncached() {
         .order("resource_id", { ascending: true })
         .range(from, to)
     ).catch(() => null),
-    loadSessionRescheduleHistory()
+    loadSessionRescheduleHistory(),
+    // Successful emails to schools, for each booking's "N emails sent" count.
+    // Emails-tab sends live only in booking_email_sends, so both are counted.
+    fetchAllRows("email_logs", (from, to) =>
+      admin
+        .from("email_logs")
+        .select("related_booking_request_id, related_booking_session_id, sent_at")
+        .eq("recipient_type", "school")
+        .eq("status", "sent")
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows("booking_email_sends", (from, to) =>
+      admin
+        .from("booking_email_sends")
+        .select("booking_request_id, sent_at")
+        .eq("status", "sent")
+        .order("id", { ascending: true })
+        .range(from, to)
+    )
   ]);
 
   if (auditLogsResult.error) {
@@ -481,6 +528,8 @@ async function loadPlatformDataUncached() {
 
   return {
     sessionRescheduleHistory,
+    schoolEmailLogs,
+    manualSchoolEmailSends,
     profiles,
     regions,
     schools,
@@ -596,6 +645,41 @@ async function mapResources(data: NonNullable<RawPlatformData>) {
   );
 }
 
+function countSchoolEmailsByBooking(data: NonNullable<RawPlatformData>) {
+  const bookingIdBySessionId = new Map(
+    data.bookingSessions.map((session) => [session.id as string, session.booking_request_id as string])
+  );
+  const totals = new Map<string, { count: number; lastSentAt?: string }>();
+  const add = (bookingId: string | undefined, sentAt: string | null) => {
+    if (!bookingId) {
+      return;
+    }
+
+    const current = totals.get(bookingId) ?? { count: 0 };
+    current.count += 1;
+
+    if (sentAt && (!current.lastSentAt || sentAt > current.lastSentAt)) {
+      current.lastSentAt = sentAt;
+    }
+
+    totals.set(bookingId, current);
+  };
+
+  for (const log of data.schoolEmailLogs) {
+    add(
+      (log.related_booking_request_id as string | null) ??
+        bookingIdBySessionId.get(log.related_booking_session_id as string),
+      log.sent_at as string | null
+    );
+  }
+
+  for (const send of data.manualSchoolEmailSends) {
+    add(send.booking_request_id as string, send.sent_at as string | null);
+  }
+
+  return totals;
+}
+
 function mapBookingRequests(data: NonNullable<RawPlatformData>) {
   const {
     profilesById,
@@ -647,6 +731,14 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
   const requestStatusById = new Map(
     data.bookingRequests.map((request) => [request.id as string, request.status as string])
   );
+  const requestById = new Map(data.bookingRequests.map((request) => [request.id as string, request]));
+  const ambassadorNameByProfileId = (profileId?: string | null) => {
+    const profile = profileId ? ambassadorProfilesById.get(profileId) : undefined;
+    const user = profile ? profilesById.get(profile.user_id as string) : undefined;
+    return profile
+      ? ((user?.full_name as string | undefined) ?? (profile.display_name as string | null) ?? "Ambassador")
+      : undefined;
+  };
   const primaryContactBySchoolId = new Map<string, (typeof data.contacts)[number]>();
 
   for (const contact of data.contacts) {
@@ -747,6 +839,12 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       bookingRequestId: bookingId,
       bookingStatus:
         (requestStatusById.get(bookingId) as BookingSessionView["bookingStatus"]) ?? undefined,
+      bookingSource: requestById.get(bookingId)?.source as BookingSessionView["bookingSource"],
+      sourcedByAmbassadorId:
+        (requestById.get(bookingId)?.ambassador_outreach_by as string | null) ?? undefined,
+      sourcedByAmbassadorName: ambassadorNameByProfileId(
+        requestById.get(bookingId)?.ambassador_outreach_by as string | null
+      ),
       withdrawalReason: (withdrawalFields.withdrawal_reason as string | null) ?? undefined,
       withdrawalRequestedAt: (withdrawalFields.withdrawal_requested_at as string | null) ?? undefined,
       rescheduleRequestedDate:
@@ -757,15 +855,23 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
         (withdrawalFields.reschedule_requested_at as string | null) ?? undefined,
       reschedulePreviousStatus:
         (withdrawalFields.reschedule_previous_status as BookingSessionView["reschedulePreviousStatus"]) ??
+        undefined,
+      rescheduleConfirmationNeededAt:
+        (withdrawalFields.reschedule_confirmation_needed_at as string | null | undefined) ?? undefined,
+      withdrawalReasonType:
+        (withdrawalFields.withdrawal_reason_type as BookingSessionView["withdrawalReasonType"] | null) ??
         undefined
     };
 
     sessionsByBookingId.set(bookingId, [...(sessionsByBookingId.get(bookingId) ?? []), mappedSession]);
   }
 
+  const schoolEmailsByBookingId = countSchoolEmailsByBooking(data);
+
   return data.bookingRequests.map((request) => {
     const school = schoolsById.get(request.school_id as string);
     const contact = contactsById.get(request.primary_contact_id as string);
+    const schoolEmails = schoolEmailsByBookingId.get(request.id as string);
     const region = regionsById.get(request.region_id as string) ?? regionsById.get(school?.region_id as string);
     const sourcingAmbassador = ambassadorProfilesById.get(
       request.ambassador_outreach_by as string
@@ -780,6 +886,8 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
       // Imported history shares the manual-only flag but still sends status
       // emails, so only non-imported manual-only bookings are fully silent.
       recordOnly: Boolean(request.manual_email_only) && !request.import_batch_id,
+      schoolEmailsSentCount: schoolEmails?.count ?? 0,
+      lastSchoolEmailSentAt: schoolEmails?.lastSentAt,
       schoolName: (school?.name as string | undefined) ?? "School",
       primaryContactName: (contact?.full_name as string | undefined) ?? "Primary contact",
       primaryContactPosition: (request.contact_position || contact?.position || undefined) as string | undefined,
@@ -899,9 +1007,14 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       bio: (profile.bio as string | null) ?? undefined,
       experience: (profile.experience as string | null) ?? undefined,
       referredBy: (profile.referred_by as string | null) ?? undefined,
-      estimatedEarningsCents: payments.reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
+      // A payment still awaiting a staff custom review (0056) only carries the
+      // recognised parts; it isn't counted as earned or outstanding yet.
+      estimatedEarningsCents: payments
+        .filter((payment) => !rawPaymentAwaitingReview(payment))
+        .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
       pendingPaymentsCents: payments
         .filter((payment) => outstandingPaymentStatuses.includes(payment.status as string))
+        .filter((payment) => !rawPaymentAwaitingReview(payment))
         .reduce((total, payment) => total + Number(payment.amount_cents ?? 0), 0),
       paidPaymentsCents: payments
         .filter((payment) => payment.status === "paid")
@@ -912,6 +1025,64 @@ function mapAmbassadors(data: NonNullable<RawPlatformData>) {
       details: (profile.profile_details as AmbassadorProfile["details"] | null) ?? undefined
       } satisfies AmbassadorProfile;
     });
+}
+
+function missingAmbassadorPaymentDetails(ambassadorProfile?: Record<string, unknown> | null) {
+  const bankAccountName = String(ambassadorProfile?.bank_account_name ?? "").trim();
+  const bankAccountNumber = String(ambassadorProfile?.bank_account_number ?? "").trim();
+
+  return [
+    ...(bankAccountName.length >= 2 ? [] : ["account name"]),
+    ...(/^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/.test(bankAccountNumber)
+      ? []
+      : ["valid bank account number"])
+  ];
+}
+
+// Sessions at one school on the same NZ day are not each paid the full rate.
+// Sessions of the same booking share one report whose payment covers them
+// (0054/0056: covered_session_count, or before 0056 two when it carried the
+// second-session amount), so only what that payment does not cover needs a
+// staff decision: the same ambassador's sessions there that day in other
+// bookings, plus any session of this booking the report didn't cover.
+// Approvals use the count to prompt for a manual top-up or no-payment.
+function countSameDaySessions(data: NonNullable<RawPlatformData>) {
+  const sessionsById = new Map(data.bookingSessions.map((session) => [session.id as string, session]));
+  const schoolDayKey = (session: (typeof data.bookingSessions)[number]) =>
+    session.assigned_ambassador_id && session.school_id && session.starts_at
+      ? `${session.assigned_ambassador_id}|${session.school_id}|${nzDayKey(session.starts_at as string)}`
+      : null;
+  const bookingDayKey = (session: (typeof data.bookingSessions)[number]) =>
+    `${schoolDayKey(session)}|${session.booking_request_id as string}`;
+  const schoolDayTotals = new Map<string, number>();
+  const bookingDayTotals = new Map<string, number>();
+
+  for (const session of data.bookingSessions) {
+    const key = schoolDayKey(session);
+
+    if (key && !["cancelled", "declined"].includes(String(session.status))) {
+      schoolDayTotals.set(key, (schoolDayTotals.get(key) ?? 0) + 1);
+      bookingDayTotals.set(bookingDayKey(session), (bookingDayTotals.get(bookingDayKey(session)) ?? 0) + 1);
+    }
+  }
+
+  return (sessionId?: string, payment?: (typeof data.payments)[number]) => {
+    const session = sessionId ? sessionsById.get(sessionId) : undefined;
+    const key = session ? schoolDayKey(session) : null;
+
+    if (!session || !key) {
+      return 0;
+    }
+
+    const sameBooking = bookingDayTotals.get(bookingDayKey(session)) ?? 1;
+    const otherBookings = (schoolDayTotals.get(key) ?? sameBooking) - sameBooking;
+    // Legacy per-session payments did not include the fixed second-session
+    // amount. Keep their sibling review warning until staff reconciles them.
+    const recordedCoverage = Number(payment?.covered_session_count ?? 0);
+    const coveredSessions =
+      recordedCoverage > 0 ? recordedCoverage : Number(payment?.additional_session_cents ?? 0) > 0 ? 2 : 1;
+    return Math.max(0, otherBookings) + Math.max(0, sameBooking - coveredSessions);
+  };
 }
 
 function mapReports(data: NonNullable<RawPlatformData>) {
@@ -949,8 +1120,37 @@ function mapReports(data: NonNullable<RawPlatformData>) {
   const optionalBoolean = (value: unknown) =>
     value === null || value === undefined ? undefined : Boolean(value);
 
+  const sameDaySessionCount = countSameDaySessions(data);
+  // A report covers its ambassador's sessions of one booking on one NZ day
+  // (submit_ambassador_report_group), so a double session shows as both.
+  const coveredSessionsByDay = new Map<string, Array<{ id: string; startsAt: string; endsAt?: string }>>();
+  const coveredDayKey = (session: (typeof data.bookingSessions)[number]) =>
+    `${session.booking_request_id}|${session.assigned_ambassador_id}|${nzDayKey(session.starts_at as string)}`;
+
+  for (const session of data.bookingSessions) {
+    if (!session.booking_request_id || !session.starts_at || ["cancelled", "declined"].includes(String(session.status))) {
+      continue;
+    }
+
+    const key = coveredDayKey(session);
+    coveredSessionsByDay.set(key, [
+      ...(coveredSessionsByDay.get(key) ?? []),
+      {
+        id: session.id as string,
+        startsAt: session.starts_at as string,
+        endsAt: (session.ends_at as string | null) ?? undefined
+      }
+    ]);
+  }
+
   return data.reports.map((report) => {
     const session = sessionsById.get(report.booking_session_id as string);
+    const coveredSessions =
+      session?.booking_request_id && session.starts_at
+        ? (coveredSessionsByDay.get(coveredDayKey(session)) ?? []).sort((left, right) =>
+            left.startsAt.localeCompare(right.startsAt)
+          )
+        : [];
     const school = session ? schoolsById.get(session.school_id as string) : null;
     const presentation = session ? presentationsById.get(session.presentation_type_id as string) : null;
     const ambassadorProfile = ambassadorProfilesById.get(report.ambassador_profile_id as string);
@@ -963,16 +1163,7 @@ function mapReports(data: NonNullable<RawPlatformData>) {
         item.booking_session_id === report.booking_session_id &&
         item.ambassador_profile_id === report.ambassador_profile_id
     );
-    const bankAccountName = String(ambassadorProfile?.bank_account_name ?? "").trim();
-    const bankAccountNumber = String(ambassadorProfile?.bank_account_number ?? "").trim();
-    const missingPaymentDetails = payment
-      ? [
-          ...(bankAccountName.length >= 2 ? [] : ["account name"]),
-          ...(/^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/.test(bankAccountNumber)
-            ? []
-            : ["valid bank account number"])
-        ]
-      : [];
+    const missingPaymentDetails = payment ? missingAmbassadorPaymentDetails(ambassadorProfile) : [];
 
     return {
       id: report.id as string,
@@ -1013,6 +1204,7 @@ function mapReports(data: NonNullable<RawPlatformData>) {
         (session?.year_levels as string | null) ??
         undefined,
       sessionStartsAt: (session?.starts_at as string | undefined) ?? undefined,
+      coveredSessions: coveredSessions.length > 0 ? coveredSessions : undefined,
       media: mediaByReportId.get(report.id as string) ?? [],
       bookingRequestId: (session?.booking_request_id as string | null) ?? undefined,
       bookingRequestedAt:
@@ -1021,6 +1213,22 @@ function mapReports(data: NonNullable<RawPlatformData>) {
           | undefined) ?? undefined,
       reviewedAt: (report.reviewed_for_payment_at as string | null) ?? undefined,
       paymentRequired: Boolean(payment),
+      paymentAmountCents: payment ? Number(payment.amount_cents ?? 0) : undefined,
+      paymentBaseAmountCents: payment ? Number(payment.base_amount_cents ?? 0) : undefined,
+      paymentSourcingBonusCents: payment ? Number(payment.sourcing_bonus_cents ?? 0) : undefined,
+      paymentAdditionalSessionCents: payment ? Number(payment.additional_session_cents ?? 0) : undefined,
+      paymentTier: (payment?.payment_tier as ReportSummary["paymentTier"] | null | undefined) ?? undefined,
+      paymentReviewRequired: payment ? Boolean(payment.review_required) : undefined,
+      paymentReviewReason: (payment?.review_reason as string | null | undefined) ?? undefined,
+      paymentReviewGapMinutes: optionalNumber(payment?.review_gap_minutes),
+      paymentCustomReviewedAt: (payment?.custom_reviewed_at as string | null | undefined) ?? undefined,
+      paymentStatus: (payment?.status as ReportSummary["paymentStatus"] | undefined) ?? undefined,
+      financeEmailStatus:
+        (payment?.finance_email_status as ReportSummary["financeEmailStatus"] | null | undefined) ?? undefined,
+      sentToFinanceAt: (payment?.sent_to_finance_at as string | null | undefined) ?? undefined,
+      paidAt: (payment?.paid_at as string | null | undefined) ?? undefined,
+      paymentNote: (payment?.payment_note as string | null | undefined) ?? undefined,
+      sameDayPaymentCount: sameDaySessionCount(report.booking_session_id as string | undefined, payment),
       paymentDetailsComplete: !payment || missingPaymentDetails.length === 0,
       missingPaymentDetails
     } satisfies ReportSummary;
@@ -1119,6 +1327,7 @@ function withApplicantTrackRecords(
 
 function mapPayments(data: NonNullable<RawPlatformData>) {
   const { profilesById, ambassadorProfilesById } = buildLookups(data);
+  const sameDaySessionCount = countSameDaySessions(data);
 
   return data.payments.map((payment) => {
     const ambassadorProfile = ambassadorProfilesById.get(payment.ambassador_profile_id as string);
@@ -1140,6 +1349,25 @@ function mapPayments(data: NonNullable<RawPlatformData>) {
           (Number(payment.amount_cents ?? 0) - Number(payment.sourcing_bonus_cents ?? 0))
       ),
       sourcingBonusCents: Number(payment.sourcing_bonus_cents ?? 0),
+      additionalSessionCents: Number(payment.additional_session_cents ?? 0),
+      extraAmountCents: Number(payment.extra_amount_cents ?? 0),
+      paymentNote: (payment.payment_note as string | null) ?? undefined,
+      paymentTier: (payment.payment_tier as PaymentRecord["paymentTier"] | null) ?? undefined,
+      coveredSessionCount:
+        payment.covered_session_count === null || payment.covered_session_count === undefined
+          ? undefined
+          : Number(payment.covered_session_count),
+      reviewRequired: Boolean(payment.review_required),
+      reviewReason: (payment.review_reason as string | null) ?? undefined,
+      reviewGapMinutes:
+        payment.review_gap_minutes === null || payment.review_gap_minutes === undefined
+          ? undefined
+          : Number(payment.review_gap_minutes),
+      customReviewedAt: (payment.custom_reviewed_at as string | null) ?? undefined,
+      sameDayPaymentCount: sameDaySessionCount(payment.booking_session_id as string, payment),
+      missingPaymentDetails: ["pending", "eligible"].includes(String(payment.status))
+        ? missingAmbassadorPaymentDetails(ambassadorProfile)
+        : [],
       status: payment.status as PaymentRecord["status"],
       eligibilityReason: (payment.eligibility_reason as string | null) ?? "Pending review",
       createdAt: (payment.created_at as string | null) ?? new Date(0).toISOString(),
@@ -1700,10 +1928,15 @@ export async function getAmbassadorPortalData(userId?: string): Promise<Ambassad
         application.status as string
       ])
   );
+  const nowMs = Date.now();
+  // Sessions that have started can't be applied for (applyToSessionAction
+  // rejects them too), so they leave the open pool.
   const openSessions = bookings.flatMap((booking) =>
     booking.sessions
-      .filter((session) =>
-        ["tentative", "applied"].includes(session.status)
+      .filter(
+        (session) =>
+          ["tentative", "applied"].includes(session.status) &&
+          new Date(session.startsAt).getTime() > nowMs
       )
       .map((session) => ({
         ...session,

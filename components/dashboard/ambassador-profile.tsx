@@ -387,7 +387,7 @@ export function AmbassadorProfileWorkspace({
             /^\d{2}[- ]?\d{4}[- ]?\d{7}[- ]?\d{2,3}$/.test(
               ambassador.bankAccountNumber ?? ""
             )
-              ? "Payment details are ready. Approved reports will be sent to finance automatically."
+              ? "Payment details are ready. Staff can send approved payments to finance."
               : "Add both an account name and valid bank account number before a payable report can be approved."}
           </p>
         </ProfileSection>

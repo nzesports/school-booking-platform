@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
 import { Button } from "@/components/ui/button";
 import { statusEmailLabel } from "@/lib/services/status-email-choice";
+import { formatShortDate } from "@/lib/utils";
 
 const statusMarkerColours: Record<string, string> = {
   requested: "bg-amber-50 text-amber-800",
@@ -26,10 +27,13 @@ const statusMarkerColours: Record<string, string> = {
 
 const choiceButtonClassName = "h-10 min-h-[40px] w-full rounded-xl px-3 py-2 text-xs! font-semibold! leading-4! shadow-none";
 
-export function StatusEmailForm({ action, children, className }: {
+export function StatusEmailForm({ action, children, className, emailHistory }: {
   action: (data: FormData) => void | Promise<void>;
   children: ReactNode;
   className?: string;
+  // Single-booking forms pass this so staff see the school was already
+  // emailed before sending another.
+  emailHistory?: { count: number; lastSentAt?: string };
 }) {
   const form = useRef<HTMLFormElement>(null);
   const choice = useRef<HTMLInputElement>(null);
@@ -80,6 +84,12 @@ export function StatusEmailForm({ action, children, className }: {
           <p className="mt-1 text-sm leading-6 text-slate-500">{confirmation.email
             ? `Send ${confirmation.email}, or update the status without emailing.`
             : "No school email is available for this status."}</p>
+          {confirmation.email && emailHistory && emailHistory.count > 0 ? (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              This school has already been emailed {emailHistory.count} {emailHistory.count === 1 ? "time" : "times"}
+              {emailHistory.lastSentAt ? `, last on ${formatShortDate(emailHistory.lastSentAt)}` : ""}.
+            </p>
+          ) : null}
         </div>
       </div>
       <div className={`mt-6 grid grid-cols-1 gap-2 border-t border-slate-200 pt-4 ${confirmation.email ? "sm:grid-cols-2" : ""}`}>

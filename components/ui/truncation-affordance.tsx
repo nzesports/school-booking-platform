@@ -19,7 +19,7 @@ export function TruncationAffordance() {
     const scan = () => {
       frame = 0;
 
-      const nodes = document.querySelectorAll<HTMLElement>(".truncate, .text-ellipsis");
+      const nodes = document.querySelectorAll<HTMLElement>(".truncate:not([data-truncation-owned]), .text-ellipsis:not([data-truncation-owned])");
 
       // Measure everything first, then write. Interleaving reads and writes
       // would force a reflow per element on tables with hundreds of cells.

@@ -179,6 +179,47 @@ export async function uploadPrivateReportMedia(file: File, prefix = "report-medi
   };
 }
 
+// Report media goes straight from the browser to storage through signed
+// upload URLs, so large phone photos and videos never pass through the app
+// server (Vercel rejects request bodies over ~4.5 MB). Each uploader gets
+// their own prefix, and a report may only attach files from its submitter's.
+export const REPORT_MEDIA_MAX_FILES = 15;
+export const REPORT_MEDIA_MAX_BYTES = 50 * 1024 * 1024;
+
+function reportMediaUploadPrefix(userId: string) {
+  return `report-uploads/${userId}`;
+}
+
+function validateReportMediaUpload(name: string, size: number) {
+  const contentType = REPORT_MEDIA_ALLOWED.get(fileExtension(name));
+  if (!contentType) throw new Error("This file type is not supported.");
+  if (!Number.isSafeInteger(size) || size <= 0 || size > REPORT_MEDIA_MAX_BYTES) {
+    throw new Error("Each file must be 50 MB or smaller.");
+  }
+  return contentType;
+}
+
+export async function prepareReportMediaUpload(userId: string, name: string, size: number) {
+  const contentType = validateReportMediaUpload(name, size);
+  const admin = createAdminClient();
+  if (!admin) throw new Error("Storage is not configured.");
+  const path = buildStoragePath(reportMediaUploadPrefix(userId), name);
+  const { data, error } = await admin.storage.from("report-media").createSignedUploadUrl(path);
+  if (error) throw error;
+  return { path: data.path, signedUrl: data.signedUrl, contentType };
+}
+
+export async function validateUploadedReportMedia(userId: string, path: string) {
+  if (!path.startsWith(`${reportMediaUploadPrefix(userId)}/`) || path.includes("..")) {
+    throw new Error("Invalid uploaded report media path.");
+  }
+  const admin = createAdminClient();
+  if (!admin) throw new Error("Storage is not configured.");
+  const { data, error } = await admin.storage.from("report-media").info(path);
+  if (error) throw error;
+  return validateReportMediaUpload(path, data.size ?? 0);
+}
+
 export async function createSignedReportMediaUrl(
   storagePath?: string | null,
   expiresInSeconds = 60 * 60

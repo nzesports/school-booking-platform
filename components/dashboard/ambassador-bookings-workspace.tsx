@@ -17,6 +17,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { SecondaryTabs, type SecondaryTabItem } from "@/components/ui/secondary-tabs";
 import type { BookingRequestView, BookingSessionView } from "@/lib/domain/types";
+import { groupSameDaySessions } from "@/lib/same-day-sessions";
 import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
 
 export type AmbassadorBookingsTab =
@@ -113,19 +114,28 @@ export function AmbassadorBookingsWorkspace({
     })
   ) as Record<string, AmbassadorBookingCardMode>;
 
+  // Counts match the cards: back-to-back sessions of one booking on a day are
+  // one card, so they count once.
+  const groupCount = (sessions: BookingSessionView[], partition?: (session: BookingSessionView) => string) =>
+    groupSameDaySessions(sessions, partition).length;
   const tabs: Array<SecondaryTabItem<AmbassadorBookingsTab>> = [
-    { value: "calendar", label: "Calendar", icon: CalendarDays, count: calendarSessions.length },
-    { value: "open", label: "Open", icon: BookOpenCheck, count: availableSessions.length },
-    { value: "applied", label: "Applied", icon: ClipboardCheck, count: appliedSessions.length },
-    { value: "upcoming", label: "Upcoming", icon: CalendarCheck2, count: upcomingSessions.length },
+    {
+      value: "calendar",
+      label: "Calendar",
+      icon: CalendarDays,
+      count: groupCount(calendarSessions, (session) => calendarModes[session.id] ?? "open")
+    },
+    { value: "open", label: "Open", icon: BookOpenCheck, count: groupCount(availableSessions) },
+    { value: "applied", label: "Applied", icon: ClipboardCheck, count: groupCount(appliedSessions) },
+    { value: "upcoming", label: "Upcoming", icon: CalendarCheck2, count: groupCount(upcomingSessions) },
     {
       value: "sourced",
       label: "Sourced",
       icon: CalendarPlus2,
-      count: upcomingSourcedSessions.length,
+      count: groupCount(upcomingSourcedSessions),
       tone: "violet"
     },
-    { value: "completed", label: "Completed", icon: CheckCircle2, count: allCompletedSessions.length }
+    { value: "completed", label: "Completed", icon: CheckCircle2, count: groupCount(allCompletedSessions) }
   ];
 
   const sessionsByTab: Record<AmbassadorBookingsTab, BookingSessionView[]> = {

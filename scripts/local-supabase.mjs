@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,16 @@ function setEnvValue(contents, name, value) {
   return `${contents.trimEnd()}\n${line}\n`;
 }
 
+const localEnvPath = join(root, ".env.development.local");
+const LIVE_ONLY_ENV_NAMES = [
+  "BREVO_API_KEY",
+  "MICROSOFT_GRAPH_TENANT_ID",
+  "MICROSOFT_GRAPH_CLIENT_ID",
+  "MICROSOFT_GRAPH_CLIENT_SECRET",
+  "MICROSOFT_GRAPH_CALENDAR_ID",
+  "MICROSOFT_GRAPH_USER_ID"
+];
+
 function syncLocalEnv() {
   const status = parseEnv(runSupabase(["status", "--output", "env"], { capture: true }));
   const apiUrl = status.API_URL;
@@ -73,11 +84,11 @@ function syncLocalEnv() {
     process.exit(1);
   }
 
-  const envPath = join(root, ".env.local");
-  const examplePath = join(root, ".env.example");
-  let contents = existsSync(envPath)
-    ? readFileSync(envPath, "utf8")
-    : readFileSync(examplePath, "utf8");
+  // Local settings live in .env.development.local, which `next dev` reads
+  // before .env.local. .env.local (the hosted/live project) is never touched,
+  // and the live email and Microsoft keys are blanked here so the local site
+  // can't send real emails or create real Teams meetings/calendar events.
+  let contents = existsSync(localEnvPath) ? readFileSync(localEnvPath, "utf8") : "";
 
   contents = setEnvValue(contents, "NEXT_PUBLIC_SITE_URL", "http://localhost:3000");
   contents = setEnvValue(contents, "NEXT_PUBLIC_SUPABASE_URL", apiUrl);
@@ -87,16 +98,56 @@ function syncLocalEnv() {
     publishableKey
   );
   contents = setEnvValue(contents, "SUPABASE_SERVICE_ROLE_KEY", serviceRoleKey);
-  writeFileSync(envPath, contents, "utf8");
 
-  console.log("Updated .env.local with the local Supabase URL and keys.");
+  for (const name of LIVE_ONLY_ENV_NAMES) {
+    contents = setEnvValue(contents, name, "");
+  }
+
+  // With TEST_EMAIL_REDIRECT_TO set in this file, emails are sent for real
+  // through Brevo, but the app delivers every one to that single inbox. The
+  // Brevo key is copied from .env.local only in that case.
+  const redirectTo = parseEnv(contents).TEST_EMAIL_REDIRECT_TO ?? "";
+  const liveEnvPath = join(root, ".env.local");
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(redirectTo) && existsSync(liveEnvPath)) {
+    const brevoKey = parseEnv(readFileSync(liveEnvPath, "utf8")).BREVO_API_KEY ?? "";
+    contents = setEnvValue(contents, "BREVO_API_KEY", brevoKey);
+    console.log(
+      brevoKey
+        ? `Test emails will be sent for real, all to ${redirectTo}.`
+        : "TEST_EMAIL_REDIRECT_TO is set but .env.local has no BREVO_API_KEY; emails go to the local inbox."
+    );
+  }
+
+  // Lets the hourly session sweep (/api/cron/complete-sessions) be run by hand.
+  if (!parseEnv(contents).CRON_SECRET) {
+    contents = setEnvValue(contents, "CRON_SECRET", randomBytes(24).toString("base64url"));
+  }
+
+  // Emails go to the stack's Mailpit inbox (the INBUCKET_URL / Mailpit URL)
+  // so email flows can be tested without sending anything for real.
+  const inboxUrl = status.INBUCKET_URL ?? status.MAILPIT_URL;
+  if (inboxUrl) {
+    contents = setEnvValue(contents, "LOCAL_MAIL_API_URL", inboxUrl);
+  }
+
+  writeFileSync(localEnvPath, contents, "utf8");
+  console.log("Updated .env.development.local with the local Supabase URL and keys.");
 }
 
 function seed() {
   syncLocalEnv();
+  // The seed scripts read their Supabase keys from this file; refuse to seed
+  // anything that isn't this machine's Docker database.
+  const seedUrl = parseEnv(readFileSync(localEnvPath, "utf8")).NEXT_PUBLIC_SUPABASE_URL ?? "";
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(seedUrl)) {
+    console.error("Refusing to seed: the Supabase URL is not a local address.");
+    process.exit(1);
+  }
+  process.env.SEED_ENV_FILE = ".env.development.local";
   run(process.execPath, ["scripts/seed-local-users.mjs"]);
   run(process.execPath, ["scripts/seed-demo-data.mjs"]);
   run(process.execPath, ["scripts/seed-ambassador-showcase.mjs"]);
+  run(process.execPath, ["scripts/seed-double-sessions.mjs"]);
 }
 
 function applyPendingMigrations() {

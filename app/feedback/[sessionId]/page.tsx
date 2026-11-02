@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import { feedbackPath, isValidFeedbackLinkToken } from "@/lib/services/feedback-links";
+import { nzDayKey } from "@/lib/same-day-sessions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatWeekdayDate } from "@/lib/utils";
 
@@ -86,7 +87,7 @@ export default async function PublicFeedbackPage({
 
   const { data: session } = await admin
     .from("booking_sessions")
-    .select("id, starts_at, ends_at, school_id, presentation_type_id, assigned_ambassador_id, status")
+    .select("id, booking_request_id, starts_at, ends_at, school_id, presentation_type_id, assigned_ambassador_id, status")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -102,7 +103,7 @@ export default async function PublicFeedbackPage({
     );
   }
 
-  const [{ data: school }, { data: presentation }, { data: existingReview }] =
+  const [{ data: school }, { data: presentation }, { data: existingReview }, { data: bookingSessions }] =
     await Promise.all([
       admin.from("schools").select("name").eq("id", session.school_id).maybeSingle(),
       admin
@@ -114,8 +115,23 @@ export default async function PublicFeedbackPage({
         .from("presentation_reviews")
         .select("id")
         .eq("booking_session_id", sessionId)
-        .maybeSingle()
+        .maybeSingle(),
+      // A double session is one booking with two sessions on one day; the
+      // form shows all of them so the school knows what it's reviewing.
+      session.booking_request_id
+        ? admin
+            .from("booking_sessions")
+            .select("starts_at, ends_at, status")
+            .eq("booking_request_id", session.booking_request_id)
+        : Promise.resolve({ data: [] })
     ]);
+  const sameDaySessions = ((bookingSessions ?? []) as Array<{ starts_at: string; ends_at: string | null; status: string }>)
+    .filter(
+      (item) =>
+        !["cancelled", "declined"].includes(String(item.status)) &&
+        nzDayKey(item.starts_at) === nzDayKey(session.starts_at as string)
+    )
+    .map((item) => ({ startsAt: item.starts_at, endsAt: item.ends_at }));
 
   let ambassadorName: string | undefined;
 
@@ -190,6 +206,7 @@ export default async function PublicFeedbackPage({
         presentationTitle={(presentation?.title as string | null) ?? undefined}
         startsAt={session.starts_at as string}
         ambassadorName={ambassadorName}
+        sessions={sameDaySessions}
       />
     </FeedbackShell>
   );

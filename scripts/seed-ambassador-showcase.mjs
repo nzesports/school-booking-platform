@@ -9,7 +9,7 @@ const DEMO_AMBASSADOR_EMAIL = "aroha.ambassador@demo.esf.nz";
 const SHOWCASE_MARKER = "AMBASSADOR_SHOWCASE";
 
 const env = Object.fromEntries(
-  readFileSync(".env.local", "utf8")
+  readFileSync(process.env.SEED_ENV_FILE ?? ".env.local", "utf8")
     .split(/\r?\n/)
     .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
     .filter(Boolean)
@@ -522,7 +522,7 @@ const completedSessions = [
     actual: 228,
     assigned: true,
     sourced: true,
-    sessionStatus: "completed",
+    sessionStatus: "paid",
     reportStatus: "submitted",
     paymentStatus: "paid",
     schoolNotes: "Ambassador-sourced booking showing the additional $50 sourcing bonus.",
@@ -568,7 +568,7 @@ const completedSessions = [
     expected: 260,
     actual: 251,
     assigned: true,
-    sessionStatus: "completed",
+    sessionStatus: "report_submitted",
     reportStatus: "submitted",
     paymentStatus: "pending",
     schoolNotes: "Completed session with an invoice currently with finance.",
@@ -613,7 +613,7 @@ const completedSessions = [
     expected: 190,
     actual: 197,
     assigned: true,
-    sessionStatus: "completed",
+    sessionStatus: "report_submitted",
     reportStatus: "submitted",
     paymentStatus: "pending",
     schoolNotes: "Approved payment with a simulated finance delivery issue.",

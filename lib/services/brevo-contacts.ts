@@ -32,7 +32,8 @@ export async function addContactToTeachersList(opts: {
   schoolName?: string;
   source?: string;
 }) {
-  if (!config.isBrevoConfigured || !opts.email) {
+  // The test server's demo contacts must never land on the real mailing list.
+  if (!config.isBrevoConfigured || config.testEmailRedirectTo || !opts.email) {
     return { status: "skipped" as const };
   }
 

@@ -18,10 +18,12 @@ import { AmbassadorApplicationWithdrawDialog } from "@/components/dashboard/amba
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
+import { sessionGroupSummary } from "@/lib/same-day-sessions";
 import { formatTime, formatWeekdayDate } from "@/lib/utils";
 
 export function AmbassadorOpenSessionDialog({
   session,
+  daySessions,
   action,
   withdrawAction,
   returnTo,
@@ -30,6 +32,9 @@ export function AmbassadorOpenSessionDialog({
   unstyled = false
 }: {
   session: BookingSessionView;
+  // The booking's back-to-back sessions that day, including `session`.
+  // Applying or withdrawing on `session` carries across all of them.
+  daySessions?: BookingSessionView[];
   action: (formData: FormData) => void | Promise<void>;
   withdrawAction?: (formData: FormData) => void | Promise<void>;
   returnTo: string;
@@ -38,6 +43,9 @@ export function AmbassadorOpenSessionDialog({
   unstyled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const group = daySessions && daySessions.length > 0 ? daySessions : [session];
+  const isMultiSession = group.length > 1;
+  const { presentationTitles, yearLevels, studentCount } = sessionGroupSummary(group);
 
   return (
     <>
@@ -63,7 +71,7 @@ export function AmbassadorOpenSessionDialog({
       {open
         ? createPortal(
             <BookingDialogShell
-              kicker={session.presentationTitle}
+              kicker={presentationTitles.join(" + ")}
               title={session.schoolName}
               description="School contact details stay private until you are assigned to the session."
               onClose={() => setOpen(false)}
@@ -74,7 +82,9 @@ export function AmbassadorOpenSessionDialog({
                 <DetailTile
                   icon={<CalendarDays className="h-4 w-4" />}
                   label="Schedule"
-                  value={`${formatWeekdayDate(session.startsAt, true)} at ${formatTime(session.startsAt)}`}
+                  value={`${formatWeekdayDate(session.startsAt, true)} at ${group
+                    .map((item) => formatTime(item.startsAt))
+                    .join(" & ")}`}
                 />
                 <DetailTile
                   icon={<MapPin className="h-4 w-4" />}
@@ -84,14 +94,31 @@ export function AmbassadorOpenSessionDialog({
                 <DetailTile
                   icon={<Presentation className="h-4 w-4" />}
                   label="Year levels"
-                  value={session.yearLevels}
+                  value={yearLevels.join(" / ")}
                 />
                 <DetailTile
                   icon={<UsersRound className="h-4 w-4" />}
                   label="Expected students"
-                  value={`${session.expectedStudentCount} students`}
+                  value={`${studentCount} students${isMultiSession ? " in total" : ""}`}
                 />
               </div>
+
+              {isMultiSession ? (
+                <div className="mt-4 rounded-[18px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
+                  <p className="font-semibold">
+                    {group.length} back-to-back sessions · one booking, one report. Applying or withdrawing
+                    covers all of them.
+                  </p>
+                  <ul className="mt-2 grid gap-1">
+                    {group.map((item) => (
+                      <li key={item.id}>
+                        {formatTime(item.startsAt)} · {item.presentationTitle} · {item.expectedStudentCount}{" "}
+                        students · {item.yearLevels}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {session.myApplicationStatus === "applied" ? (
                 <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -128,7 +155,7 @@ export function AmbassadorOpenSessionDialog({
                     </Button>
                     <Button type="submit" className="bg-[#18a83b] text-white hover:bg-[#12852f]">
                       <Send className="h-4 w-4" />
-                      Apply for session
+                      {isMultiSession ? `Apply for all ${group.length} sessions` : "Apply for session"}
                     </Button>
                   </div>
                 </form>

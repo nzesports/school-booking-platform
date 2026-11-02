@@ -11,7 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 const DEMO_EMAIL_DOMAIN = "demo.esf.nz";
 const DEMO_PASSWORD = "DemoPass123!";
 
-const envText = readFileSync(".env.local", "utf8");
+const envText = readFileSync(process.env.SEED_ENV_FILE ?? ".env.local", "utf8");
 const env = {};
 for (const line of envText.split(/\r?\n/)) {
   const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
@@ -375,7 +375,7 @@ const session1 = await createSession(booking1, {
   region: "wellington",
   presentation: "esports-pathways",
   ambassadorProfileId: marcusProfileId,
-  status: "completed",
+  status: "paid",
   startsAt: daysFromNow(-21, 9, 0),
   endsAt: daysFromNow(-21, 9, 10),
   yearLevels: "Years 9 to 13",
@@ -398,7 +398,7 @@ const session2 = await createSession(booking2, {
   region: "north-shore",
   presentation: "digital-wellbeing",
   ambassadorProfileId: arohaProfileId,
-  status: "completed",
+  status: "report_submitted",
   startsAt: daysFromNow(-14, 11, 30),
   endsAt: daysFromNow(-14, 11, 40),
   yearLevels: "Years 7 to 8",
@@ -500,7 +500,7 @@ await createSession(booking6, {
   region: "hamilton",
   presentation: "understanding-esports",
   ambassadorProfileId: arohaProfileId,
-  status: "completed",
+  status: "completed_pending_report",
   startsAt: daysFromNow(-2, 10, 0),
   endsAt: daysFromNow(-2, 10, 10),
   yearLevels: "Years 7 to 8",

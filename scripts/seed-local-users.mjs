@@ -8,7 +8,7 @@ const localUsers = [
 ];
 
 const env = {};
-for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+for (const line of readFileSync(process.env.SEED_ENV_FILE ?? ".env.local", "utf8").split(/\r?\n/)) {
   const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (match) env[match[1]] = match[2].trim().replace(/^(["'])(.*)\1$/, "$2");
 }

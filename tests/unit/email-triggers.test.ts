@@ -148,4 +148,30 @@ describe("notification routing and content", () => {
     expect(mocks.send.mock.calls[0][0].html).toContain("https://book.nzesports.org.nz/finance/payment/test-token");
     expect(mocks.insert.mock.calls[0][0]).toMatchObject({ recipient_type: "finance", status: "sent" });
   });
+
+  // A grouped invoice lists every covered session on one line; titles and
+  // school names are data, so both the built-in and a saved template escape them.
+  it.each([
+    ["built-in", null],
+    ["saved template", { subject: "Invoice", body_html: "<p>For {{sessionDescription}}</p>", is_active: true }]
+  ])("escapes the multi-session line in the %s finance email", async (_label, template) => {
+    mocks.template.mockResolvedValue({ data: template, error: null });
+    const sessionDescription =
+      "St Mary's & Co <b>College</b> — 2 sessions: 1. <script>x</script>, 15 Sep 2026, 9:00 am–10:00 am; " +
+      "2. Understanding Esports, 15 Sep 2026, 10:00 am–11:00 am";
+
+    await sendPaymentApprovalToFinanceEmail({
+      toEmail: "finance@example.nz", invoiceNumber: "INV-1", ambassadorName: "Alex",
+      sessionDescription, amountLabel: "$300 ($250 delivery + $50 second session (less than 2 hours apart))",
+      bankAccountName: "Test Account", bankAccountNumber: "test-account",
+      confirmationToken: "test-token", bookingSessionId: "session-1"
+    });
+
+    const html = mocks.send.mock.calls[0][0].html as string;
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<b>College</b>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("2 sessions: 1.");
+    expect(html).toContain("2. Understanding Esports, 15 Sep 2026, 10:00 am–11:00 am");
+  });
 });

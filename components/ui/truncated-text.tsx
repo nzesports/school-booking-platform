@@ -47,6 +47,7 @@ export function TruncatedText({ title, children, className, inline = false }: Tr
   return (
     <span
       ref={ref}
+      data-truncation-owned="true"
       title={clipped ? title : undefined}
       className={cn(
         inline ? "inline-flex min-w-0 items-center" : "block",

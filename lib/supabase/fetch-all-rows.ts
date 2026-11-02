@@ -10,6 +10,31 @@ type PageResult<Row> = {
   error: { message: string; code?: string } | null;
 };
 
+// A cache miss loads many tables, and several portals may refresh together.
+// Bound page reads per server process so this fan-out cannot occupy every
+// PostgREST connection and make a successful write redirect to an error page.
+const MAX_CONCURRENT_PAGE_READS = 4;
+let activePageReads = 0;
+const waitingPageReads: Array<() => void> = [];
+
+async function readPage<Row>(read: () => PromiseLike<PageResult<Row>>) {
+  await new Promise<void>((resolve) => {
+    if (activePageReads < MAX_CONCURRENT_PAGE_READS) {
+      activePageReads += 1;
+      resolve();
+    } else {
+      waitingPageReads.push(resolve);
+    }
+  });
+  try {
+    return await read();
+  } finally {
+    const next = waitingPageReads.shift();
+    if (next) next();
+    else activePageReads -= 1;
+  }
+}
+
 export async function fetchAllRows<Row>(
   label: string,
   page: (from: number, to: number) => PromiseLike<PageResult<Row>>
@@ -17,7 +42,12 @@ export async function fetchAllRows<Row>(
   const rows: Row[] = [];
 
   for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await page(from, from + SUPABASE_PAGE_SIZE - 1);
+    const read = () => readPage(() => page(from, from + SUPABASE_PAGE_SIZE - 1));
+    let result = await read();
+    // Retry only a transient pool-acquisition failure, once. Persistent or
+    // unrelated failures still reject and never cache a false empty table.
+    if (result.error?.code === "PGRST003") result = await read();
+    const { data, error } = result;
 
     if (error) {
       throw new Error(`Unable to load ${label} (${error.code ?? "unknown"}): ${error.message}`);

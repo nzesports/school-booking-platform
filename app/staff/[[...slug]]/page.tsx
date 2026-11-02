@@ -52,10 +52,7 @@ import {
   BookingLifecyclePanel,
   SchoolDeliveryDatabase
 } from "@/components/dashboard/operations-views";
-import {
-  PaymentsWorkspace,
-  getPaymentsNotice
-} from "@/components/dashboard/payments-workspace";
+import { PaymentsWorkspace } from "@/components/dashboard/payments-workspace";
 import { PortalProfileWorkspace } from "@/components/dashboard/portal-profile-workspace";
 import { ResourcesWorkspace } from "@/components/dashboard/resources-workspace";
 import { SettingsWorkspace } from "@/components/dashboard/settings-workspace";
@@ -565,8 +562,10 @@ export default async function StaffPortalPage({
             basePath="/staff"
             payments={portal.payments}
             sessions={portal.bookings.flatMap((booking) => booking.sessions)}
+            reports={portal.reports}
+            reviewAction={markReportReviewedAction}
             financeEmail={paymentSettings?.financeEmail ?? "info@esf.nz"}
-            notice={getPaymentsNotice(resolvedSearchParams)}
+            notice={reportNotice}
           />
         ) : null}
 
@@ -1041,19 +1040,59 @@ function readSearchParam(
 }
 
 function getReportApprovalNotice(searchParams: Record<string, string | string[] | undefined>) {
+  if (readSearchParam(searchParams, "error") === "report-media-invalid") {
+    return {
+      tone: "error" as const,
+      message: "The feedback files didn't finish uploading. Add them again (up to 15 files, 50 MB each) and resubmit."
+    };
+  }
+
+  if (readSearchParam(searchParams, "approved") === "report-no-payment") {
+    return {
+      tone: "success" as const,
+      message: "Report approved with no payment. Nothing was sent to finance."
+    };
+  }
+
+  if (readSearchParam(searchParams, "approved") === "report-payment") {
+    return {
+      tone: "success" as const,
+      message:
+        "Report approved. The payment is now under Ready for finance on the Payments tab. Check it, then send it to finance."
+    };
+  }
+
   if (readSearchParam(searchParams, "approved") === "report") {
-    return readSearchParam(searchParams, "financeEmail") === "failed"
-      ? {
-          tone: "error" as const,
-          message: "Report approved and the invoice number is safe, but the finance email failed. Retry it from Payments."
-        }
-      : { tone: "success" as const, message: "Report approved and sent to finance automatically." };
+    return { tone: "success" as const, message: "Report approved." };
   }
 
   if (readSearchParam(searchParams, "error") === "payment-details-required") {
     return {
       tone: "error" as const,
       message: "Approval is blocked until the ambassador saves a valid account name and bank account number. They have been notified."
+    };
+  }
+
+  if (readSearchParam(searchParams, "error") === "invalid-payment-amount") {
+    return {
+      tone: "error" as const,
+      message: "The extra amount must be a whole-dollar amount between $0 and $250. Nothing was approved."
+    };
+  }
+
+  if (readSearchParam(searchParams, "error") === "payment-note-required") {
+    return {
+      tone: "error" as const,
+      message:
+        "Add a note explaining the extra or custom amount, or why no payment is needed. Nothing was approved."
+    };
+  }
+
+  if (readSearchParam(searchParams, "error") === "custom-review-required") {
+    return {
+      tone: "error" as const,
+      message:
+        "This payment needs a custom review: enter the custom amount (it can be $0), confirm the review and add a note, or approve with no payment. Nothing was approved."
     };
   }
 
@@ -1242,10 +1281,25 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
     };
   }
 
+  if (error === "reschedule-ambassador-conflict") {
+    return {
+      tone: "error" as const,
+      message:
+        "Not rescheduled: the assigned ambassador already has a session that overlaps the new time. Choose another time or reassign first."
+    };
+  }
+
   if (error?.includes("reschedule")) {
     return {
       tone: "error" as const,
       message: "The reschedule could not be resolved. Review the date and time, then try again."
+    };
+  }
+
+  if (withdrawal === "cancelled") {
+    return {
+      tone: "success" as const,
+      message: "Session cancelled as the school was rebooked. The ambassador has been told they no longer need to attend."
     };
   }
 
@@ -1259,7 +1313,7 @@ function getStaffContentNotice(searchParams: Record<string, string | string[] | 
   if (withdrawal === "declined") {
     return {
       tone: "success" as const,
-      message: "Withdrawal declined - the ambassador remains assigned and has been notified."
+      message: "The ambassador stays assigned and has been notified."
     };
   }
 

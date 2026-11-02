@@ -36,19 +36,24 @@ import {
 } from "@/lib/services/email-triggers";
 import {
   createFinanceConfirmationToken,
+  FINANCE_EMAIL_CLAIM_STALE_SECONDS,
   generateInvoiceNumber,
   getPaymentSettings,
   loadPaymentDetails
 } from "@/lib/services/payment-automation";
+import { describePaymentAmount, parseExtraAmountCents } from "@/lib/payment-breakdown";
+import { findOverlappingSession } from "@/lib/session-overlap";
 import { sendTransactionalEmail } from "@/lib/services/email";
 import { substituteSampleValues } from "@/lib/services/email-samples";
 import { notifyStaff, notifyUser } from "@/lib/services/notifications";
 import { sanitizeEmailHtml, sanitizeRichText } from "@/lib/services/sanitize";
 import {
   deletePrivateResourceFile,
-  uploadPrivateReportMedia,
+  prepareReportMediaUpload,
+  REPORT_MEDIA_MAX_FILES,
   uploadPrivateResourceFile,
   prepareResourceUpload,
+  validateUploadedReportMedia,
   validateUploadedResource,
   uploadPublicAsset
 } from "@/lib/services/storage";
@@ -74,15 +79,25 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { relationOne } from "@/lib/supabase/relation";
 import { createClient } from "@/lib/supabase/server";
 import { safeLocalPath } from "@/lib/safe-redirect";
-import { formatCurrency, formatDateOnly, formatDateTime, nzDateTimeToIso, slugify, splitCommaList } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDateOnly,
+  formatDateTime,
+  nzDateTimeToIso,
+  slugify,
+  splitCommaList
+} from "@/lib/utils";
 
 // Every path revalidation in this module accompanies a data write, so bust the
 // shared platform-data cache (lib/services/portal.ts) at the same time. This
 // keeps the 60s cache from ever serving stale data after a portal action.
+// The portals are catch-all routes (/ambassador/[[...slug]] etc.), so the
+// path is revalidated as a layout: "/ambassador" alone would refresh only the
+// dashboard and leave e.g. /ambassador/bookings showing withdrawn applications.
 function revalidatePath(path: string) {
   updateTag(PLATFORM_DATA_TAG);
   updateTag(AVAILABILITY_DATA_TAG);
-  nextRevalidatePath(path);
+  nextRevalidatePath(path, "layout");
 }
 
 const inviteSchema = z
@@ -351,13 +366,19 @@ const applicationWithdrawSchema = z.object({
 
 const sessionWithdrawalRequestSchema = z.object({
   bookingSessionId: z.uuid(),
+  reasonType: z.enum(["school_rescheduled", "unavailable", "other"]),
   reason: z.string().trim().min(5).max(2000),
   returnTo: z.string().min(1).default("/ambassador/upcoming")
 });
 
 const sessionWithdrawalResolveSchema = z.object({
   bookingSessionId: z.uuid(),
-  decision: z.enum(["approve", "decline"]),
+  // keep: ambassador stays assigned. reopen: back to the open pool.
+  // cancel_rebooked: the school was rebooked elsewhere, so cancel this session.
+  // approve/decline are the old names, still accepted from open tabs.
+  decision: z
+    .enum(["keep", "reopen", "cancel_rebooked", "approve", "decline"])
+    .transform((value) => (value === "approve" ? "reopen" : value === "decline" ? "keep" : value)),
   note: z.string().trim().max(2000).optional(),
   returnTo: z.string().min(1).default("/staff/bookings")
 });
@@ -489,80 +510,10 @@ const updateSessionStudentCountsSchema = z.object({
   actualStudentCount: optionalStudentCount
 });
 
-// Sessions in these states are still "in flight" and safe to rewrite when the
-// parent booking is cancelled or declined. Delivered/terminal sessions
-// (completed_pending_report, report_submitted, payment_pending, paid, closed,
-// cancelled, declined) must never be rewritten — this mirrors the
-// school-initiated cancellation's exclusion list in
-// requestSchoolBookingChangeAction.
-const NON_TERMINAL_SESSION_STATUSES = [
-  "requested",
-  "tentative",
-  "applied",
-  "ambassador_assigned",
-  "confirmed",
-  "withdrawal_requested",
-  "reschedule_requested"
-];
-
-const SESSION_CASCADE: Partial<Record<string, { to: string; onlyFrom?: string[] }>> = {
-  requested: { to: "requested", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
-  tentative: { to: "tentative", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
-  closed: { to: "closed", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
-  completed_pending_report: { to: "completed_pending_report", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
-  confirmed: {
-    to: "confirmed",
-    onlyFrom: [
-      "requested",
-      "tentative",
-      "applied",
-      "ambassador_assigned"
-    ]
-  },
-  cancelled: { to: "cancelled", onlyFrom: NON_TERMINAL_SESSION_STATUSES },
-  // Declining a booking closes out its open sessions so they leave the
-  // ambassador open pool and stop reading as "pending approval" for schools.
-  declined: { to: "declined", onlyFrom: NON_TERMINAL_SESSION_STATUSES }
-};
-
-const REMOVED_BOOKING_STATUSES = ["cancelled", "declined"];
-const BOOKING_COMPLETION_STATUSES = [
-  "completed_pending_report",
-  "report_submitted",
-  "payment_pending",
-  "paid",
-  "closed"
-];
-
-// Un-cancelling a booking brings back the sessions its cancellation closed:
-// upcoming ones when it returns to an active status, past ones when it's
-// marked delivered. Only called for bookings that were cancelled/declined.
-async function reinstateCancelledSessions(
-  admin: ReturnType<typeof getAdminClientOrThrow>,
-  bookingIds: string[],
-  targetStatus: string
-) {
-  if (bookingIds.length === 0 || REMOVED_BOOKING_STATUSES.includes(targetStatus)) {
-    return [];
-  }
-
-  const completing = BOOKING_COMPLETION_STATUSES.includes(targetStatus);
-  const sessionStatus = SESSION_CASCADE[targetStatus]?.to ?? (completing ? "closed" : "tentative");
-  const now = new Date().toISOString();
-  const query = admin
-    .from("booking_sessions")
-    .update({ status: sessionStatus })
-    .in("booking_request_id", bookingIds)
-    .in("status", REMOVED_BOOKING_STATUSES);
-  const { data, error } = await (completing ? query.lt("ends_at", now) : query.gt("starts_at", now))
-    .select("id, booking_request_id");
-
-  if (error) {
-    throw error;
-  }
-
-  return data ?? [];
-}
+// A booking-level status cascades to its sessions (and un-cancelling brings
+// sessions back) inside update_booking_status_batch (0055), in the same
+// transaction as the booking itself. School cancellations use
+// cancel_school_booking. Delivered/terminal sessions are never rewritten.
 
 // Links rendered as hrefs: only web URLs, never javascript:/data: schemes.
 const httpUrlSchema = z
@@ -786,6 +737,14 @@ const LATE_CANCELLATION_HOURS = 24;
 
 // Sessions an assigned ambassador may report on once they have ended.
 const AMBASSADOR_REPORTABLE_SESSION_STATUSES = ["confirmed", "completed_pending_report"];
+// Outcomes of submit_ambassador_report_group (0054) shown to the ambassador.
+const REPORT_SUBMISSION_ERRORS = new Set([
+  "session-not-assigned",
+  "session-not-finished",
+  "report-already-submitted",
+  "report-day-not-finished",
+  "payment-already-exists"
+]);
 // Sessions that need no further report, so a sibling in one of these does not
 // hold its parent booking open.
 const REPORT_TERMINAL_SESSION_STATUSES = new Set([
@@ -797,93 +756,9 @@ const REPORT_TERMINAL_SESSION_STATUSES = new Set([
   "declined"
 ]);
 
-const PRE_CONFIRMATION_BOOKING_STATUSES = new Set([
-  "requested",
-  "tentative",
-  "applied",
-  "ambassador_assigned"
-]);
-const INACTIVE_ROLLUP_SESSION_STATUSES = new Set([
-  "cancelled",
-  "declined",
-  "completed_pending_report",
-  "report_submitted",
-  "payment_pending",
-  "paid",
-  "closed"
-]);
-
-async function refreshPreConfirmationBookingStatus({
-  admin,
-  bookingRequestId,
-  actorId,
-  actorType,
-  reason
-}: {
-  admin: AdminClient;
-  bookingRequestId: string;
-  actorId: string;
-  actorType: "ambassador" | "staff";
-  reason: string;
-}) {
-  const [{ data: booking }, { data: sessions }] = await Promise.all([
-    admin.from("booking_requests").select("id, status").eq("id", bookingRequestId).maybeSingle(),
-    admin
-      .from("booking_sessions")
-      .select("id, status, assigned_ambassador_id")
-      .eq("booking_request_id", bookingRequestId)
-  ]);
-
-  if (!booking || !PRE_CONFIRMATION_BOOKING_STATUSES.has(String(booking.status))) {
-    return;
-  }
-
-  const activeSessions = (sessions ?? []).filter(
-    (session) => !INACTIVE_ROLLUP_SESSION_STATUSES.has(String(session.status))
-  );
-
-  if (!activeSessions.length) {
-    return;
-  }
-
-  const unassignedIds = activeSessions
-    .filter((session) => !session.assigned_ambassador_id)
-    .map((session) => session.id as string);
-  const { count: applicationCount } = unassignedIds.length
-    ? await admin
-        .from("booking_session_applications")
-        .select("id", { count: "exact", head: true })
-        .in("booking_session_id", unassignedIds)
-        .eq("status", "applied")
-    : { count: 0 };
-  const nextStatus = activeSessions.every((session) => Boolean(session.assigned_ambassador_id))
-    ? "ambassador_assigned"
-    : (applicationCount ?? 0) > 0
-      ? "applied"
-      : "tentative";
-
-  if (nextStatus === booking.status) {
-    return;
-  }
-
-  await Promise.all([
-    admin.from("booking_requests").update({ status: nextStatus }).eq("id", bookingRequestId),
-    admin.from("booking_status_history").insert({
-      booking_request_id: bookingRequestId,
-      old_status: booking.status,
-      new_status: nextStatus,
-      changed_by: actorId,
-      reason
-    }),
-    admin.from("booking_activity_logs").insert({
-      booking_request_id: bookingRequestId,
-      action: "booking.status_rolled_up",
-      actor_id: actorId,
-      actor_type: actorType,
-      details: { old_status: booking.status, new_status: nextStatus }
-    })
-  ]);
-}
+// The pre-confirmation booking roll-up (tentative / applied / ambassador
+// assigned) now runs inside the 0055 group functions, under the booking row
+// lock: see rollup_pre_confirmation_booking_status.
 
 async function isLastActiveSuperAdmin(userId: string) {
   const admin = getAdminClientOrThrow();
@@ -2115,6 +1990,49 @@ export async function mergeSchoolAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "merged", "school"));
 }
 
+type CheckedSessionFields = {
+  presentation_type_id: string;
+  assigned_ambassador_id: string | null;
+  delivery_mode: "in_person" | "online";
+  meeting_url: string | null;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  year_levels: string;
+  expected_student_count: number;
+  actual_student_count: number | null;
+  internal_notes: string | null;
+  report_status: "not_submitted" | "reviewed";
+};
+
+// Adds the first session of a booking the actor has just created, through
+// insert_booking_session_checked (0055): table lock, ownership, target
+// ambassador and overlap checks, then the insert, in one transaction.
+async function insertBookingSessionChecked(
+  admin: AdminClient,
+  actorId: string,
+  bookingId: string,
+  fields: CheckedSessionFields
+): Promise<{ ok: true; sessionId: string } | { ok: false; code: string }> {
+  const { data: rows, error } = await admin.rpc("insert_booking_session_checked", {
+    p_actor_id: actorId,
+    p_booking_id: bookingId,
+    p_session: fields
+  });
+  const row = Array.isArray(rows)
+    ? (rows[0] as { outcome?: string; session_id?: string | null } | undefined)
+    : undefined;
+
+  if (error || !row?.outcome) {
+    logGroupFailure("insert_booking_session_checked", bookingId, error);
+    return { ok: false, code: "insert-failed" };
+  }
+
+  return row.outcome === "inserted" && row.session_id
+    ? { ok: true, sessionId: row.session_id }
+    : { ok: false, code: row.outcome };
+}
+
 export async function saveManualBookingAction(formData: FormData) {
   const actor = await requirePortalAccess("staff");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -2241,37 +2159,38 @@ export async function saveManualBookingAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-save-failed"));
   }
 
-  const { data: session, error: sessionError } = await admin
-    .from("booking_sessions")
-    .insert({
-      booking_request_id: booking.id,
-      presentation_type_id: parsed.data.presentationTypeId,
-      region_id: parsed.data.deliveryMode === "online" ? null : school.region_id ?? null,
-      school_id: school.id,
-      assigned_ambassador_id: parsed.data.assignedAmbassadorId || null,
-      share_contact_with_ambassador: Boolean(parsed.data.assignedAmbassadorId),
-      // Only written for online sessions, so in-person logging keeps working
-      // even before the 0050 migration is applied.
-      ...(parsed.data.deliveryMode === "online"
-        ? { delivery_mode: "online", meeting_url: parsed.data.meetingUrl ?? null }
-        : {}),
-      status: effectiveStatus,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      year_levels: parsed.data.yearLevels,
-      expected_student_count: parsed.data.expectedStudentCount,
-      actual_student_count: parsed.data.actualStudentCount ?? null,
-      internal_notes: parsed.data.internalNotes || null,
-      report_status: settlesAsHistory ? "reviewed" : "not_submitted",
-      payment_status: "not_eligible"
-    })
-    .select("id")
-    .single();
+  // Inserted under the assignment table lock with the ambassador's overlap
+  // check (0055). The school, and the region for in-person sessions, come
+  // from the booking.
+  const sessionResult = await insertBookingSessionChecked(admin, actor.id, booking.id as string, {
+    presentation_type_id: parsed.data.presentationTypeId,
+    assigned_ambassador_id: parsed.data.assignedAmbassadorId || null,
+    delivery_mode: parsed.data.deliveryMode,
+    meeting_url: parsed.data.deliveryMode === "online" ? parsed.data.meetingUrl ?? null : null,
+    status: effectiveStatus,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    year_levels: parsed.data.yearLevels,
+    expected_student_count: parsed.data.expectedStudentCount,
+    actual_student_count: parsed.data.actualStudentCount ?? null,
+    internal_notes: parsed.data.internalNotes || null,
+    report_status: settlesAsHistory ? "reviewed" : "not_submitted"
+  });
 
-  if (sessionError || !session) {
+  if (!sessionResult.ok) {
     await admin.from("booking_requests").delete().eq("id", booking.id);
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-session-save-failed"));
+    redirect(
+      appendSearchParam(
+        parsed.data.returnTo,
+        "error",
+        sessionResult.code === "ambassador-conflict" || sessionResult.code === "ambassador-not-approved"
+          ? sessionResult.code
+          : "booking-session-save-failed"
+      )
+    );
   }
+
+  const session = { id: sessionResult.sessionId };
 
   await admin.from("booking_status_history").insert({
     booking_request_id: booking.id,
@@ -2401,31 +2320,35 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-save-failed"));
   }
 
-  const { data: session, error: sessionError } = await admin
-    .from("booking_sessions")
-    .insert({
-      booking_request_id: booking.id,
-      presentation_type_id: presentation.id,
-      region_id: school.region_id ?? null,
-      school_id: school.id,
-      assigned_ambassador_id: ambassadorProfile.id,
-      share_contact_with_ambassador: true,
-      status,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      year_levels: parsed.data.yearLevels,
-      expected_student_count: parsed.data.expectedStudentCount,
-      internal_notes: parsed.data.internalNotes || null,
-      report_status: "not_submitted",
-      payment_status: "not_eligible"
-    })
-    .select("id")
-    .single();
+  // The database only accepts the ambassador themselves, upcoming and free
+  // at that time (0055); otherwise the booking is removed again.
+  const sessionResult = await insertBookingSessionChecked(admin, actor.id, booking.id as string, {
+    presentation_type_id: presentation.id as string,
+    assigned_ambassador_id: ambassadorProfile.id as string,
+    delivery_mode: "in_person",
+    meeting_url: null,
+    status,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    year_levels: parsed.data.yearLevels,
+    expected_student_count: parsed.data.expectedStudentCount,
+    actual_student_count: null,
+    internal_notes: parsed.data.internalNotes || null,
+    report_status: "not_submitted"
+  });
 
-  if (sessionError || !session) {
+  if (!sessionResult.ok) {
     await admin.from("booking_requests").delete().eq("id", booking.id);
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-session-save-failed"));
+    redirect(
+      appendSearchParam(
+        parsed.data.returnTo,
+        "error",
+        sessionResult.code === "ambassador-conflict" ? "ambassador-booking-conflict" : "booking-session-save-failed"
+      )
+    );
   }
+
+  const session = { id: sessionResult.sessionId };
 
   const payoutRates = await loadPayoutRates();
   await Promise.all([
@@ -2510,11 +2433,9 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-report"));
   }
 
-  const mediaFiles = formData
-    .getAll("mediaFiles")
-    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+  const mediaUploads = await readUploadedReportMedia(formData, actor.id);
 
-  if (mediaFiles.length > 15 || mediaFiles.some((file) => file.size > 5 * 1024 * 1024)) {
+  if (!mediaUploads) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "report-media-invalid"));
   }
 
@@ -2560,16 +2481,10 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   }
 
   const [
-    { data: existingReport },
     { data: bookingRequest },
     { data: schoolRecord },
     { data: schoolContact }
   ] = await Promise.all([
-    admin
-      .from("ambassador_reports")
-      .select("id")
-      .eq("booking_session_id", parsed.data.bookingSessionId)
-      .maybeSingle(),
     admin
       .from("booking_requests")
       .select("source, ambassador_outreach_by")
@@ -2589,10 +2504,6 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       .maybeSingle()
   ]);
 
-  if (existingReport) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-already-submitted"));
-  }
-
   const canonicalSchoolName = String(schoolRecord?.name ?? parsed.data.schoolName ?? "School");
   const canonicalContactName = String(
     schoolContact?.full_name ?? parsed.data.primaryContactName ?? ""
@@ -2610,46 +2521,90 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     .filter(Boolean)
     .join(", ");
 
-  const { data: report, error: reportError } = await admin
-    .from("ambassador_reports")
-    .insert({
-      booking_session_id: parsed.data.bookingSessionId,
-      ambassador_profile_id: ambassadorProfile.id,
-      presenter_name: parsed.data.presenterName,
-      school_roll_size: schoolRecord?.roll_size ?? null,
-      primary_contact_name: canonicalContactName || null,
-      primary_contact_email: canonicalContactEmail || null,
-      delivered_at: deliveredAtIso ?? session.starts_at ?? new Date().toISOString(),
-      students_competed_in_esports: parsed.data.studentsCompeted === "yes",
-      attendee_count: parsed.data.attendeeCount,
-      year_levels: parsed.data.ageGroups,
-      age_groups: parsed.data.ageGroups,
-      parents_present: parsed.data.parentsPresent === "yes",
-      attendee_quotes: parsed.data.attendeeQuotes || null,
-      attendance_rating: parsed.data.attendanceRating,
-      student_response_rating: parsed.data.studentEngagementRating,
-      teacher_response_rating: parsed.data.teacherResponseRating,
-      presentation_energy_rating: parsed.data.presentationEnergyRating,
-      presentation_feedback: parsed.data.presentationFeedback || null,
-      student_questions_themes: parsed.data.notableQuestions || null,
-      additional_notes: [
-        parsed.data.additionalNotes?.trim(),
-        canonicalLocation || parsed.data.regionLocation?.trim()
-          ? `Region / location: ${canonicalLocation || parsed.data.regionLocation?.trim()}`
-          : "",
-        canonicalSchoolName ? `School: ${canonicalSchoolName}` : ""
-      ]
-        .filter(Boolean)
-        .join("\n") || null,
-      media_consent_confirmed: parsed.data.mediaConsentObtained ?? false,
-      submitted_at: new Date().toISOString()
-    })
-    .select("id")
-    .single();
+  const reportFields = {
+    presenter_name: parsed.data.presenterName,
+    school_roll_size: schoolRecord?.roll_size ?? null,
+    primary_contact_name: canonicalContactName || null,
+    primary_contact_email: canonicalContactEmail || null,
+    delivered_at: deliveredAtIso ?? session.starts_at ?? new Date().toISOString(),
+    students_competed_in_esports: parsed.data.studentsCompeted === "yes",
+    attendee_count: parsed.data.attendeeCount,
+    year_levels: parsed.data.ageGroups,
+    age_groups: parsed.data.ageGroups,
+    parents_present: parsed.data.parentsPresent === "yes",
+    attendee_quotes: parsed.data.attendeeQuotes || null,
+    attendance_rating: parsed.data.attendanceRating,
+    student_response_rating: parsed.data.studentEngagementRating,
+    teacher_response_rating: parsed.data.teacherResponseRating,
+    presentation_energy_rating: parsed.data.presentationEnergyRating,
+    presentation_feedback: parsed.data.presentationFeedback || null,
+    student_questions_themes: parsed.data.notableQuestions || null,
+    additional_notes: [
+      parsed.data.additionalNotes?.trim(),
+      canonicalLocation || parsed.data.regionLocation?.trim()
+        ? `Region / location: ${canonicalLocation || parsed.data.regionLocation?.trim()}`
+        : "",
+      canonicalSchoolName ? `School: ${canonicalSchoolName}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n") || null,
+    media_consent_confirmed: parsed.data.mediaConsentObtained ?? false
+  };
 
-  if (reportError || !report) {
+  const payoutRates = await loadPayoutRates();
+  const eligibleThreshold = payoutRates.eligibleThreshold;
+  const isAmbassadorSourced =
+    bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
+    ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
+
+  // One transaction writes the report, marks the ambassador's other finished
+  // sessions of this booking that NZ day as covered, and creates the single
+  // payment: the delivery fee plus the sourcing bonus when sourced. The
+  // second-session add-on (+$50 / +$100) is chosen by staff at approval, so
+  // the tier amounts are passed as 0 here; the tier is still recorded and
+  // preselects that add-on. If any part fails nothing is saved, so the
+  // ambassador can simply resubmit.
+  const { data: submissionRows, error: submissionError } = await admin.rpc(
+    "submit_ambassador_report_group",
+    {
+      p_session_id: parsed.data.bookingSessionId,
+      p_ambassador_profile_id: ambassadorProfile.id,
+      p_actor_id: actor.id,
+      p_report: reportFields,
+      p_delivery_cents: payoutRates.deliveryCents,
+      p_sourcing_bonus_cents: payoutRates.sourcingBonusCents,
+      p_short_pair_cents: 0,
+      p_extended_pair_cents: 0,
+      p_eligible_threshold: eligibleThreshold,
+      p_is_sourced: isAmbassadorSourced
+    }
+  );
+  const submission = Array.isArray(submissionRows) ? submissionRows[0] : null;
+
+  if (submissionError || !submission) {
+    console.error("[report] Grouped report submission failed", {
+      bookingSessionId: parsed.data.bookingSessionId,
+      code: submissionError?.code
+    });
     redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
   }
+
+  if (submission.outcome !== "submitted" || !submission.report_id) {
+    redirect(
+      appendSearchParam(
+        parsed.data.returnTo,
+        "error",
+        REPORT_SUBMISSION_ERRORS.has(String(submission.outcome))
+          ? String(submission.outcome)
+          : "report-save-failed"
+      )
+    );
+  }
+
+  const report = { id: submission.report_id as string };
+  const paymentStatus = String(submission.payment_status);
+  const isPaymentEligible = paymentStatus === "eligible";
+  const coveredSessionIds = (submission.covered_session_ids as string[] | null) ?? [];
 
   // Presentation photos/videos and signed media release forms go into the
   // media library, linked to this report for staff review. They can contain
@@ -2657,19 +2612,14 @@ export async function submitAmbassadorReportAction(formData: FormData) {
   // bucket and only surface through the auth-gated
   // /portal/report-media/[mediaId] route (stored as the row's public_url so
   // existing consumers keep a renderable link).
-  for (const file of mediaFiles) {
+  for (const media of mediaUploads) {
     try {
-      const upload = await uploadPrivateReportMedia(file, "report-media");
       const mediaId = randomUUID();
       await admin.from("media_library").insert({
         id: mediaId,
-        title: file.name,
-        media_type: file.type.startsWith("video/")
-          ? "video"
-          : file.type === "application/pdf"
-            ? "document"
-            : "image",
-        storage_path: upload.storagePath,
+        title: media.title,
+        media_type: media.mediaType,
+        storage_path: media.storagePath,
         public_url: `/portal/report-media/${mediaId}`,
         uploaded_by: actor.id,
         school_id: session.school_id ?? null,
@@ -2682,78 +2632,6 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     }
   }
 
-  const payoutRates = await loadPayoutRates();
-  const eligibleThreshold = payoutRates.eligibleThreshold;
-  const isPaymentEligible = parsed.data.attendeeCount >= eligibleThreshold;
-  const isAmbassadorSourced =
-    bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
-    ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
-  const paymentStatus = isPaymentEligible ? "eligible" : "not_eligible";
-  const eligibilityReason = isPaymentEligible
-    ? `Attendee count ${parsed.data.attendeeCount} meets threshold of ${eligibleThreshold}.${isAmbassadorSourced ? ` ${formatCurrency(payoutRates.deliveryCents)} delivery fee + ${formatCurrency(payoutRates.sourcingBonusCents)} sourcing bonus.` : ""}`
-    : `Attendee count ${parsed.data.attendeeCount} below threshold of ${eligibleThreshold}.`;
-
-  const { data: updatedSession, error: sessionUpdateError } = await admin
-    .from("booking_sessions")
-    .update({
-      report_status: "submitted",
-      payment_status: paymentStatus,
-      actual_student_count: parsed.data.attendeeCount,
-      status: "report_submitted"
-    })
-    .eq("id", parsed.data.bookingSessionId)
-    .in("status", AMBASSADOR_REPORTABLE_SESSION_STATUSES)
-    .eq("report_status", "not_submitted")
-    .select("id")
-    .maybeSingle();
-
-  if (sessionUpdateError || !updatedSession) {
-    // The session moved on (or the write failed) after the checks above; drop
-    // the report so the ambassador sees an error instead of a half-recorded
-    // submission that blocks a retry.
-    await admin.from("ambassador_reports").delete().eq("id", report.id);
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
-  }
-
-  if (isPaymentEligible) {
-    const { error: paymentError } = await admin.from("payments").insert({
-      booking_session_id: parsed.data.bookingSessionId,
-      ambassador_profile_id: ambassadorProfile.id,
-      status: "pending",
-      eligibility_reason: eligibilityReason,
-      amount_cents: isAmbassadorSourced ? payoutRates.sourcedCents : payoutRates.deliveryCents,
-      base_amount_cents: payoutRates.deliveryCents,
-      sourcing_bonus_cents: isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
-    });
-
-    if (paymentError) {
-      console.error("[report] Payment record could not be created", {
-        bookingSessionId: parsed.data.bookingSessionId,
-        code: paymentError.code
-      });
-    }
-  }
-
-  // Only roll the parent booking forward once every other session on it is
-  // finished too; a multi-session booking can still have upcoming sessions.
-  if (session.booking_request_id) {
-    const { data: siblingSessions } = await admin
-      .from("booking_sessions")
-      .select("id, status")
-      .eq("booking_request_id", session.booking_request_id);
-    const closesWholeBooking = (siblingSessions ?? []).every(
-      (sibling) =>
-        sibling.id === session.id || REPORT_TERMINAL_SESSION_STATUSES.has(String(sibling.status))
-    );
-
-    if (closesWholeBooking) {
-      await admin
-        .from("booking_requests")
-        .update({ status: "report_submitted" })
-        .eq("id", session.booking_request_id);
-    }
-  }
-
   await admin.from("booking_activity_logs").insert({
     booking_session_id: parsed.data.bookingSessionId,
     action: "report.submitted",
@@ -2763,6 +2641,12 @@ export async function submitAmbassadorReportAction(formData: FormData) {
       attendee_count: parsed.data.attendeeCount,
       payment_status: paymentStatus,
       sourced_by_ambassador: isAmbassadorSourced,
+      covered_session_ids: coveredSessionIds,
+      payment_tier: isPaymentEligible ? (submission.payment_tier ?? null) : null,
+      payment_review_required: isPaymentEligible ? Boolean(submission.review_required) : false,
+      payment_review_reason: isPaymentEligible ? (submission.review_reason ?? null) : null,
+      // For a custom-review payment this is only the recognised part.
+      payment_amount_cents: isPaymentEligible ? Number(submission.amount_cents ?? 0) : 0,
       delivery_payment_cents: isPaymentEligible ? payoutRates.deliveryCents : 0,
       sourcing_bonus_cents:
         isPaymentEligible && isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
@@ -2824,12 +2708,10 @@ export async function logStaffFeedbackAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-staff-feedback"));
   }
 
-  const mediaFiles = formData
-    .getAll("mediaFiles")
-    .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+  const mediaUploads = await readUploadedReportMedia(formData, actor.id);
 
-  if (mediaFiles.length > 15 || mediaFiles.some((file) => file.size > 5 * 1024 * 1024)) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-staff-feedback"));
+  if (!mediaUploads) {
+    redirect(appendSearchParam(fallbackReturnTo, "error", "report-media-invalid"));
   }
 
   let deliveredAt: string;
@@ -3056,20 +2938,15 @@ export async function logStaffFeedbackAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
   }
 
-  for (const file of mediaFiles) {
+  for (const media of mediaUploads) {
     try {
-      // Private bucket + auth-gated route: see submitAmbassadorReportAction.
-      const upload = await uploadPrivateReportMedia(file, "report-media");
+      // Uploaded straight to the private bucket; see readUploadedReportMedia.
       const mediaId = randomUUID();
       await admin.from("media_library").insert({
         id: mediaId,
-        title: file.name,
-        media_type: file.type.startsWith("video/")
-          ? "video"
-          : file.type === "application/pdf"
-            ? "document"
-            : "image",
-        storage_path: upload.storagePath,
+        title: media.title,
+        media_type: media.mediaType,
+        storage_path: media.storagePath,
         public_url: `/portal/report-media/${mediaId}`,
         uploaded_by: actor.id,
         school_id: session.school_id ?? null,
@@ -3129,6 +3006,31 @@ export async function logStaffFeedbackAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "logged", "feedback"));
 }
 
+// Back-to-back sessions of one booking on the same NZ day are a single
+// opportunity for ambassadors. Applying, withdrawing and assigning change the
+// whole day's group in one database transaction (0055 *_group functions), or
+// nothing; each returns an outcome code the action shows as-is. Emails and
+// notifications go out once per group, after the call has committed.
+type GroupResult = {
+  outcome: string;
+  booking_request_id: string | null;
+  session_ids: string[] | null;
+  [column: string]: unknown;
+};
+
+function groupResult(rows: unknown) {
+  const row = Array.isArray(rows) ? (rows[0] as GroupResult | undefined) : undefined;
+  return row && typeof row.outcome === "string" ? row : null;
+}
+
+function groupSessionIds(result: GroupResult) {
+  return (result.session_ids ?? []).filter(Boolean);
+}
+
+function logGroupFailure(rpc: string, sessionId: string, error: { code?: string; message?: string } | null) {
+  console.error(`[same-day] ${rpc} failed`, { sessionId, code: error?.code, message: error?.message });
+}
+
 export async function applyToSessionAction(formData: FormData) {
   const actor = await requirePortalAccess("ambassador");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -3146,96 +3048,21 @@ export async function applyToSessionAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("user_id", actor.id)
-    .maybeSingle();
+  const { data: rows, error } = await admin.rpc("apply_to_session_group", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_message: parsed.data.message || null
+  });
+  const result = groupResult(rows);
 
-  if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
-  }
-
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select("id, booking_request_id, status, assigned_ambassador_id")
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
-
-  if (
-    !session ||
-    session.assigned_ambassador_id ||
-    !["tentative", "applied"].includes(String(session.status))
-  ) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-open"));
-  }
-
-  const { data: existing } = await admin
-    .from("booking_session_applications")
-    .select("id, status")
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("ambassador_profile_id", ambassadorProfile.id)
-    .maybeSingle();
-
-  if (existing && existing.status !== "withdrawn") {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "already-applied"));
-  }
-
-  const { error } = existing
-    ? await admin
-        .from("booking_session_applications")
-        .update({
-          status: "applied",
-          message: parsed.data.message || null,
-          applied_at: new Date().toISOString(),
-          reviewed_at: null,
-          reviewed_by: null
-        })
-        .eq("id", existing.id)
-    : await admin.from("booking_session_applications").insert({
-        booking_session_id: parsed.data.bookingSessionId,
-        ambassador_profile_id: ambassadorProfile.id,
-        status: "applied",
-        message: parsed.data.message || null
-      });
-
-  if (error) {
+  if (error || !result) {
+    logGroupFailure("apply_to_session_group", parsed.data.bookingSessionId, error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "application-failed"));
   }
 
-  if (session.status !== "applied") {
-    await Promise.all([
-      admin
-        .from("booking_sessions")
-        .update({ status: "applied" })
-        .eq("id", parsed.data.bookingSessionId)
-        .eq("status", "tentative"),
-      admin.from("booking_status_history").insert({
-        booking_request_id: session.booking_request_id,
-        booking_session_id: parsed.data.bookingSessionId,
-        old_status: session.status,
-        new_status: "applied",
-        changed_by: actor.id,
-        reason: "Ambassador applied"
-      })
-    ]);
+  if (result.outcome !== "applied") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
   }
-
-  await refreshPreConfirmationBookingStatus({
-    admin,
-    bookingRequestId: session.booking_request_id as string,
-    actorId: actor.id,
-    actorType: "ambassador",
-    reason: "Booking application state changed"
-  });
-
-  await admin.from("booking_activity_logs").insert({
-    booking_session_id: parsed.data.bookingSessionId,
-    action: "session.applied",
-    actor_id: actor.id,
-    actor_type: "ambassador",
-    details: { ambassador_profile_id: ambassadorProfile.id }
-  });
 
   await logAuditEvent(actor.id, "session.applied", "booking_session_application");
   revalidatePath("/ambassador");
@@ -3260,122 +3087,89 @@ export async function withdrawApplicationAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("user_id", actor.id)
-    .maybeSingle();
+  const { data: rows, error } = await admin.rpc("withdraw_application_group", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_reason: parsed.data.reason
+  });
+  const result = groupResult(rows);
 
-  if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
-  }
-
-  const { data: application, error: applicationError } = await admin
-    .from("booking_session_applications")
-    .update({
-      status: "withdrawn",
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: actor.id
-    })
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("ambassador_profile_id", ambassadorProfile.id)
-    .eq("status", "applied")
-    .select("id")
-    .maybeSingle();
-
-  if (applicationError || !application) {
+  if (error || !result) {
+    logGroupFailure("withdraw_application_group", parsed.data.bookingSessionId, error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "application-not-found"));
   }
 
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select("id, booking_request_id, status, school_id, presentation_type_id, assigned_ambassador_id")
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
-
-  const { count: remainingApplications } = await admin
-    .from("booking_session_applications")
-    .select("id", { count: "exact", head: true })
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("status", "applied");
-
-  if (
-    session &&
-    !session.assigned_ambassador_id &&
-    (remainingApplications ?? 0) === 0 &&
-    ["applied", "tentative"].includes(session.status as string)
-  ) {
-    const { data: reopenedSession } = await admin
-      .from("booking_sessions")
-      .update({ status: "tentative" })
-      .eq("id", parsed.data.bookingSessionId)
-      .in("status", ["applied", "tentative"])
-      .select("id")
-      .maybeSingle();
-
-    if (reopenedSession) {
-      await admin.from("booking_status_history").insert({
-        booking_request_id: session.booking_request_id,
-        booking_session_id: parsed.data.bookingSessionId,
-        old_status: session.status,
-        new_status: "tentative",
-        changed_by: actor.id,
-        reason: "Last ambassador application was withdrawn"
-      });
-    }
+  if (result.outcome !== "withdrawn") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
   }
 
-  if (session?.booking_request_id) {
-    await refreshPreConfirmationBookingStatus({
-      admin,
-      bookingRequestId: session.booking_request_id as string,
-      actorId: actor.id,
-      actorType: "ambassador",
-      reason: "Booking application state changed"
-    });
-  }
-
-  await admin.from("booking_activity_logs").insert({
-    booking_request_id: session?.booking_request_id ?? null,
-    booking_session_id: parsed.data.bookingSessionId,
-    action: "session.application_withdrawn",
-    actor_id: actor.id,
-    actor_type: "ambassador",
-    details: {
-      ambassador_profile_id: ambassadorProfile.id,
-      reason: parsed.data.reason,
-      remaining_applications: remainingApplications ?? 0
-    }
-  });
-
-  const [{ data: school }, { data: presentation }] = await Promise.all([
-    session?.school_id
-      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    session?.presentation_type_id
-      ? admin
-          .from("presentation_types")
-          .select("title")
-          .eq("id", session.presentation_type_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null })
-  ]);
+  const bookingRequestId = result.booking_request_id;
+  const { school, presentation } = await loadSessionLabels(admin, parsed.data.bookingSessionId);
 
   void notifyStaff({
     title: `${actor.fullName} withdrew an application`,
-    body: `${actor.fullName} withdrew from ${(presentation?.title as string | null) ?? "a session"} at ${(school?.name as string | null) ?? "a school"}. Reason: ${parsed.data.reason}`,
+    body: `${actor.fullName} withdrew from ${presentation?.title ?? "a session"} at ${school?.name ?? "a school"}. Reason: ${parsed.data.reason}`,
     type: "session_application_withdrawn",
-    relatedUrl: session?.booking_request_id
-      ? `/staff/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`
+    relatedUrl: bookingRequestId
+      ? `/staff/bookings?status=all&range=all&booking=${bookingRequestId}#booking-${bookingRequestId}`
       : "/staff/bookings"
   }).catch(() => {});
 
-  await logAuditEvent(actor.id, "session.application_withdrawn", "booking_session", parsed.data.bookingSessionId);
+  for (const sessionId of groupSessionIds(result)) {
+    await logAuditEvent(actor.id, "session.application_withdrawn", "booking_session", sessionId);
+  }
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/school");
   redirect(appendSearchParam(parsed.data.returnTo, "withdrawn", "application"));
+}
+
+// School name, address and presentation title of a session, for the
+// notification and email text sent after a group change has committed.
+async function loadSessionLabels(admin: AdminClient, sessionId: string) {
+  const { data: session } = await admin
+    .from("booking_sessions")
+    .select("id, starts_at, ends_at, school_id, presentation_type_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  const [{ data: school }, { data: presentation }] = await Promise.all([
+    session?.school_id
+      ? admin.from("schools").select("name, address").eq("id", session.school_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    session?.presentation_type_id
+      ? admin.from("presentation_types").select("title").eq("id", session.presentation_type_id).maybeSingle()
+      : Promise.resolve({ data: null })
+  ]);
+
+  return {
+    session: session as { id: string; starts_at: string; ends_at: string } | null,
+    school: school as { name: string | null; address: string | null } | null,
+    presentation: presentation as { title: string | null } | null
+  };
+}
+
+// The user behind an ambassador profile, for notifications and emails.
+async function loadAmbassadorContact(admin: AdminClient, ambassadorProfileId: string | null) {
+  if (!ambassadorProfileId) {
+    return { userId: null, email: null, fullName: null };
+  }
+
+  const { data: profile } = await admin
+    .from("ambassador_profiles")
+    .select("user_id")
+    .eq("id", ambassadorProfileId)
+    .maybeSingle();
+  const userId = (profile?.user_id as string | null) ?? null;
+  const { data: user } = userId
+    ? await admin.from("profiles").select("email, full_name").eq("id", userId).maybeSingle()
+    : { data: null };
+
+  return {
+    userId,
+    email: (user?.email as string | null) ?? null,
+    fullName: (user?.full_name as string | null) ?? null
+  };
 }
 
 export async function requestSessionWithdrawalAction(formData: FormData) {
@@ -3386,6 +3180,7 @@ export async function requestSessionWithdrawalAction(formData: FormData) {
   );
   const parsed = sessionWithdrawalRequestSchema.safeParse({
     bookingSessionId: String(formData.get("bookingSessionId") || ""),
+    reasonType: String(formData.get("reasonType") || ""),
     reason: String(formData.get("reason") || ""),
     returnTo: fallbackReturnTo
   });
@@ -3395,104 +3190,38 @@ export async function requestSessionWithdrawalAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("user_id", actor.id)
-    .maybeSingle();
+  const { data: rows, error } = await admin.rpc("request_session_withdrawal_group", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_reason_type: parsed.data.reasonType,
+    p_reason: parsed.data.reason
+  });
+  const result = groupResult(rows);
 
-  if (!ambassadorProfile) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
-  }
-
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select(
-      "id, booking_request_id, assigned_ambassador_id, status, starts_at, school_id, presentation_type_id, withdrawal_requested_at"
-    )
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
-
-  if (!session || session.assigned_ambassador_id !== ambassadorProfile.id) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "not-your-session"));
-  }
-
-  if (new Date(session.starts_at as string).getTime() <= Date.now()) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-already-started"));
-  }
-
-  if (session.status === "withdrawal_requested" || session.withdrawal_requested_at) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-already-requested"));
-  }
-
-  if (!["ambassador_assigned", "confirmed"].includes(session.status as string)) {
+  if (error || !result) {
+    logGroupFailure("request_session_withdrawal_group", parsed.data.bookingSessionId, error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-not-allowed"));
   }
 
-  const requestedAt = new Date().toISOString();
-  const priorStatus = session.status as string;
-  const { data: updatedSession, error } = await admin
-    .from("booking_sessions")
-    .update({
-      status: "withdrawal_requested",
-      withdrawal_reason: parsed.data.reason,
-      withdrawal_requested_at: requestedAt
-    })
-    .eq("id", parsed.data.bookingSessionId)
-    .eq("assigned_ambassador_id", ambassadorProfile.id)
-    .in("status", ["ambassador_assigned", "confirmed"])
-    .select("id")
-    .maybeSingle();
-
-  if (error || !updatedSession) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "withdrawal-not-allowed"));
+  if (result.outcome !== "requested") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
   }
 
-  await admin.from("booking_status_history").insert({
-    booking_request_id: session.booking_request_id,
-    booking_session_id: parsed.data.bookingSessionId,
-    old_status: priorStatus,
-    new_status: "withdrawal_requested",
-    changed_by: actor.id,
-    reason: parsed.data.reason
-  });
-
-  await admin.from("booking_activity_logs").insert({
-    booking_request_id: session.booking_request_id,
-    booking_session_id: parsed.data.bookingSessionId,
-    action: "session.withdrawal_requested",
-    actor_id: actor.id,
-    actor_type: "ambassador",
-    details: {
-      reason: parsed.data.reason,
-      prior_status: priorStatus,
-      ambassador_profile_id: ambassadorProfile.id
-    }
-  });
-
-  const [{ data: school }, { data: presentation }] = await Promise.all([
-    session.school_id
-      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    session.presentation_type_id
-      ? admin
-          .from("presentation_types")
-          .select("title")
-          .eq("id", session.presentation_type_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null })
-  ]);
+  const bookingRequestId = result.booking_request_id;
+  const { school, presentation } = await loadSessionLabels(admin, parsed.data.bookingSessionId);
 
   void notifyStaff({
     title: `${actor.fullName} asked to withdraw`,
-    body: `${(presentation?.title as string | null) ?? "Session"} at ${(school?.name as string | null) ?? "a school"}: ${parsed.data.reason}`,
+    body: `${presentation?.title ?? "Session"} at ${school?.name ?? "a school"}: ${parsed.data.reason}`,
     type: "session_withdrawal_requested",
-    relatedUrl: session.booking_request_id
-      ? `/staff/bookings?status=all&range=all&booking=${session.booking_request_id}#booking-${session.booking_request_id}`
+    relatedUrl: bookingRequestId
+      ? `/staff/bookings?status=all&range=all&booking=${bookingRequestId}#booking-${bookingRequestId}`
       : "/staff/bookings"
   }).catch(() => {});
 
-  await logAuditEvent(actor.id, "session.withdrawal_requested", "booking_session", parsed.data.bookingSessionId);
+  for (const sessionId of groupSessionIds(result)) {
+    await logAuditEvent(actor.id, "session.withdrawal_requested", "booking_session", sessionId);
+  }
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -4059,140 +3788,47 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-change-request"));
   }
 
+  // Ownership, the cancellable sessions (upcoming and undelivered, judged
+  // under the locks), the booking, history, activity and applications are
+  // all handled by one transaction (0055); nothing is half cancelled.
   const admin = getAdminClientOrThrow();
-  const { data: booking } = await admin
-    .from("booking_requests")
-    .select("id, reference_code, school_id, primary_contact_id, status, submitted_by_user_id")
-    .eq("id", parsed.data.bookingRequestId)
-    .maybeSingle();
+  const { data: rows, error } = await admin.rpc("cancel_school_booking", {
+    p_booking_id: parsed.data.bookingRequestId,
+    p_actor_id: actor.id,
+    p_notes: parsed.data.notes ?? null
+  });
+  const result = groupResult(rows);
 
-  if (!booking) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
+  if (error || !result) {
+    logGroupFailure("cancel_school_booking", parsed.data.bookingRequestId, error);
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
   }
 
-  const { data: contactUsers } = await admin
-    .from("school_contact_users")
-    .select("school_contact_id")
-    .eq("user_id", actor.id);
-  const contactIds = (contactUsers ?? []).map((contact) => contact.school_contact_id as string);
-  const { data: contacts } = contactIds.length
-    ? await admin.from("school_contacts").select("school_id").in("id", contactIds)
-    : { data: [] };
-  const schoolIds = new Set((contacts ?? []).map((contact) => contact.school_id as string));
-
-  // Ownership mirrors the school-portal visibility predicate: a booking is
-  // theirs when it belongs to one of their schools OR they submitted it.
-  if (
-    !schoolIds.has(booking.school_id as string) &&
-    booking.submitted_by_user_id !== actor.id
-  ) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-owned"));
+  if (result.outcome !== "cancelled") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
   }
 
-  if (!NON_TERMINAL_SESSION_STATUSES.includes(String(booking.status))) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-cancellable"));
-  }
-
-  const nextStatus = "cancelled";
-  const noteParts = [parsed.data.notes].filter(Boolean);
-  const { data: bookingSessions } = await admin
-    .from("booking_sessions")
-    .select(
-      "id, status, assigned_ambassador_id, starts_at, ends_at, presentation_type_id"
-    )
-    .eq("booking_request_id", parsed.data.bookingRequestId);
-  // A session that has already started may have been delivered; it stays
-  // for staff to resolve rather than being cancelled from the school portal.
+  const cancelledIds = groupSessionIds(result);
   const now = Date.now();
-  const activeSessions = (bookingSessions ?? []).filter(
-    (session) =>
-      NON_TERMINAL_SESSION_STATUSES.includes(String(session.status)) &&
-      (!session.starts_at || new Date(session.starts_at as string).getTime() > now)
-  );
-  const cancelsWholeBooking = (bookingSessions ?? []).every(
-    (session) =>
-      activeSessions.includes(session) ||
-      ["cancelled", "declined"].includes(String(session.status))
-  );
-
-  if (!activeSessions.length && (bookingSessions ?? []).length) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-cancellable"));
-  }
-
-  if (cancelsWholeBooking) {
-    const { data: cancelledBooking, error } = await admin
-      .from("booking_requests")
-      .update({
-        status: nextStatus,
-        requested_different_time: false,
-        requested_time_notes: noteParts.join("\n") || null
-      })
-      .eq("id", parsed.data.bookingRequestId)
-      .eq("status", booking.status)
-      .select("id")
-      .maybeSingle();
-
-    if (error || !cancelledBooking) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
-    }
-  }
-
-  if (activeSessions?.length) {
-    const { error: sessionError } = await admin
-      .from("booking_sessions")
-      .update({ status: nextStatus, share_contact_with_ambassador: false })
-      .in(
-        "id",
-        activeSessions.map((session) => session.id as string)
-      );
-
-    if (sessionError) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
-    }
-  }
-
-  await admin.from("booking_status_history").insert([
-    ...(cancelsWholeBooking
-      ? [
-          {
-            booking_request_id: parsed.data.bookingRequestId,
-            old_status: booking.status,
-            new_status: nextStatus,
-            changed_by: actor.id,
-            reason: noteParts.join(" ") || "School cancelled booking"
-          }
-        ]
-      : []),
-    ...(activeSessions ?? []).map((session) => ({
-      booking_request_id: parsed.data.bookingRequestId,
-      booking_session_id: session.id,
-      old_status: session.status,
-      new_status: nextStatus,
-      changed_by: actor.id,
-      reason: noteParts.join(" ") || "School cancelled booking"
-    }))
+  const [{ data: booking }, { data: cancelledRows }] = await Promise.all([
+    admin.from("booking_requests").select("school_id").eq("id", parsed.data.bookingRequestId).maybeSingle(),
+    cancelledIds.length
+      ? admin
+          .from("booking_sessions")
+          .select("id, assigned_ambassador_id, starts_at, presentation_type_id")
+          .in("id", cancelledIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> })
   ]);
+  const activeSessions = (cancelledRows ?? []) as Array<{
+    id: string;
+    assigned_ambassador_id: string | null;
+    starts_at: string;
+    presentation_type_id: string | null;
+  }>;
 
-  await admin.from("booking_activity_logs").insert([
-    {
-      booking_request_id: parsed.data.bookingRequestId,
-      action: "booking.cancelled_by_school",
-      actor_id: actor.id,
-      actor_type: "school",
-      details: { notes: parsed.data.notes ?? null }
-    },
-    ...(activeSessions ?? []).map((session) => ({
-      booking_request_id: parsed.data.bookingRequestId,
-      booking_session_id: session.id,
-      action: "session.cancelled_by_school",
-      actor_id: actor.id,
-      actor_type: "school",
-      details: { notes: parsed.data.notes ?? null }
-    }))
-  ]);
-
-  const { data: changeSchool } = await admin.from("schools").select("name")
-    .eq("id", booking.school_id).maybeSingle();
+  const { data: changeSchool } = booking?.school_id
+    ? await admin.from("schools").select("name").eq("id", booking.school_id).maybeSingle()
+    : { data: null };
   // Late cancellations are allowed (plans change), but staff and the
   // assigned ambassador need to hear about them straight away.
   const lateSessions = activeSessions.filter(
@@ -4210,8 +3846,9 @@ export async function requestSchoolBookingChangeAction(formData: FormData) {
     relatedUrl: "/staff/bookings"
   }).catch(() => {});
 
-  scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId,
-    (activeSessions ?? []).map((session) => session.id as string), "cancelled"));
+  if (cancelledIds.length) {
+    scheduleEmail(() => sendSchoolStatusChangeEmails(parsed.data.bookingRequestId, cancelledIds, "cancelled"));
+  }
 
   const ambassadorIds = [
     ...new Set(
@@ -4343,72 +3980,29 @@ export async function requestSchoolSessionRescheduleAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-reschedulable"));
   }
 
-  const [{ data: contactUsers }, { data: rescheduleBooking }] = await Promise.all([
-    admin.from("school_contact_users").select("school_contact_id").eq("user_id", actor.id),
-    admin
-      .from("booking_requests")
-      .select("submitted_by_user_id")
-      .eq("id", parsed.data.bookingRequestId)
-      .maybeSingle()
-  ]);
-  const contactIds = (contactUsers ?? []).map((contact) => contact.school_contact_id as string);
-  const { data: contacts } = contactIds.length
-    ? await admin.from("school_contacts").select("school_id").in("id", contactIds)
-    : { data: [] };
-  const schoolIds = new Set((contacts ?? []).map((contact) => contact.school_id as string));
+  // Ownership, state and the session's status and start time as read above
+  // are re-checked under the table lock, and the request, history and
+  // activity are written together (0055): a cancellation or move that
+  // landed after the read is never overwritten.
+  const { data: requestRows, error } = await admin.rpc("request_school_session_reschedule", {
+    p_booking_id: parsed.data.bookingRequestId,
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_preferred_date: parsed.data.preferredDate,
+    p_notes: parsed.data.notes,
+    p_expected_status: session.status as string,
+    p_expected_starts_at: session.starts_at as string
+  });
+  const requestResult = groupResult(requestRows);
 
-  // Ownership mirrors the school-portal visibility predicate: a booking is
-  // theirs when it belongs to one of their schools OR they submitted it.
-  if (
-    !schoolIds.has(session.school_id as string) &&
-    rescheduleBooking?.submitted_by_user_id !== actor.id
-  ) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-owned"));
-  }
-
-  const requestedAt = new Date().toISOString();
-  const previousStatus = session.status as string;
-  const { data: updatedSession, error } = await admin
-    .from("booking_sessions")
-    .update({
-      status: "reschedule_requested",
-      reschedule_requested_date: parsed.data.preferredDate,
-      reschedule_request_notes: parsed.data.notes,
-      reschedule_requested_at: requestedAt,
-      reschedule_previous_status: previousStatus
-    })
-    .eq("id", parsed.data.bookingSessionId)
-    .eq("status", previousStatus)
-    .select("id")
-    .maybeSingle();
-
-  // No row back means the session changed status since it was read.
-  if (error || !updatedSession) {
+  if (error || !requestResult) {
+    logGroupFailure("request_school_session_reschedule", parsed.data.bookingSessionId, error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "change-request-failed"));
   }
 
-  await Promise.all([
-    admin.from("booking_status_history").insert({
-      booking_request_id: parsed.data.bookingRequestId,
-      booking_session_id: parsed.data.bookingSessionId,
-      old_status: previousStatus,
-      new_status: "reschedule_requested",
-      changed_by: actor.id,
-      reason: `${parsed.data.preferredDate}: ${parsed.data.notes}`
-    }),
-    admin.from("booking_activity_logs").insert({
-      booking_request_id: parsed.data.bookingRequestId,
-      booking_session_id: parsed.data.bookingSessionId,
-      action: "session.reschedule_requested",
-      actor_id: actor.id,
-      actor_type: "school",
-      details: {
-        preferred_date: parsed.data.preferredDate,
-        notes: parsed.data.notes,
-        previous_status: previousStatus
-      }
-    })
-  ]);
+  if (requestResult.outcome !== "requested") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", requestResult.outcome));
+  }
 
   const { data: school } = await admin
     .from("schools")
@@ -4470,17 +4064,6 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "no-reschedule-pending"));
   }
 
-  const previousStatus = String(
-    session.reschedule_previous_status ||
-      (session.assigned_ambassador_id ? "ambassador_assigned" : "tentative")
-  );
-  const updatePayload: Record<string, string | null> = {
-    status: previousStatus,
-    reschedule_requested_date: null,
-    reschedule_request_notes: null,
-    reschedule_requested_at: null,
-    reschedule_previous_status: null
-  };
   let finalStartsAt = session.starts_at as string;
   let finalEndsAt = session.ends_at as string;
 
@@ -4524,22 +4107,47 @@ export async function resolveSessionRescheduleAction(formData: FormData) {
       redirect(appendSearchParam(parsed.data.returnTo, "error", "reschedule-time-unavailable"));
     }
 
-    updatePayload.starts_at = finalStartsAt;
-    updatePayload.ends_at = finalEndsAt;
+    // The assigned ambassador can't be in two places at once. Checked here
+    // for a clear message, and again atomically by the RPC below.
+    if (session.assigned_ambassador_id) {
+      const { data: ambassadorSessions } = await admin
+        .from("booking_sessions")
+        .select("id, status, starts_at, ends_at")
+        .eq("assigned_ambassador_id", session.assigned_ambassador_id as string)
+        .lt("starts_at", finalEndsAt)
+        .gt("ends_at", finalStartsAt);
+
+      if (
+        findOverlappingSession(
+          (ambassadorSessions ?? []) as Array<{ id: string; status: string; starts_at: string; ends_at: string }>,
+          session.id as string,
+          finalStartsAt,
+          finalEndsAt
+        )
+      ) {
+        redirect(appendSearchParam(parsed.data.returnTo, "error", "reschedule-ambassador-conflict"));
+      }
+    }
   }
 
-  const { data: updatedSession, error } = await admin
-    .from("booking_sessions")
-    .update(updatePayload)
-    .eq("id", parsed.data.bookingSessionId)
-    .eq("status", "reschedule_requested")
-    .select("id")
-    .maybeSingle();
+  const { data: resolutionRows, error } = await admin.rpc("resolve_session_reschedule", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_decision: parsed.data.decision,
+    p_new_start: parsed.data.decision === "approve" ? finalStartsAt : null,
+    p_new_end: parsed.data.decision === "approve" ? finalEndsAt : null
+  });
+  const resolution = Array.isArray(resolutionRows) ? resolutionRows[0] : null;
 
-  // No row back means someone else already resolved this request.
-  if (error || !updatedSession) {
+  if (resolution?.outcome === "ambassador-conflict") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "reschedule-ambassador-conflict"));
+  }
+
+  // Not "resolved" means someone else already resolved this request.
+  if (error || resolution?.outcome !== "resolved") {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "reschedule-resolution-failed"));
   }
+
+  const previousStatus = String(resolution.restored_status);
 
   await Promise.all([
     admin.from("booking_status_history").insert({
@@ -4637,162 +4245,92 @@ export async function resolveSessionWithdrawalAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select(
-      "id, booking_request_id, assigned_ambassador_id, status, starts_at, school_id, presentation_type_id, withdrawal_reason"
-    )
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
+  const decision = parsed.data.decision;
+  const reopen = decision === "reopen";
+  const cancelRebooked = decision === "cancel_rebooked";
+  const { data: rows, error } = await admin.rpc("resolve_session_withdrawal_group", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_decision: decision,
+    p_note: parsed.data.note ?? null
+  });
+  const result = groupResult(rows);
 
-  if (!session || session.status !== "withdrawal_requested") {
+  if (error || !result) {
+    logGroupFailure("resolve_session_withdrawal_group", parsed.data.bookingSessionId, error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "no-withdrawal-pending"));
   }
 
-  const { data: latestWithdrawalHistory } = await admin
-    .from("booking_status_history")
-    .select("old_status")
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("new_status", "withdrawal_requested")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (result.outcome !== "resolved") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
+  }
 
-  const priorStatus =
-    typeof latestWithdrawalHistory?.old_status === "string" &&
-    ["ambassador_assigned", "confirmed"].includes(latestWithdrawalHistory.old_status)
-      ? latestWithdrawalHistory.old_status
-      : "ambassador_assigned";
-  const assignedAmbassadorId = session.assigned_ambassador_id as string | null;
-  const [{ data: ambassadorProfile }, { data: school }, { data: presentation }] = await Promise.all([
-    assignedAmbassadorId
-      ? admin
-          .from("ambassador_profiles")
-          .select("id, user_id")
-          .eq("id", assignedAmbassadorId)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    session.school_id
-      ? admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    session.presentation_type_id
-      ? admin
-          .from("presentation_types")
-          .select("title")
-          .eq("id", session.presentation_type_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null })
+  const sessionIds = groupSessionIds(result);
+  const activityAction = reopen
+    ? "session.withdrawal_approved"
+    : cancelRebooked
+      ? "session.withdrawal_cancelled_rebooked"
+      : "session.withdrawal_declined";
+  const [{ session, school, presentation }, ambassador] = await Promise.all([
+    loadSessionLabels(admin, parsed.data.bookingSessionId),
+    loadAmbassadorContact(admin, (result.ambassador_profile_id as string | null) ?? null)
   ]);
-  const { data: ambassadorUser } = ambassadorProfile?.user_id
-    ? await admin
-        .from("profiles")
-        .select("email, full_name")
-        .eq("id", ambassadorProfile.user_id)
-        .maybeSingle()
-    : { data: null };
+  const sessionTitle = presentation?.title ?? "the session";
+  const schoolName = school?.name ?? "School";
 
-  const approved = parsed.data.decision === "approve";
-  const nextStatus = approved ? "tentative" : priorStatus;
-  const { data: updatedSession, error: updateError } = await admin
-    .from("booking_sessions")
-    .update({
-      status: nextStatus,
-      assigned_ambassador_id: approved ? null : assignedAmbassadorId,
-      ...(approved ? { share_contact_with_ambassador: false } : {}),
-      withdrawal_reason: null,
-      withdrawal_requested_at: null
-    })
-    .eq("id", parsed.data.bookingSessionId)
-    .eq("status", "withdrawal_requested")
-    .select("id")
-    .maybeSingle();
-
-  if (updateError || !updatedSession) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "no-withdrawal-pending"));
-  }
-
-  if (approved && assignedAmbassadorId) {
-    await admin
-      .from("booking_session_applications")
-      .update({
-        status: "withdrawn",
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: actor.id
-      })
-      .eq("booking_session_id", parsed.data.bookingSessionId)
-      .eq("ambassador_profile_id", assignedAmbassadorId);
-  }
-
-  await admin.from("booking_status_history").insert({
-    booking_request_id: session.booking_request_id,
-    booking_session_id: parsed.data.bookingSessionId,
-    old_status: "withdrawal_requested",
-    new_status: nextStatus,
-    changed_by: actor.id,
-    reason:
-      parsed.data.note ||
-      (approved ? "Withdrawal approved by staff" : "Withdrawal declined by staff")
-  });
-
-  await admin.from("booking_activity_logs").insert({
-    booking_request_id: session.booking_request_id,
-    booking_session_id: parsed.data.bookingSessionId,
-    action: approved ? "session.withdrawal_approved" : "session.withdrawal_declined",
-    actor_id: actor.id,
-    actor_type: "staff",
-    details: {
-      ambassador_profile_id: assignedAmbassadorId,
-      original_reason: session.withdrawal_reason,
-      note: parsed.data.note ?? null,
-      restored_status: approved ? null : priorStatus
-    }
-  });
-
-  if (ambassadorProfile?.user_id) {
-    void notifyUser(ambassadorProfile.user_id as string, {
-      title: approved ? "Withdrawal approved" : "Withdrawal declined",
-      body: approved
-        ? `${(presentation?.title as string | null) ?? "Your session"} has been reopened for another ambassador.`
-        : `You remain assigned to ${(presentation?.title as string | null) ?? "the session"}.${parsed.data.note ? ` Note from staff: ${parsed.data.note}` : ""}`,
-      type: approved ? "session_withdrawal_approved" : "session_withdrawal_declined",
-      relatedUrl: approved ? "/ambassador/open-bookings" : "/ambassador/upcoming"
+  // One message for the day's sessions, about the session staff acted on.
+  if (ambassador.userId) {
+    void notifyUser(ambassador.userId, {
+      title: reopen ? "Withdrawal approved" : cancelRebooked ? "Session cancelled" : "You're still assigned",
+      body: reopen
+        ? `${presentation?.title ?? "Your session"} has been reopened for another ambassador.`
+        : cancelRebooked
+          ? `${sessionTitle} at ${schoolName} has been cancelled because the school was rebooked. You no longer need to attend.`
+          : `You remain assigned to ${sessionTitle}.${parsed.data.note ? ` Note from staff: ${parsed.data.note}` : ""}`,
+      type: reopen
+        ? "session_withdrawal_approved"
+        : cancelRebooked
+          ? "session_withdrawal_cancelled"
+          : "session_withdrawal_declined",
+      relatedUrl: reopen ? "/ambassador/open-bookings" : "/ambassador/upcoming"
     }).catch(() => {});
   }
 
-  if (ambassadorUser?.email) {
-    scheduleEmail(() => sendAmbassadorWithdrawalResolvedEmail({
-      ambassadorEmail: ambassadorUser.email as string,
-      ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
-      schoolName: (school?.name as string | null) ?? "School",
-      sessionDate: formatDateTime(session.starts_at as string),
-      presentationTitle: (presentation?.title as string | null) ?? "Presentation",
-      decision: approved ? "approved" : "declined",
-      staffNote: parsed.data.note,
+  if (ambassador.email && session) {
+    const ambassadorEmail = {
+      ambassadorEmail: ambassador.email,
+      ambassadorName: ambassador.fullName ?? "Ambassador",
+      schoolName,
+      sessionDate: formatDateTime(session.starts_at),
+      presentationTitle: presentation?.title ?? "Presentation",
       bookingSessionId: parsed.data.bookingSessionId
-    }));
+    };
+    scheduleEmail(() =>
+      cancelRebooked
+        ? sendAmbassadorLateCancellationEmail(ambassadorEmail)
+        : sendAmbassadorWithdrawalResolvedEmail({
+            ...ambassadorEmail,
+            decision: reopen ? "approved" : "declined",
+            staffNote: parsed.data.note
+          })
+    );
   }
 
-  await logAuditEvent(
-    actor.id,
-    approved ? "session.withdrawal_approved" : "session.withdrawal_declined",
-    "booking_session",
-    parsed.data.bookingSessionId
-  );
-  if (approved && session.booking_request_id) {
-    await refreshPreConfirmationBookingStatus({
-      admin,
-      bookingRequestId: session.booking_request_id as string,
-      actorId: actor.id,
-      actorType: "staff",
-      reason: "Ambassador withdrawal changed assignment coverage"
-    });
+  for (const sessionId of sessionIds) {
+    await logAuditEvent(actor.id, activityAction, "booking_session", sessionId);
   }
-  scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
+  scheduleCalendarSync({ sessionIds });
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/ambassador");
   revalidatePath("/school");
-  redirect(appendSearchParam(parsed.data.returnTo, "withdrawal", approved ? "approved" : "declined"));
+  redirect(
+    appendSearchParam(
+      parsed.data.returnTo,
+      "withdrawal",
+      reopen ? "approved" : cancelRebooked ? "cancelled" : "declined"
+    )
+  );
 }
 
 export async function assignAmbassadorAction(formData: FormData) {
@@ -4812,131 +4350,51 @@ export async function assignAmbassadorAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-assign"));
   }
 
+  // One ambassador covers the whole day: sessions that shared the previous
+  // assignment (or had none) follow this one, in one transaction that also
+  // refuses a time clash with the ambassador's other sessions.
   const admin = getAdminClientOrThrow();
-  const { data: currentSession } = await admin
-    .from("booking_sessions")
-    .select(
-      "id, booking_request_id, status, assigned_ambassador_id, starts_at, ends_at, school_id, presentation_type_id"
-    )
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
+  const { data: rows, error } = await admin.rpc("assign_ambassador_group", {
+    p_session_id: parsed.data.bookingSessionId,
+    p_actor_id: actor.id,
+    p_ambassador_profile_id: parsed.data.ambassadorProfileId || null
+  });
+  const result = groupResult(rows);
+  const unassigning = !parsed.data.ambassadorProfileId;
 
-  if (!currentSession) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-found"));
+  if (error || !result) {
+    logGroupFailure("assign_ambassador_group", parsed.data.bookingSessionId, error);
+    redirect(appendSearchParam(parsed.data.returnTo, "error", unassigning ? "unassign-failed" : "assign-failed"));
   }
 
-  const previousAmbassadorId = (currentSession.assigned_ambassador_id as string | null) ?? null;
-
-  // Delivered and closed sessions keep their ambassador: changing it would
-  // put a finished session back into the open pool or move its payment.
-  if (!NON_TERMINAL_SESSION_STATUSES.includes(String(currentSession.status))) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assignable"));
+  if (result.outcome === "already-assigned") {
+    redirect(appendSearchParam(parsed.data.returnTo, "assigned", "1"));
   }
 
-  if (!parsed.data.ambassadorProfileId) {
-    if (!previousAmbassadorId) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assigned"));
-    }
+  if (result.outcome !== (unassigning ? "unassigned" : "assigned")) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", result.outcome));
+  }
 
-    const { count: activeApplicationCount } = await admin
-      .from("booking_session_applications")
-      .select("id", { count: "exact", head: true })
-      .eq("booking_session_id", parsed.data.bookingSessionId)
-      .eq("status", "applied");
-    const nextStatus = (activeApplicationCount ?? 0) > 0 ? "applied" : "tentative";
-    const { data: unassignedSession, error: unassignError } = await admin
-      .from("booking_sessions")
-      .update({
-        assigned_ambassador_id: null,
-        share_contact_with_ambassador: false,
-        status: nextStatus,
-        withdrawal_reason: null,
-        withdrawal_requested_at: null
-      })
-      .eq("id", parsed.data.bookingSessionId)
-      .eq("assigned_ambassador_id", previousAmbassadorId)
-      .in("status", NON_TERMINAL_SESSION_STATUSES)
-      .select("id")
-      .maybeSingle();
+  const sessionIds = groupSessionIds(result);
+  const previousAmbassadorId = (result.previous_ambassador_id as string | null) ?? null;
+  const { session, school, presentation } = await loadSessionLabels(admin, parsed.data.bookingSessionId);
 
-    if (unassignError || !unassignedSession) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "unassign-failed"));
-    }
+  if (unassigning) {
+    const previous = await loadAmbassadorContact(admin, previousAmbassadorId);
 
-    await Promise.all([
-      admin
-        .from("booking_session_applications")
-        .update({
-          status: "withdrawn",
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: actor.id
-        })
-        .eq("booking_session_id", parsed.data.bookingSessionId)
-        .eq("ambassador_profile_id", previousAmbassadorId)
-        .eq("status", "accepted"),
-      admin.from("booking_status_history").insert({
-        booking_request_id: currentSession.booking_request_id,
-        booking_session_id: parsed.data.bookingSessionId,
-        old_status: currentSession.status,
-        new_status: nextStatus,
-        changed_by: actor.id,
-        reason: "Ambassador unassigned by staff"
-      }),
-      admin.from("booking_activity_logs").insert({
-        booking_request_id: currentSession.booking_request_id,
-        booking_session_id: parsed.data.bookingSessionId,
-        action: "session.ambassador_unassigned",
-        actor_id: actor.id,
-        actor_type: "staff",
-        details: { previous_ambassador_profile_id: previousAmbassadorId }
-      })
-    ]);
-
-    const [{ data: previousProfile }, { data: school }, { data: presentation }] =
-      await Promise.all([
-        admin
-          .from("ambassador_profiles")
-          .select("user_id")
-          .eq("id", previousAmbassadorId)
-          .maybeSingle(),
-        currentSession.school_id
-          ? admin
-              .from("schools")
-              .select("name")
-              .eq("id", currentSession.school_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null }),
-        currentSession.presentation_type_id
-          ? admin
-              .from("presentation_types")
-              .select("title")
-              .eq("id", currentSession.presentation_type_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null })
-      ]);
-
-    if (previousProfile?.user_id) {
-      void notifyUser(previousProfile.user_id as string, {
+    if (previous.userId) {
+      void notifyUser(previous.userId, {
         title: "You are no longer assigned",
-        body: `${(presentation?.title as string | null) ?? "The session"} at ${(school?.name as string | null) ?? "a school"} was removed from your assignments.`,
+        body: `${presentation?.title ?? "The session"} at ${school?.name ?? "a school"} was removed from your assignments.`,
         type: "session_unassigned",
         relatedUrl: "/ambassador/upcoming"
       }).catch(() => {});
     }
 
-    await refreshPreConfirmationBookingStatus({
-      admin,
-      bookingRequestId: currentSession.booking_request_id as string,
-      actorId: actor.id,
-      actorType: "staff",
-      reason: "Ambassador assignment changed"
-    });
-    await logAuditEvent(
-      actor.id,
-      "session.ambassador_unassigned",
-      "booking_session",
-      parsed.data.bookingSessionId
-    );
+    for (const sessionId of sessionIds) {
+      await logAuditEvent(actor.id, "session.ambassador_unassigned", "booking_session", sessionId);
+    }
+    scheduleCalendarSync({ sessionIds });
     revalidatePath("/staff");
     revalidatePath("/admin");
     revalidatePath("/ambassador");
@@ -4944,184 +4402,51 @@ export async function assignAmbassadorAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "unassigned", "1"));
   }
 
-  const { data: nextAmbassador } = await admin
-    .from("ambassador_profiles")
-    .select("id")
-    .eq("id", parsed.data.ambassadorProfileId)
-    .eq("status", "approved")
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (!nextAmbassador) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-approved"));
-  }
-
-  const replacingPendingWithdrawal =
-    currentSession.status === "withdrawal_requested" &&
-    previousAmbassadorId &&
-    previousAmbassadorId !== parsed.data.ambassadorProfileId;
-  const { data: appliedApplications } = await admin
-    .from("booking_session_applications")
-    .select("ambassador_profile_id")
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("status", "applied")
-    .neq("ambassador_profile_id", parsed.data.ambassadorProfileId);
-  const declinedApplicantIds = [
-    ...new Set((appliedApplications ?? []).map((application) => application.ambassador_profile_id as string))
-  ];
-  const { data: declinedApplicantProfiles } = declinedApplicantIds.length
-    ? await admin
-        .from("ambassador_profiles")
-        .select("id, user_id")
-        .in("id", declinedApplicantIds)
-    : { data: [] };
-
-  const assignableStatuses = [
-    "tentative",
-    "applied",
-    "ambassador_assigned",
-    "confirmed",
-    "withdrawal_requested",
-    "reschedule_requested"
-  ];
-  const assignedStatus = ["confirmed", "reschedule_requested"].includes(
-    String(currentSession.status)
-  )
-    ? String(currentSession.status)
-    : "ambassador_assigned";
-  const { data: assignedSession, error } = await admin
-    .from("booking_sessions")
-    .update({
-      assigned_ambassador_id: parsed.data.ambassadorProfileId,
-      share_contact_with_ambassador: true,
-      status: assignedStatus,
-      withdrawal_reason: null,
-      withdrawal_requested_at: null
-    })
-    .eq("id", parsed.data.bookingSessionId)
-    .in("status", assignableStatuses)
-    .select("id")
-    .maybeSingle();
-
-  if (error || !assignedSession) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "assign-failed"));
-  }
-
-  await admin
-    .from("booking_session_applications")
-    .update({
-      status: "accepted",
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: actor.id
-    })
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("ambassador_profile_id", parsed.data.ambassadorProfileId);
-
-  await admin
-    .from("booking_session_applications")
-    .update({
-      status: "declined",
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: actor.id
-    })
-    .eq("booking_session_id", parsed.data.bookingSessionId)
-    .eq("status", "applied")
-    .neq("ambassador_profile_id", parsed.data.ambassadorProfileId);
-
-  if (replacingPendingWithdrawal && previousAmbassadorId) {
-    await admin
-      .from("booking_session_applications")
-      .update({
-        status: "withdrawn",
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: actor.id
-      })
-      .eq("booking_session_id", parsed.data.bookingSessionId)
-      .eq("ambassador_profile_id", previousAmbassadorId);
-  }
-
-  await admin.from("booking_status_history").insert({
-    booking_request_id: currentSession.booking_request_id,
-    booking_session_id: parsed.data.bookingSessionId,
-    old_status: currentSession.status,
-    new_status: assignedStatus,
-    changed_by: actor.id,
-    reason: "Ambassador manually assigned by staff"
-  });
-
-  await admin.from("booking_activity_logs").insert({
-    booking_session_id: parsed.data.bookingSessionId,
-    action: "session.ambassador_assigned",
-    actor_id: actor.id,
-    actor_type: "staff",
-    details: {
-      ambassador_profile_id: parsed.data.ambassadorProfileId,
-      previous_ambassador_profile_id: previousAmbassadorId
-    }
-  });
-
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select("id, booking_request_id, starts_at, ends_at, school_id, presentation_type_id")
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
+  const declinedAmbassadorIds = ((result.declined_ambassador_ids as string[] | null) ?? []).filter(Boolean);
   // Missing until the 0050 migration is applied; treated as in person.
-  const { data: sessionDelivery } = await admin
-    .from("booking_sessions")
-    .select("delivery_mode, meeting_url")
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
-  const { data: school } = session?.school_id
-    ? await admin.from("schools").select("name, address").eq("id", session.school_id).maybeSingle()
-    : { data: null };
-  const { data: presentation } = session?.presentation_type_id
-    ? await admin.from("presentation_types").select("title").eq("id", session.presentation_type_id).maybeSingle()
-    : { data: null };
-  const { data: ambassadorProfile } = await admin
-    .from("ambassador_profiles")
-    .select("user_id")
-    .eq("id", parsed.data.ambassadorProfileId)
-    .maybeSingle();
-  const { data: ambassadorUser } = ambassadorProfile?.user_id
-    ? await admin
-        .from("profiles")
-        .select("email, full_name")
-        .eq("id", ambassadorProfile.user_id)
-        .maybeSingle()
-    : { data: null };
-  const { data: previousAmbassadorProfile } = replacingPendingWithdrawal && previousAmbassadorId
-    ? await admin
-        .from("ambassador_profiles")
-        .select("user_id")
-        .eq("id", previousAmbassadorId)
-        .maybeSingle()
-    : { data: null };
+  const [{ data: sessionDelivery }, ambassador, previous, { data: declinedApplicantProfiles }] =
+    await Promise.all([
+      admin
+        .from("booking_sessions")
+        .select("delivery_mode, meeting_url")
+        .eq("id", parsed.data.bookingSessionId)
+        .maybeSingle(),
+      loadAmbassadorContact(admin, parsed.data.ambassadorProfileId),
+      result.replaced_withdrawal ? loadAmbassadorContact(admin, previousAmbassadorId) : Promise.resolve(null),
+      declinedAmbassadorIds.length
+        ? admin.from("ambassador_profiles").select("id, user_id").in("id", declinedAmbassadorIds)
+        : Promise.resolve({ data: [] as Array<{ id: string; user_id: string | null }> })
+    ]);
 
-  if (session && school && presentation && ambassadorUser?.email) {
+  // One assignment email and notice for the day, about the session staff
+  // acted on.
+  if (session && school && presentation && ambassador.email) {
+    const ambassadorEmail = ambassador.email;
     scheduleEmail(() => sendAmbassadorAssignedEmail({
-      ambassadorEmail: ambassadorUser.email as string,
-      ambassadorName: (ambassadorUser.full_name as string | null) ?? "Ambassador",
-      schoolName: (school.name as string | null) ?? "School",
-      sessionDate: formatDateTime(session.starts_at as string),
+      ambassadorEmail,
+      ambassadorName: ambassador.fullName ?? "Ambassador",
+      schoolName: school.name ?? "School",
+      sessionDate: formatDateTime(session.starts_at),
       sessionAddress:
         sessionDelivery?.delivery_mode === "online"
           ? `Online (video call)${sessionDelivery.meeting_url ? ` — ${sessionDelivery.meeting_url}` : " — link to follow"}`
-          : (school.address as string | null) ?? "",
-      presentationTitle: (presentation.title as string | null) ?? "Presentation",
+          : school.address ?? "",
+      presentationTitle: presentation.title ?? "Presentation",
       bookingSessionId: parsed.data.bookingSessionId,
-      sessionStartsAt: session.starts_at as string,
-      sessionEndsAt: session.ends_at as string,
+      sessionStartsAt: session.starts_at,
+      sessionEndsAt: session.ends_at,
       deliveryMode: sessionDelivery?.delivery_mode === "online" ? "online" : "in_person",
       meetingUrl: (sessionDelivery?.meeting_url as string | null) ?? null
     }));
-
-    scheduleCalendarSync({ sessionIds: [parsed.data.bookingSessionId] });
   }
 
-  if (ambassadorProfile?.user_id) {
-    void notifyUser(ambassadorProfile.user_id as string, {
-      title: `You've been assigned: ${(presentation?.title as string | null) ?? "Presentation"}`,
-      body: `${(school?.name as string | null) ?? "A school"} on ${session?.starts_at ? formatDateTime(session.starts_at as string) : "the scheduled date"}.`,
+  // Every changed session, even for a directory-only ambassador with no email.
+  scheduleCalendarSync({ sessionIds });
+
+  if (ambassador.userId) {
+    void notifyUser(ambassador.userId, {
+      title: `You've been assigned: ${presentation?.title ?? "Presentation"}`,
+      body: `${school?.name ?? "A school"} on ${session?.starts_at ? formatDateTime(session.starts_at) : "the scheduled date"}.`,
       type: "session_assigned",
       relatedUrl: "/ambassador/upcoming"
     }).catch(() => {});
@@ -5136,34 +4461,24 @@ export async function assignAmbassadorAction(formData: FormData) {
 
     void notifyUser(userId, {
       title: "Session filled",
-      body: `${(presentation?.title as string | null) ?? "This session"} at ${(school?.name as string | null) ?? "a school"} has been assigned to another ambassador.`,
+      body: `${presentation?.title ?? "This session"} at ${school?.name ?? "a school"} has been assigned to another ambassador.`,
       type: "session_application_declined",
       relatedUrl: "/ambassador/open-bookings"
     }).catch(() => {});
   }
 
-  if (previousAmbassadorProfile?.user_id) {
-    void notifyUser(previousAmbassadorProfile.user_id as string, {
+  if (previous?.userId) {
+    void notifyUser(previous.userId, {
       title: "Withdrawal approved through reassignment",
-      body: `${(presentation?.title as string | null) ?? "Your session"} has been assigned to another ambassador.`,
+      body: `${presentation?.title ?? "Your session"} has been assigned to another ambassador.`,
       type: "session_withdrawal_approved",
       relatedUrl: "/ambassador/open-bookings"
     }).catch(() => {});
   }
 
-  await logAuditEvent(
-    actor.id,
-    "session.ambassador_assigned",
-    "booking_session",
-    parsed.data.bookingSessionId
-  );
-  await refreshPreConfirmationBookingStatus({
-    admin,
-    bookingRequestId: currentSession.booking_request_id as string,
-    actorId: actor.id,
-    actorType: "staff",
-    reason: "Ambassador assignment changed"
-  });
+  for (const sessionId of sessionIds) {
+    await logAuditEvent(actor.id, "session.ambassador_assigned", "booking_session", sessionId);
+  }
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/ambassador");
@@ -5173,6 +4488,23 @@ export async function assignAmbassadorAction(formData: FormData) {
 
 // Shared by the bookings list (redirects afterwards) and the booking details
 // dialog (stays open). Returns an error code instead of redirecting.
+type StatusBatchRow = {
+  outcome: string;
+  booking_id: string | null;
+  old_status: string | null;
+  changed_session_ids: string[] | null;
+  conflict_session_id: string | null;
+};
+
+const BOOKING_STATUS_VALUES = updateBookingStatusSchema.shape.status.options as readonly string[];
+
+// The status the staff member was looking at, sent with the form. Anything
+// else (missing, unknown) means "use the status read under the lock".
+function expectedStatusOf(value: FormDataEntryValue | null) {
+  const status = typeof value === "string" ? value : "";
+  return BOOKING_STATUS_VALUES.includes(status) ? status : null;
+}
+
 async function applyBookingStatusUpdate(
   actorId: string,
   formData: FormData
@@ -5188,115 +4520,39 @@ async function applyBookingStatusUpdate(
     return { ok: false, error: "invalid-status" };
   }
 
+  // The booking, its sessions (cascade, un-cancel, overlap check for
+  // sessions coming back with an ambassador), history and activity change in
+  // one transaction (0055 update_booking_status_batch). The form sends the
+  // status staff were looking at; if a school cancellation, roll-up or
+  // another staff member changed it meanwhile, nothing is written.
   const admin = getAdminClientOrThrow();
-  const { data: existingBooking } = await admin
-    .from("booking_requests")
-    .select("id, reference_code, status, school_id, primary_contact_id, internal_notes")
-    .eq("id", parsed.data.bookingRequestId)
-    .maybeSingle();
+  const emailChoice = formData.get("emailChoice") === "send" ? "send" : "skip";
+  const { data: rows, error } = await admin.rpc("update_booking_status_batch", {
+    p_actor_id: actorId,
+    p_status: parsed.data.status,
+    p_bookings: [
+      { id: parsed.data.bookingRequestId, expected_status: expectedStatusOf(formData.get("expectedStatus")) }
+    ],
+    p_reason: parsed.data.reason ?? null,
+    p_bulk: false,
+    p_email_choice: emailChoice
+  });
+  const result = Array.isArray(rows) ? (rows[0] as StatusBatchRow | undefined) : undefined;
 
-  if (!existingBooking) {
-    return { ok: false, error: "booking-not-found" };
-  }
-
-  // A booking can't be marked delivered/completed before its sessions have
-  // actually happened.
-  const completionStatuses = [
-    "completed_pending_report",
-    "report_submitted",
-    "payment_pending",
-    "paid",
-    "closed"
-  ];
-
-  if (completionStatuses.includes(parsed.data.status)) {
-    const { data: lastSession } = await admin
-      .from("booking_sessions")
-      .select("ends_at")
-      .eq("booking_request_id", parsed.data.bookingRequestId)
-      .not("status", "in", "(cancelled,declined)")
-      .order("ends_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (lastSession && new Date(lastSession.ends_at as string).getTime() > Date.now()) {
-      return { ok: false, error: "cannot-complete-future" };
-    }
-  }
-
-  const bookingUpdate: Record<string, string> = { status: parsed.data.status };
-
-  if (parsed.data.reason) {
-    const existingInternalNotes = String(existingBooking.internal_notes || "").trim();
-    bookingUpdate.internal_notes = existingInternalNotes
-      ? `${existingInternalNotes}\n${parsed.data.reason}`
-      : parsed.data.reason;
-  }
-
-  const { error } = await admin
-    .from("booking_requests")
-    .update(bookingUpdate)
-    .eq("id", parsed.data.bookingRequestId);
-
-  if (error) {
+  if (error || !result) {
+    logGroupFailure("update_booking_status_batch", parsed.data.bookingRequestId, error);
     return { ok: false, error: "status-update-failed" };
   }
 
-  const cascade = SESSION_CASCADE[parsed.data.status];
-  let affectedSessionIds: string[] = [];
-
-  if (cascade) {
-    let sessionUpdate = admin
-      .from("booking_sessions")
-      .update({ status: cascade.to })
-      .eq("booking_request_id", parsed.data.bookingRequestId)
-      .neq("status", cascade.to);
-
-    if (cascade.onlyFrom) {
-      sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
-    }
-
-    const { data: changedSessions, error: cascadeError } = await sessionUpdate.select("id");
-    affectedSessionIds = (changedSessions ?? []).map((session) => session.id as string);
-
-    if (cascadeError) {
-      return { ok: false, error: "status-update-failed" };
-    }
+  if (result.outcome !== "updated") {
+    return { ok: false, error: result.outcome };
   }
 
-  if (REMOVED_BOOKING_STATUSES.includes(existingBooking.status as string)) {
-    const reinstated = await reinstateCancelledSessions(
-      admin,
-      [parsed.data.bookingRequestId],
-      parsed.data.status
-    ).catch(() => null);
-
-    if (!reinstated) {
-      return { ok: false, error: "status-update-failed" };
-    }
-
-    affectedSessionIds = [...affectedSessionIds, ...reinstated.map((session) => session.id as string)];
-  }
-
-  await admin.from("booking_status_history").insert({
-    booking_request_id: parsed.data.bookingRequestId,
-    new_status: parsed.data.status,
-    changed_by: actorId,
-    reason: parsed.data.reason || `Status updated to ${parsed.data.status}`
-  });
-
-  await admin.from("booking_activity_logs").insert({
-    booking_request_id: parsed.data.bookingRequestId,
-    action: "booking.status_updated",
-    actor_id: actorId,
-    actor_type: "staff",
-    details: { status: parsed.data.status, email_choice: formData.get("emailChoice") === "send" ? "send" : "skip" }
-  });
-
+  const affectedSessionIds = (result.changed_session_ids ?? []).filter(Boolean);
   const emailEvent = statusEmailEvent(parsed.data.status);
-  const emailed = Boolean(formData.get("emailChoice") === "send" && emailEvent && affectedSessionIds.length);
+  const emailed = Boolean(emailChoice === "send" && emailEvent && affectedSessionIds.length);
   if (emailed && emailEvent) {
-    const event = emailEvent === "confirmed" && existingBooking.status === "reschedule_requested" ? "rescheduled" : emailEvent;
+    const event = emailEvent === "confirmed" && result.old_status === "reschedule_requested" ? "rescheduled" : emailEvent;
     scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: parsed.data.bookingRequestId }, () =>
       sendSchoolSessionEmails(parsed.data.bookingRequestId, affectedSessionIds, event)));
   }
@@ -5395,109 +4651,42 @@ export async function bulkUpdateBookingStatusAction(formData: FormData) {
     redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-bulk-status"));
   }
 
+  // Every selected booking changes in one transaction, or none does (0055
+  // update_booking_status_batch): bookings are locked in id order after the
+  // session table, each is checked against the status shown when it was
+  // selected, and the cascade, history and activity are written together.
   const admin = getAdminClientOrThrow();
-  const { data: existingBookings, error: bookingReadError } = await admin
-    .from("booking_requests")
-    .select("id, status")
-    .in("id", parsed.data.bookingRequestIds);
+  const emailChoice = formData.get("emailChoice") === "send" ? "send" : "skip";
+  const { data: rows, error } = await admin.rpc("update_booking_status_batch", {
+    p_actor_id: actor.id,
+    p_status: parsed.data.status,
+    p_bookings: parsed.data.bookingRequestIds.map((id) => ({
+      id,
+      expected_status: expectedStatusOf(formData.get(`expectedStatus.${id}`))
+    })),
+    p_reason: null,
+    p_bulk: true,
+    p_email_choice: emailChoice
+  });
+  const results = (Array.isArray(rows) ? rows : []) as StatusBatchRow[];
 
-  if (bookingReadError || existingBookings.length !== parsed.data.bookingRequestIds.length) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "booking-not-found"));
-  }
-
-  if (parsed.data.status === "closed") {
-    const { data: futureSessions, error: futureSessionError } = await admin
-      .from("booking_sessions")
-      .select("id")
-      .in("booking_request_id", parsed.data.bookingRequestIds)
-      .not("status", "in", "(cancelled,declined)")
-      .gt("ends_at", new Date().toISOString())
-      .limit(1);
-
-    if (futureSessionError || futureSessions.length > 0) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "cannot-complete-future"));
-    }
-  }
-
-  const { error: updateError } = await admin
-    .from("booking_requests")
-    .update({ status: parsed.data.status })
-    .in("id", parsed.data.bookingRequestIds);
-
-  if (updateError) {
+  if (error || !results.length) {
+    logGroupFailure("update_booking_status_batch", parsed.data.bookingRequestIds.join(","), error);
     redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
   }
 
-  const cascade = SESSION_CASCADE[parsed.data.status];
-  let changedSessions: Array<{ id: unknown; booking_request_id: unknown }> = [];
-
-  if (cascade) {
-    let sessionUpdate = admin
-      .from("booking_sessions")
-      .update({ status: cascade.to })
-      .in("booking_request_id", parsed.data.bookingRequestIds)
-      .neq("status", cascade.to);
-
-    if (cascade.onlyFrom) {
-      sessionUpdate = sessionUpdate.in("status", cascade.onlyFrom);
-    }
-
-    const { data, error: cascadeError } = await sessionUpdate.select("id, booking_request_id");
-
-    if (cascadeError) {
-      redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
-    }
-
-    changedSessions = data ?? [];
+  if (results[0].outcome !== "updated") {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", results[0].outcome));
   }
 
-  const previouslyCancelledIds = existingBookings
-    .filter((booking) => REMOVED_BOOKING_STATUSES.includes(booking.status as string))
-    .map((booking) => booking.id as string);
-  const reinstated = await reinstateCancelledSessions(
-    admin,
-    previouslyCancelledIds,
-    parsed.data.status
-  ).catch(() => null);
-
-  if (!reinstated) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
-  }
-
-  changedSessions = [...changedSessions, ...reinstated];
   const event = statusEmailEvent(parsed.data.status);
-  if (formData.get("emailChoice") === "send" && event) {
-    for (const bookingId of parsed.data.bookingRequestIds) {
-      const ids = changedSessions.filter((session) => session.booking_request_id === bookingId)
-        .map((session) => session.id as string);
-      if (ids.length) scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: bookingId }, () =>
+  if (emailChoice === "send" && event) {
+    for (const row of results) {
+      const bookingId = row.booking_id;
+      const ids = (row.changed_session_ids ?? []).filter(Boolean);
+      if (bookingId && ids.length) scheduleEmail(() => emailDeliveryContext.run({ manualBookingId: bookingId }, () =>
         sendSchoolSessionEmails(bookingId, ids, event)));
     }
-  }
-
-  const changedAt = new Date().toISOString();
-  const { error: historyError } = await admin.from("booking_status_history").insert(
-    parsed.data.bookingRequestIds.map((bookingRequestId) => ({
-      booking_request_id: bookingRequestId,
-      new_status: parsed.data.status,
-      changed_by: actor.id,
-      reason: `Bulk status update to ${parsed.data.status}`,
-      created_at: changedAt
-    }))
-  );
-  const { error: activityError } = await admin.from("booking_activity_logs").insert(
-    parsed.data.bookingRequestIds.map((bookingRequestId) => ({
-      booking_request_id: bookingRequestId,
-      action: "booking.status_updated",
-      actor_id: actor.id,
-      actor_type: "staff",
-      details: { status: parsed.data.status, bulk: true },
-      created_at: changedAt
-    }))
-  );
-
-  if (historyError || activityError) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "status-update-failed"));
   }
 
   await Promise.all(
@@ -5871,6 +5060,165 @@ export async function updateSessionStudentCountsAction(
   revalidatePath("/staff");
   revalidatePath("/admin");
   return sessionActionResult({ updated: "students" });
+}
+
+// Staff accept the date a school moved its session to (manage-booking link).
+// The session already carries the new time; this just clears the flag that
+// keeps it in the "Rescheduling" view.
+export async function confirmRescheduledSessionAction(
+  _previousState: SessionActionState,
+  formData: FormData
+): Promise<SessionActionState> {
+  const actor = await requirePortalAccess("staff");
+  const sessionId = z.uuid().safeParse(String(formData.get("sessionId") || ""));
+
+  if (!sessionId.success) {
+    return sessionActionResult({ error: "session-not-found" });
+  }
+
+  // What staff were shown: the start time and the moment the school moved
+  // it. Each school move stamps a new reschedule_confirmation_needed_at, so
+  // a move, cancel and re-move back to the same time still doesn't match.
+  // Both are required; one conditional update means nothing can land
+  // between the check and the write.
+  const timestamp = z.iso.datetime({ offset: true });
+  const expectedStartsAt = timestamp.safeParse(String(formData.get("expectedStartsAt") || ""));
+  const expectedFlaggedAt = timestamp.safeParse(String(formData.get("expectedFlaggedAt") || ""));
+
+  if (!expectedStartsAt.success || !expectedFlaggedAt.success) {
+    return sessionActionResult({ error: "reschedule-changed" });
+  }
+
+  const admin = getAdminClientOrThrow();
+  const { data: session, error } = await admin
+    .from("booking_sessions")
+    .update({ reschedule_confirmation_needed_at: null })
+    .eq("id", sessionId.data)
+    .in("status", ["requested", "tentative", "applied", "ambassador_assigned", "confirmed"])
+    .eq("starts_at", expectedStartsAt.data)
+    .eq("reschedule_confirmation_needed_at", expectedFlaggedAt.data)
+    .select("id, booking_request_id, starts_at")
+    .maybeSingle();
+
+  if (error) {
+    return sessionActionResult({ error: "reschedule-confirm-failed" });
+  }
+
+  if (!session) {
+    const { data: current } = await admin
+      .from("booking_sessions")
+      .select("id, status, starts_at, reschedule_confirmation_needed_at")
+      .eq("id", sessionId.data)
+      .maybeSingle();
+
+    // A cleared flag is a successful retry only if this is still the same
+    // active session. Cancellation also clears it and must not read as a
+    // successful confirmation of the old panel.
+    const alreadyConfirmed = current &&
+      ["requested", "tentative", "applied", "ambassador_assigned", "confirmed"].includes(current.status) &&
+      new Date(current.starts_at).getTime() === new Date(expectedStartsAt.data).getTime() &&
+      !current.reschedule_confirmation_needed_at;
+    return alreadyConfirmed
+      ? sessionActionResult({ updated: "reschedule-confirmed" })
+      : sessionActionResult({ error: "reschedule-changed" });
+  }
+
+  await admin.from("booking_activity_logs").insert({
+    booking_request_id: session.booking_request_id,
+    booking_session_id: session.id,
+    action: "session.reschedule_confirmed",
+    actor_id: actor.id,
+    actor_type: "staff",
+    details: { starts_at: session.starts_at }
+  });
+  await logAuditEvent(actor.id, "session.reschedule_confirmed", "booking_session", session.id as string);
+  scheduleCalendarSync({ sessionIds: [session.id as string] });
+  revalidatePath("/staff");
+  revalidatePath("/admin");
+  return sessionActionResult({ updated: "reschedule-confirmed" });
+}
+
+const reportMediaUploadRequestSchema = z
+  .array(z.object({ name: z.string().min(1).max(255), size: z.number().int().positive() }))
+  .min(1)
+  .max(REPORT_MEDIA_MAX_FILES);
+
+async function prepareReportMediaUploads(userId: string, files: unknown) {
+  const parsed = reportMediaUploadRequestSchema.safeParse(files);
+  if (!parsed.success) {
+    return { error: "Choose up to 15 photos, videos or PDFs, 5 MB each." };
+  }
+  try {
+    return {
+      uploads: await Promise.all(
+        parsed.data.map((file) => prepareReportMediaUpload(userId, file.name, file.size))
+      )
+    };
+  } catch (error) {
+    console.error("[report-media] Could not prepare upload", error);
+    return { error: "Could not start the upload. Check the file type and size, then try again." };
+  }
+}
+
+export async function prepareAmbassadorReportMediaUploadAction(
+  files: Array<{ name: string; size: number }>
+) {
+  const actor = await requirePortalAccess("ambassador");
+  return prepareReportMediaUploads(actor.id, files);
+}
+
+export async function prepareStaffReportMediaUploadAction(
+  files: Array<{ name: string; size: number }>
+) {
+  const actor = await requirePortalAccess("staff");
+  return prepareReportMediaUploads(actor.id, files);
+}
+
+// Report forms submit only the storage paths of files the browser already
+// uploaded. Returns null when anything is off so the caller can reject the
+// whole submission rather than silently dropping evidence.
+async function readUploadedReportMedia(formData: FormData, userId: string) {
+  const raw = String(formData.get("mediaUploads") || "");
+
+  if (!raw) {
+    return [];
+  }
+
+  let entries: unknown;
+
+  try {
+    entries = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const parsed = z
+    .array(z.object({ path: z.string().min(1).max(512), name: z.string().min(1).max(255) }))
+    .max(REPORT_MEDIA_MAX_FILES)
+    .safeParse(entries);
+
+  if (!parsed.success) {
+    return null;
+  }
+
+  try {
+    return await Promise.all(
+      parsed.data.map(async (entry) => {
+        const contentType = await validateUploadedReportMedia(userId, entry.path);
+        return {
+          storagePath: entry.path,
+          title: entry.name,
+          mediaType: contentType.startsWith("video/")
+            ? "video"
+            : contentType === "application/pdf"
+              ? "document"
+              : "image"
+        };
+      })
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function prepareResourceUploadAction(input: { name: string; size: number }) {
@@ -6555,76 +5903,91 @@ export async function sendTestEmailAction(formData: FormData) {
   );
 }
 
+// Sends one claimed finance email and records the outcome against that claim
+// only (complete_finance_payment_email, 0054): if the claim was taken over or
+// already completed, this send changes nothing. Returns whether the email went
+// out and its outcome was recorded.
 async function sendPaymentApprovalToFinance({
   paymentId,
+  claimId,
   confirmationToken,
   financeEmail,
   actorId
 }: {
   paymentId: string;
+  claimId: string;
   confirmationToken: string;
   financeEmail: string;
   actorId: string;
 }) {
   const admin = getAdminClientOrThrow();
-  const [{ data: payment }, details] = await Promise.all([
-    admin
-      .from("payments")
-      .select("finance_email_attempts")
-      .eq("id", paymentId)
-      .maybeSingle(),
-    loadPaymentDetails(paymentId)
-  ]);
+  const completeClaim = async (sent: boolean, error: string | null) => {
+    const { data, error: completeError } = await admin.rpc("complete_finance_payment_email", {
+      p_payment_id: paymentId,
+      p_claim_id: claimId,
+      p_sent: sent,
+      p_error: error,
+      p_actor_id: actorId
+    });
+
+    if (completeError || data !== true) {
+      console.error("[finance] Email outcome not recorded for this claim", {
+        paymentId,
+        code: completeError?.code
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  let details: Awaited<ReturnType<typeof loadPaymentDetails>> = null;
+
+  try {
+    details = await loadPaymentDetails(paymentId);
+  } catch {
+    details = null;
+  }
 
   if (!details) {
-    await admin
-      .from("payments")
-      .update({
-        finance_email_status: "failed",
-        finance_email_error: "Approved payment details could not be loaded.",
-        finance_email_last_attempt_at: new Date().toISOString(),
-        finance_email_attempts: Number(payment?.finance_email_attempts ?? 0) + 1,
-        updated_by: actorId
-      })
-      .eq("id", paymentId);
+    await completeClaim(false, "Approved payment details could not be loaded.");
     return false;
   }
 
-  const emailResult = await sendPaymentApprovalToFinanceEmail({
-    toEmail: financeEmail,
-    invoiceNumber: details.invoiceNumber,
-    ambassadorName: details.ambassadorName,
-    sessionDescription: details.sessionDescription,
-    amountLabel: formatCurrency(details.amountCents, details.currency),
-    bankAccountName: details.bankAccountName,
-    bankAccountNumber: details.bankAccountNumber,
-    gstNumber: details.gstNumber,
-    confirmationToken,
-    bookingSessionId: details.bookingSessionId
-  });
+  let emailResult: Awaited<ReturnType<typeof sendPaymentApprovalToFinanceEmail>>;
+
+  try {
+    emailResult = await sendPaymentApprovalToFinanceEmail({
+      toEmail: financeEmail,
+      invoiceNumber: details.invoiceNumber,
+      ambassadorName: details.ambassadorName,
+      sessionDescription: details.sessionDescription,
+      amountLabel: describePaymentAmount(details),
+      bankAccountName: details.bankAccountName,
+      bankAccountNumber: details.bankAccountNumber,
+      gstNumber: details.gstNumber,
+      confirmationToken,
+      bookingSessionId: details.bookingSessionId
+    });
+  } catch (error) {
+    // Release the claim as failed so staff can resend straight away.
+    await completeClaim(false, error instanceof Error ? error.message : "The finance email could not be sent.");
+    return false;
+  }
+
   const sent = emailResult.status === "sent";
-  const attemptedAt = new Date().toISOString();
+  const recorded = await completeClaim(
+    sent,
+    sent
+      ? null
+      : emailResult.status === "suppressed_manual_only"
+        ? "Held back: this booking is record only (no emails). Use Resend to send the invoice to finance."
+        : "error" in emailResult
+          ? emailResult.error
+          : "Brevo email delivery is not configured."
+  );
 
-  const { error: statusUpdateError } = await admin
-    .from("payments")
-    .update({
-      finance_email_status: sent ? "sent" : "failed",
-      finance_email_attempts: Number(payment?.finance_email_attempts ?? 0) + 1,
-      finance_email_last_attempt_at: attemptedAt,
-      finance_email_error: sent
-        ? null
-        : emailResult.status === "suppressed_manual_only"
-          ? "Held back: this booking is record only (no emails). Use Resend to send the invoice to finance."
-          : "error" in emailResult
-            ? emailResult.error
-            : "Brevo email delivery is not configured.",
-      sent_to_finance_at: sent ? attemptedAt : null,
-      sent_to_email: financeEmail,
-      updated_by: actorId
-    })
-    .eq("id", paymentId);
-
-  return sent && !statusUpdateError;
+  return sent && recorded;
 }
 
 export async function markReportReviewedAction(formData: FormData) {
@@ -6634,13 +5997,15 @@ export async function markReportReviewedAction(formData: FormData) {
     "/staff/reports"
   );
   const reportId = String(formData.get("reportId") || "");
+  const skipPayment = formData.get("skipPayment") === "yes";
+  const extraAmountInput = String(formData.get("extraAmount") ?? "").trim();
+  const paymentNote = String(formData.get("paymentNote") || "").trim().slice(0, 500);
 
   if (!reportId) {
     redirect(appendSearchParam(returnTo, "error", "invalid-report"));
   }
 
   const admin = getAdminClientOrThrow();
-  let financeEmailFailed = false;
   const { data: report } = await admin
     .from("ambassador_reports")
     .select("id, booking_session_id, ambassador_profile_id, reviewed_for_payment_at")
@@ -6659,7 +6024,7 @@ export async function markReportReviewedAction(formData: FormData) {
     report.ambassador_profile_id
       ? admin
           .from("payments")
-          .select("id, status")
+          .select("id, status, amount_cents, review_required, custom_reviewed_at")
           .eq("booking_session_id", report.booking_session_id as string)
           .eq("ambassador_profile_id", report.ambassador_profile_id as string)
           .in("status", ["pending", "eligible"])
@@ -6676,7 +6041,71 @@ export async function markReportReviewedAction(formData: FormData) {
       : Promise.resolve({ data: null })
   ]);
 
-  if (payment) {
+  // Staff may top up a payment up to $250 (e.g. for a back-to-back session in
+  // a separate booking at the same school, which the grouped report doesn't
+  // cover), or approve a report with no payment when another report's top-up
+  // covers it. Both need a note, whole dollars only so the finance email shows
+  // exactly what is paid. The approval RPC re-checks every rule inside its
+  // transaction.
+  //
+  // A payment created for custom review (0056: a gap over 1 up to 2 hours or
+  // of 4+ hours, three or more sessions, overlapping or invalid times) is only
+  // approved with an explicit staff decision: the custom amount typed in
+  // (even 0), the review confirmed and a note; or no payment with a note.
+  // approve_ambassador_report_payment refuses anything else, so these checks
+  // only give staff a clear message first.
+  let extraAmountCents = 0;
+  const needsCustomReview = Boolean(payment?.review_required) && !payment?.custom_reviewed_at;
+  const customReviewConfirmed = formData.get("customReviewConfirmed") === "yes";
+
+  if (payment && !skipPayment) {
+    const parsedExtra = parseExtraAmountCents(extraAmountInput);
+
+    if (parsedExtra === null) {
+      redirect(appendSearchParam(returnTo, "error", "invalid-payment-amount"));
+    }
+
+    extraAmountCents = parsedExtra;
+  }
+
+  if (needsCustomReview && !skipPayment && (!customReviewConfirmed || extraAmountInput === "")) {
+    redirect(appendSearchParam(returnTo, "error", "custom-review-required"));
+  }
+
+  if (payment && (skipPayment || extraAmountCents > 0 || needsCustomReview) && paymentNote.length < 3) {
+    redirect(appendSearchParam(returnTo, "error", "payment-note-required"));
+  }
+
+  if (payment && skipPayment) {
+    const { data: approvalRows, error: approvalError } = await admin.rpc(
+      "approve_ambassador_report_payment",
+      {
+        p_report_id: report.id,
+        p_actor_id: actor.id,
+        p_skip_payment: true,
+        p_payment_note: paymentNote
+      }
+    );
+
+    if (approvalError) {
+      redirect(appendSearchParam(returnTo, "error", "report-review-failed"));
+    }
+
+    const approval = Array.isArray(approvalRows) ? approvalRows[0] : null;
+
+    if (!approval?.did_approve) {
+      redirect(appendSearchParam(returnTo, "approved", "report"));
+    }
+
+    await admin.from("booking_activity_logs").insert({
+      booking_session_id: report.booking_session_id,
+      action: "payment.approved_without_payment",
+      actor_id: actor.id,
+      actor_type: actor.role,
+      details: { payment_note: paymentNote, ...(needsCustomReview ? { custom_review: true } : {}) }
+    });
+    await logAuditEvent(actor.id, "payment.approved_without_payment", "payment", payment.id as string);
+  } else if (payment) {
     const bankAccountName = String(ambassadorProfile?.bank_account_name ?? "").trim();
     const bankAccountNumber = String(ambassadorProfile?.bank_account_number ?? "").trim();
     const hasValidPaymentDetails =
@@ -6709,8 +6138,9 @@ export async function markReportReviewedAction(formData: FormData) {
 
     const approvedAt = new Date();
     const invoiceNumber = generateInvoiceNumber(payment.id as string, approvedAt);
-    const confirmation = createFinanceConfirmationToken(approvedAt);
     const paymentSettings = await getPaymentSettings();
+    // Approval leaves the payment "Ready for finance"; the confirmation token
+    // is only created when staff send it (claim_finance_payment_email).
     const { data: approvalRows, error: approvalError } = await admin.rpc(
       "approve_ambassador_report_payment",
       {
@@ -6720,9 +6150,10 @@ export async function markReportReviewedAction(formData: FormData) {
         p_bank_account_name: bankAccountName,
         p_bank_account_number: bankAccountNumber,
         p_gst_number: String(ambassadorProfile?.gst_number ?? "").trim() || null,
-        p_token_hash: confirmation.tokenHash,
-        p_token_expires_at: confirmation.expiresAt,
-        p_finance_email: paymentSettings.financeEmail
+        p_finance_email: paymentSettings.financeEmail,
+        p_extra_amount_cents: extraAmountCents,
+        p_payment_note: extraAmountCents > 0 || needsCustomReview ? paymentNote : null,
+        p_review_confirmed: needsCustomReview && customReviewConfirmed
       }
     );
 
@@ -6736,14 +6167,10 @@ export async function markReportReviewedAction(formData: FormData) {
       redirect(appendSearchParam(returnTo, "approved", "report"));
     }
 
-    const emailSent = await sendPaymentApprovalToFinance({
-      paymentId: payment.id as string,
-      confirmationToken: confirmation.token,
-      financeEmail: paymentSettings.financeEmail,
-      actorId: actor.id
-    });
-    financeEmailFailed = !emailSent;
-
+    // Two-step finance: approval only prepares the payment (the RPC leaves no
+    // email status). Staff send it to finance separately from the Payments
+    // tab ("Ready for finance"), so the amount and bank details get a second
+    // look before Nate is emailed.
     await admin.from("booking_activity_logs").insert({
       booking_session_id: report.booking_session_id,
       action: "payment.approved_for_finance",
@@ -6751,14 +6178,18 @@ export async function markReportReviewedAction(formData: FormData) {
       actor_type: actor.role,
       details: {
         invoice_number: invoiceNumber,
-        finance_email_status: emailSent ? "sent" : "failed"
+        finance_email_status: "ready",
+        ...(extraAmountCents > 0 || needsCustomReview
+          ? { extra_amount_cents: extraAmountCents, payment_note: paymentNote }
+          : {}),
+        ...(needsCustomReview ? { custom_review: true } : {})
       }
     });
 
     if (ambassadorProfile?.user_id) {
       void notifyUser(ambassadorProfile.user_id as string, {
         title: "Report approved for payment",
-        body: `Your report has been approved. Finance will use invoice ${invoiceNumber} to process your payment.`,
+        body: `Your report has been approved (invoice ${invoiceNumber}). We'll let you know when your payment has been sent to finance.`,
         type: "payment_approved",
         relatedUrl: "/ambassador/earnings"
       }).catch(() => {});
@@ -6789,11 +6220,12 @@ export async function markReportReviewedAction(formData: FormData) {
   revalidatePath("/staff");
   revalidatePath("/admin");
   revalidatePath("/ambassador");
-  const approvedReturnTo = appendSearchParam(returnTo, "approved", "report");
   redirect(
-    financeEmailFailed
-      ? appendSearchParam(approvedReturnTo, "financeEmail", "failed")
-      : approvedReturnTo
+    appendSearchParam(
+      returnTo,
+      "approved",
+      !payment ? "report" : skipPayment ? "report-no-payment" : "report-payment"
+    )
   );
 }
 
@@ -7251,64 +6683,57 @@ export async function acceptAmbassadorMaterialsConsentAction(formData: FormData)
   redirect(appendSearchParam(returnTo, "saved", "materials-consent"));
 }
 
-export async function retryFinancePaymentEmailAction(formData: FormData) {
+type FinanceSendResult = { tone: "success" | "error"; message: string };
+
+// Sends an approved payment to finance: the first send from "Ready for
+// finance", or a resend after a failed/unconfirmed email or expired link.
+// Returns the outcome instead of redirecting so the Payments page refreshes in
+// place (no jump to the top) and shows the result as a toast.
+export async function sendFinancePaymentEmailAction(formData: FormData): Promise<FinanceSendResult> {
   const actor = await requirePortalAccess("staff");
-  const fallbackReturnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || "/staff/payments"),
-    "/staff/payments"
-  );
   const parsed = retryFinanceEmailSchema.safeParse({
     paymentId: String(formData.get("paymentId") || ""),
-    returnTo: fallbackReturnTo
+    returnTo: sanitizeReturnTo(String(formData.get("returnTo") || "/staff/payments"), "/staff/payments")
   });
 
   if (!parsed.success) {
-    redirect(appendSearchParam(fallbackReturnTo, "error", "invalid-payment"));
+    return { tone: "error", message: "The payment could not be updated. Please try again." };
   }
 
   const admin = getAdminClientOrThrow();
-  const { data: payment } = await admin
-    .from("payments")
-    .select(
-      "id, booking_session_id, status, invoice_number, finance_email_status, finance_confirmation_expires_at"
-    )
-    .eq("id", parsed.data.paymentId)
-    .maybeSingle();
-
-  const linkExpired =
-    payment?.finance_confirmation_expires_at &&
-    new Date(payment.finance_confirmation_expires_at as string).getTime() <= Date.now();
-
-  if (
-    !payment ||
-    payment.status !== "approved" ||
-    !payment.invoice_number ||
-    (!["failed", "pending"].includes(String(payment.finance_email_status)) && !linkExpired)
-  ) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "finance-email-not-retryable"));
-  }
-
   const paymentSettings = await getPaymentSettings();
   const confirmation = createFinanceConfirmationToken();
-  const { data: preparedPayment, error: prepareError } = await admin
-    .from("payments")
-    .update({
-      finance_email_status: "pending",
-      finance_email_error: null,
-      finance_confirmation_token_hash: confirmation.tokenHash,
-      finance_confirmation_expires_at: confirmation.expiresAt,
-      sent_to_email: paymentSettings.financeEmail,
-      updated_by: actor.id
-    })
-    .eq("id", payment.id)
-    .eq("status", "approved")
-    .eq("finance_email_status", payment.finance_email_status as string)
-    .select("id")
-    .maybeSingle();
+  // One atomic claim decides who sends: first send, a failed send, an expired
+  // link, or a send left pending past the stale window. A concurrent click
+  // (or a retry while a send is in flight) gets no claim and sends nothing.
+  const { data: claimRows, error: claimError } = await admin.rpc("claim_finance_payment_email", {
+    p_payment_id: parsed.data.paymentId,
+    p_actor_id: actor.id,
+    p_token_hash: confirmation.tokenHash,
+    p_token_expires_at: confirmation.expiresAt,
+    p_finance_email: paymentSettings.financeEmail,
+    p_stale_after_seconds: FINANCE_EMAIL_CLAIM_STALE_SECONDS
+  });
+  const claim = Array.isArray(claimRows) ? claimRows[0] : null;
 
-  if (prepareError || !preparedPayment) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "finance-email-not-retryable"));
+  if (claimError) {
+    return { tone: "error", message: "The payment could not be updated. Please try again." };
   }
+
+  if (!claim?.claim_id) {
+    return {
+      tone: "error",
+      message:
+        "That payment is already with finance or being sent right now. Refresh the page to see its latest status."
+    };
+  }
+
+  const payment = {
+    id: parsed.data.paymentId,
+    booking_session_id: claim.booking_session_id as string,
+    invoice_number: claim.invoice_number as string
+  };
+  const firstSend = claim.first_send === true;
 
   // A staff member clicking Resend is a deliberate manual send, so it goes
   // out even for a record-only booking (whose automatic emails are held).
@@ -7319,7 +6744,8 @@ export async function retryFinancePaymentEmailAction(formData: FormData) {
     .maybeSingle();
   const sendToFinance = () =>
     sendPaymentApprovalToFinance({
-      paymentId: payment.id as string,
+      paymentId: payment.id,
+      claimId: claim.claim_id as string,
       confirmationToken: confirmation.token,
       financeEmail: paymentSettings.financeEmail,
       actorId: actor.id
@@ -7331,9 +6757,10 @@ export async function retryFinancePaymentEmailAction(formData: FormData) {
       )
     : await sendToFinance();
 
+  const sendAction = firstSend ? "payment.sent_to_finance" : "payment.finance_email_retried";
   await admin.from("booking_activity_logs").insert({
     booking_session_id: payment.booking_session_id,
-    action: "payment.finance_email_retried",
+    action: sendAction,
     actor_id: actor.id,
     actor_type: actor.role,
     details: {
@@ -7342,17 +6769,39 @@ export async function retryFinancePaymentEmailAction(formData: FormData) {
     }
   });
 
-  await logAuditEvent(actor.id, "payment.finance_email_retried", "payment", payment.id as string);
+  // Ambassadors can see their payment has gone to finance (and chase it).
+  if (emailSent && firstSend) {
+    const { data: paymentOwner } = await admin
+      .from("payments")
+      .select("amount_cents, ambassador_profiles(user_id)")
+      .eq("id", payment.id as string)
+      .maybeSingle();
+    const ownerUserId = relationOne(paymentOwner?.ambassador_profiles)?.user_id as string | undefined;
+
+    if (ownerUserId) {
+      void notifyUser(ownerUserId, {
+        title: "Payment sent to finance",
+        body: `Your ${formatCurrency(Number(paymentOwner?.amount_cents ?? 0))} payment (invoice ${payment.invoice_number}) has been sent to finance to be paid.`,
+        type: "payment_sent_to_finance",
+        relatedUrl: "/ambassador/earnings"
+      }).catch(() => {});
+    }
+  }
+
+  await logAuditEvent(actor.id, sendAction, "payment", payment.id as string);
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
-  redirect(
-    appendSearchParam(
-      parsed.data.returnTo,
-      emailSent ? "sent" : "error",
-      emailSent ? "finance-email" : "invoice-email-failed"
-    )
-  );
+  return emailSent
+    ? {
+        tone: "success",
+        message: `Invoice ${payment.invoice_number} sent to finance. It's now listed under With finance.`
+      }
+    : {
+        tone: "error",
+        message:
+          "The finance email couldn't be sent. The approval and invoice number are safe; the reason is shown under Finance delivery issues."
+      };
 }
 
 export async function revokeBookingGuestAccessAction(formData: FormData) {

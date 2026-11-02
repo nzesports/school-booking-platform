@@ -37,6 +37,7 @@ export function ManualSchoolDialog({
       {open
         ? createPortal(
             <BookingDialogShell
+              closeOnOverlayClick={false}
               kicker="Manual entry"
               title="Add a school"
               description="Create the school record and add its primary contact details."

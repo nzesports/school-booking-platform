@@ -19,6 +19,7 @@
     "local:reset": "node scripts/local-supabase.mjs reset",
     "local:seed": "node scripts/local-supabase.mjs seed",
     "local:demo:showcase": "node scripts/seed-ambassador-showcase.mjs",
+    "local:demo:doubles": "node scripts/seed-double-sessions.mjs",
     "local:demo:remove": "node scripts/remove-demo-data.mjs",
     "local:status": "node scripts/local-supabase.mjs status",
     "local:stop": "node scripts/local-supabase.mjs stop",

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { PendingSubmitButton } from "@/components/ui/pending-submit-button";
 import type { Region, School } from "@/lib/domain/types";
+import { EXTENDED_PAIR_CENTS, SHORT_PAIR_CENTS } from "@/lib/payment-breakdown";
+import { formatCurrency } from "@/lib/utils";
 
 type PresentationOption = {
   id: string;
@@ -75,6 +77,7 @@ export function AmbassadorManualBookingDialog({
       {open
         ? createPortal(
             <BookingDialogShell
+              closeOnOverlayClick={false}
               title="Log your booking"
               description="Add a booking you arranged directly with a school. You will be assigned automatically and can confirm it straight away."
               descriptionDisplay="tooltip"
@@ -89,6 +92,11 @@ export function AmbassadorManualBookingDialog({
                   You&apos;ll receive the standard <strong>{payoutLabels.delivery} delivery fee</strong>. If you personally
                   sourced the school, the eligible payment will also include a separately tracked
                   <strong> {payoutLabels.sourcingBonus} sourcing bonus</strong>, for a <strong>{payoutLabels.sourced} total</strong>.
+                  {" "}Two sessions of one booking on the same day share one report and one delivery fee, plus{" "}
+                  <strong>{formatCurrency(SHORT_PAIR_CENTS)}</strong> when the second starts less than 2 hours after the
+                  first ends, or <strong>{formatCurrency(EXTENDED_PAIR_CENTS)}</strong> when it starts 2 to 4 hours
+                  after. Any other combination (including three or more sessions) is set by staff after
+                  review.
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">

@@ -83,6 +83,7 @@ export function ManualBookingDialog({
       {open
         ? createPortal(
             <BookingDialogShell
+              closeOnOverlayClick={false}
               title="Log booking"
               onClose={() => setOpen(false)}
               compact

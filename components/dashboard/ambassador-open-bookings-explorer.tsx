@@ -30,6 +30,11 @@ import { ButtonLink } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { colourWithAlpha } from "@/lib/presentation-colors";
+import {
+  groupSameDaySessions,
+  sessionGroupMatches,
+  sessionGroupSummary
+} from "@/lib/same-day-sessions";
 import { cn, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 9;
@@ -152,42 +157,34 @@ export function AmbassadorOpenBookingsExplorer({
     () => Array.from(new Set(sessions.map((session) => session.presentationTitle))).sort(),
     [sessions]
   );
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-
-    return sessions
-      .filter((session) => {
-        const searchText = [
-          session.schoolName,
-          session.presentationTitle,
-          session.regionName,
-          session.regionSlug,
-          session.yearLevels
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        return (
-          (!normalized || searchText.includes(normalized)) &&
-          // Online sessions can be delivered from anywhere, so they show
-          // under every region.
-          (region === "all" ||
-            session.regionSlug === region ||
-            session.deliveryMode === "online") &&
-          (presentation === "all" || session.presentationTitle === presentation)
-        );
-      })
-      .sort((left, right) => {
-        const difference =
-          new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
-        return sort === "soonest" ? difference : -difference;
-      });
-  }, [presentation, query, region, sessions, sort]);
+  // Back-to-back sessions of one booking on the same day are one opportunity:
+  // one card (or calendar entry) lists every session's title and time, and
+  // search and filters match any of them. Applying, assignment and reporting
+  // carry across the whole day on the server. In the calendar, sessions in a
+  // different state (e.g. open vs. upcoming) stay separate entries.
+  const groups = useMemo(
+    () =>
+      groupSameDaySessions(
+        sessions,
+        mode === "calendar" ? (session) => bookingModes?.[session.id] ?? "open" : undefined
+      ),
+    [bookingModes, mode, sessions]
+  );
+  const filtered = useMemo(
+    () =>
+      groups
+        .filter((group) => sessionGroupMatches(group, { query, region, presentation }))
+        .sort((left, right) => {
+          const difference =
+            new Date(left[0].startsAt).getTime() - new Date(right[0].startsAt).getTime();
+          return sort === "soonest" ? difference : -difference;
+        }),
+    [groups, presentation, query, region, sort]
+  );
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
-  const pageSessions = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageGroups = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const days = Array.from(
     { length: 42 },
     (_, index) => addDays(startOfWeek(viewMonth, { weekStartsOn: 1 }), index)
@@ -257,7 +254,7 @@ export function AmbassadorOpenBookingsExplorer({
 
       {mode === "calendar" ? (
         <CalendarView
-          sessions={filtered}
+          groups={filtered}
           days={days}
           viewMonth={viewMonth}
           bookingModes={bookingModes ?? {}}
@@ -271,14 +268,15 @@ export function AmbassadorOpenBookingsExplorer({
         />
       ) : (
         <div className="p-5 md:p-6">
-          {pageSessions.length === 0 ? (
+          {pageGroups.length === 0 ? (
             <EmptyState message={emptyMessage} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {pageSessions.map((session) => (
+              {pageGroups.map((group) => (
                 <BookingCard
-                  key={session.id}
-                  session={session}
+                  key={group[0].id}
+                  session={group[0]}
+                  daySessions={group}
                   mode={mode}
                   applyAction={applyAction}
                   withdrawAction={withdrawAction}
@@ -338,6 +336,7 @@ export function AmbassadorOpenBookingsExplorer({
 
 function BookingCard({
   session,
+  daySessions,
   mode,
   applyAction,
   withdrawAction,
@@ -345,6 +344,7 @@ function BookingCard({
   returnTo
 }: {
   session: BookingSessionView;
+  daySessions: BookingSessionView[];
   mode: AmbassadorBookingCardMode;
   applyAction: FormAction;
   withdrawAction: FormAction;
@@ -352,10 +352,11 @@ function BookingCard({
   returnTo: string;
 }) {
   const theme = presentationTheme(session.presentationTitle, mode);
-  const studentCount =
+  const { presentationTitles, yearLevels, studentCount } = sessionGroupSummary(
+    daySessions,
     mode === "completed"
-      ? session.actualStudentCount ?? session.expectedStudentCount
-      : session.expectedStudentCount;
+  );
+  const isMultiSession = daySessions.length > 1;
   const detailIconClassName = mode === "sourced" ? "text-[#6941c6]" : "text-[#1e4fae]";
   const accent = mode === "sourced" ? "#7c3aed" : (session.presentationAccentColor ?? "#18A83B");
 
@@ -381,7 +382,7 @@ function BookingCard({
         )}
         style={{ color: accent }}
       >
-        {session.presentationTitle}
+        {presentationTitles.join(" + ")}
       </p>
       <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
         {session.schoolName}
@@ -389,20 +390,27 @@ function BookingCard({
       <div className="mt-4 grid gap-2.5 text-sm text-[color:var(--text-soft)]">
         <span className="inline-flex items-center gap-2">
           <CalendarCheck2 className={cn("h-4 w-4", detailIconClassName)} />
-          {formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)}
+          {formatWeekdayDate(session.startsAt, true)} ·{" "}
+          {daySessions.map((item) => formatTime(item.startsAt)).join(" & ")}
         </span>
+        {isMultiSession ? (
+          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef4fd] px-2.5 py-1 text-xs font-semibold text-[#1e4fae]">
+            {daySessions.length} back-to-back sessions · one booking, one report
+          </span>
+        ) : null}
         <span className="inline-flex items-center gap-2">
           <MapPin className={cn("h-4 w-4", detailIconClassName)} />
           {session.regionName ?? titleCase(session.regionSlug)}
         </span>
         <span className="inline-flex items-center gap-2">
           <UsersRound className={cn("h-4 w-4", detailIconClassName)} />
-          {studentCount} students · {session.yearLevels}
+          {studentCount} students{isMultiSession ? " in total" : ""} · {yearLevels.join(" / ")}
         </span>
       </div>
       <div className="mt-auto pt-6">
         <BookingCardActions
           session={session}
+          daySessions={daySessions}
           mode={mode}
           applyAction={applyAction}
           withdrawAction={withdrawAction}
@@ -460,6 +468,7 @@ function BookingCardStatus({
 
 function BookingCardActions({
   session,
+  daySessions,
   mode,
   applyAction,
   withdrawAction,
@@ -467,6 +476,7 @@ function BookingCardActions({
   returnTo
 }: {
   session: BookingSessionView;
+  daySessions: BookingSessionView[];
   mode: AmbassadorBookingCardMode;
   applyAction: FormAction;
   withdrawAction: FormAction;
@@ -480,6 +490,7 @@ function BookingCardActions({
     return (
       <AmbassadorOpenSessionDialog
         session={session}
+        daySessions={daySessions}
         action={applyAction}
         withdrawAction={withdrawAction}
         returnTo={returnTo}
@@ -534,7 +545,7 @@ function BookingCardActions({
 }
 
 function CalendarView({
-  sessions,
+  groups,
   days,
   viewMonth,
   bookingModes,
@@ -546,7 +557,7 @@ function CalendarView({
   onCurrentMonth,
   onNextMonth
 }: {
-  sessions: BookingSessionView[];
+  groups: BookingSessionView[][];
   days: Date[];
   viewMonth: Date;
   bookingModes: Record<string, AmbassadorBookingCardMode>;
@@ -592,7 +603,7 @@ function CalendarView({
         </div>
       </div>
 
-      {sessions.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : (
         <div className="max-w-full overflow-x-auto rounded-[20px] border border-[color:var(--border-soft)]">
@@ -609,8 +620,8 @@ function CalendarView({
             </div>
             <div className="grid grid-cols-7">
               {days.map((day) => {
-                const daySessions = sessions.filter((session) =>
-                  isSameDay(new Date(session.startsAt), day)
+                const dayGroups = groups.filter((group) =>
+                  isSameDay(new Date(group[0].startsAt), day)
                 );
 
                 return (
@@ -624,7 +635,8 @@ function CalendarView({
                   >
                     <span className="text-xs font-semibold">{format(day, "d")}</span>
                     <div className="mt-2 grid min-w-0 gap-1.5">
-                      {daySessions.map((session) => {
+                      {dayGroups.map((group) => {
+                        const session = group[0];
                         const entryMode = bookingModes[session.id] ?? "open";
                         const label = (
                           <>
@@ -632,7 +644,8 @@ function CalendarView({
                               {session.schoolName.replace(/^Demo\s+/i, "")}
                             </span>
                             <span className="block text-[10px] font-medium opacity-75">
-                              {formatTime(session.startsAt)} · {calendarModeThemes[entryMode].label}
+                              {group.map((item) => formatTime(item.startsAt)).join(" & ")} ·{" "}
+                              {calendarModeThemes[entryMode].label}
                             </span>
                           </>
                         );
@@ -645,6 +658,7 @@ function CalendarView({
                           <AmbassadorOpenSessionDialog
                             key={session.id}
                             session={session}
+                            daySessions={group}
                             action={applyAction}
                             withdrawAction={withdrawAction}
                             returnTo={returnTo}

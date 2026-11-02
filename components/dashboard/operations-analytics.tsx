@@ -61,6 +61,8 @@ import {
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
 import type { ResourceRecord } from "@/lib/services/portal";
+import { isReschedulingSession, isWithdrawalSession } from "@/lib/session-status";
+import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { cn, formatCurrency, formatTime, formatWeekdayDate } from "@/lib/utils";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -1624,7 +1626,8 @@ function buildSourceBreakdown(yearBookings: BookingRequestView[]) {
   const segments = [
     { label: "School-sourced", value: count("public"), color: "#18a83b" },
     { label: "Staff", value: count("staff"), color: "#246bff" },
-    { label: "Ambassador-referred", value: count("ambassador"), color: "#f5a623" }
+    { label: "Ambassador-referred", value: count("ambassador"), color: "#f5a623" },
+    { label: "Ambassador self-sourced", value: count("ambassador_booked"), color: "#7c3aed" }
   ].map((segment) => ({ ...segment, percent: percent(segment.value) }));
 
   return { total, segments };
@@ -1640,13 +1643,41 @@ function buildBookingStatusBreakdown(yearBookings: BookingRequestView[]) {
       !cancelledIds.has(booking.id) && BOOKING_COMPLETED_STATUSES.has(booking.status)
   );
   const completedIds = new Set(completed.map((booking) => booking.id));
-  const pending = yearBookings.filter(
+  const open = yearBookings.filter(
     (booking) => !completedIds.has(booking.id) && !cancelledIds.has(booking.id)
+  );
+  // Open bookings split the same way as the Bookings page tiles, so a
+  // confirmed booking never reads as "Pending". A booking with a session
+  // awaiting a withdrawal or reschedule decision counts there first.
+  const withdrawal = open.filter(
+    (booking) =>
+      booking.status === "withdrawal_requested" || booking.sessions.some(isWithdrawalSession)
+  );
+  const withdrawalIds = new Set(withdrawal.map((booking) => booking.id));
+  const rescheduling = open.filter(
+    (booking) =>
+      !withdrawalIds.has(booking.id) &&
+      (booking.status === "reschedule_requested" || booking.sessions.some(isReschedulingSession))
+  );
+  const reschedulingIds = new Set(rescheduling.map((booking) => booking.id));
+  const confirmed = open.filter(
+    (booking) =>
+      !withdrawalIds.has(booking.id) &&
+      !reschedulingIds.has(booking.id) &&
+      BOOKING_CONFIRMED_STATUSES.has(booking.status)
+  );
+  const confirmedIds = new Set(confirmed.map((booking) => booking.id));
+  const pending = open.filter(
+    (booking) =>
+      !withdrawalIds.has(booking.id) && !reschedulingIds.has(booking.id) && !confirmedIds.has(booking.id)
   );
   const total = yearBookings.length;
   const percent = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
   const segments = [
     { label: "Completed", value: completed.length, color: "#18a83b" },
+    { label: "Confirmed", value: confirmed.length, color: "#7c3aed" },
+    { label: "Rescheduling", value: rescheduling.length, color: "#ea580c" },
+    { label: "Withdrawal", value: withdrawal.length, color: "#db2777" },
     { label: "Pending", value: pending.length, color: "#98a2b3" },
     { label: "Cancelled", value: cancelled.length, color: "#d75b52" }
   ].map((segment) => ({ ...segment, percent: percent(segment.value) }));
@@ -1702,7 +1733,10 @@ function buildPaymentSummary(payments: PaymentRecord[], year: number) {
   return {
     paidThisYearCents: paidThisYear.reduce((total, payment) => total + payment.amountCents, 0),
     paidThisYearCount: paidThisYear.length,
-    outstandingCents: outstanding.reduce((total, payment) => total + payment.amountCents, 0),
+    // A payment awaiting a staff custom review (0056) has no payable total yet.
+    outstandingCents: outstanding
+      .filter((payment) => !isAwaitingCustomReview(payment))
+      .reduce((total, payment) => total + payment.amountCents, 0),
     outstandingCount: outstanding.length,
     outstanding
   };

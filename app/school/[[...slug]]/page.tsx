@@ -57,6 +57,7 @@ import {
   isFutureSession
 } from "@/lib/services/dashboard-insights";
 import { getSchoolPortalData, loadUserNotifications } from "@/lib/services/portal";
+import { nzDayKey } from "@/lib/same-day-sessions";
 import { cn, formatShortDate, formatTime, formatWeekdayDate } from "@/lib/utils";
 import { StatusBadge, schoolBookingStatusLabel } from "@/components/ui/status-badge";
 
@@ -215,6 +216,17 @@ export default async function SchoolPortalPage({
   const reviewSessionRow = route.startsWith("review/")
     ? sessionRows.find((row) => row.session.id === slug?.[1])
     : null;
+  // The rest of a double session: the same booking's sessions that NZ day.
+  const reviewSessions = reviewSessionRow
+    ? sessions
+        .filter(
+          ({ session, bookingId }) =>
+            bookingId === reviewSessionRow.bookingId &&
+            !["cancelled", "declined"].includes(session.status) &&
+            nzDayKey(session.startsAt) === nzDayKey(reviewSessionRow.session.startsAt)
+        )
+        .map(({ session }) => session)
+    : [];
   const selectedReview =
     route.startsWith("reviews/") && slug?.length === 2
       ? portal.myReviews.find((review) => review.id === slug[1])
@@ -1287,6 +1299,7 @@ export default async function SchoolPortalPage({
               presentationTitle={reviewSessionRow?.session.presentationTitle}
               startsAt={reviewSessionRow?.session.startsAt}
               ambassadorName={reviewSessionRow?.session.assignedAmbassadorName}
+              sessions={reviewSessions}
             />
           )
         ) : null}

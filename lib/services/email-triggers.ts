@@ -12,6 +12,12 @@ import { feedbackUrl } from "./feedback-links";
 
 type EmailResult = Awaited<ReturnType<typeof sendTransactionalEmail>>;
 
+const FINANCE_COPY_EMAIL = "info@esf.nz";
+
+// School replies (confirmations, reminders, reschedules...) go to the schools
+// inbox rather than the info@ sender address.
+export const SCHOOL_REPLY_TO = { email: config.brevoContactEmail, name: "NZ Esports Schools" };
+
 export function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -33,7 +39,7 @@ async function logEmail(result: EmailResult, related?: {
     return;
   }
 
-  const { error } = await admin.from("email_logs").insert({
+  const row = {
     template_key: result.templateKey,
     recipient_email: result.recipientEmail,
     recipient_type: related?.recipientType ?? null,
@@ -43,7 +49,17 @@ async function logEmail(result: EmailResult, related?: {
     status: result.status,
     error_message: "error" in result ? result.error : null,
     sent_at: result.status === "sent" ? new Date().toISOString() : null
+  };
+  let { error } = await admin.from("email_logs").insert({
+    ...row,
+    subject: result.subject,
+    html_body: "renderedHtml" in result ? result.renderedHtml : null
   });
+
+  // Until 0053 adds the content columns, still record that the email was sent.
+  if (error && /subject|html_body/.test(error.message)) {
+    ({ error } = await admin.from("email_logs").insert(row));
+  }
 
   if (error) {
     console.error("[email] Could not persist notification result to email_logs.", {
@@ -131,6 +147,7 @@ async function sendSchoolSessionEmail(
       : "";
   return sendTransactionalEmail({
     ...event,
+    replyTo: event.replyTo ?? SCHOOL_REPLY_TO,
     bookingReference: details.vars.referenceCode === "Not recorded" ? undefined : details.vars.referenceCode,
     html: (event.templateKey === "school_feedback_request" || event.html.includes(details.html) ? event.html : `${event.html}${details.html}`) + calendarNote
   });
@@ -210,6 +227,7 @@ export async function sendBookingRequestReceivedEmail(opts: {
     bookingReference: opts.referenceCode,
     bookingRequestId: opts.bookingId,
     templateKey: "booking_request_received",
+    replyTo: SCHOOL_REPLY_TO,
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "We've received your booking request",
     html: (
@@ -496,6 +514,7 @@ export async function sendSchoolWelcomeEmail(opts: {
   });
   const result = await sendTransactionalEmail({
     templateKey: "school_welcome",
+    replyTo: SCHOOL_REPLY_TO,
     recipientEmail: opts.contactEmail,
     subject: template?.subject ?? "Welcome to the NZ Esports booking platform",
     html:
@@ -941,8 +960,10 @@ export async function sendPaymentApprovalToFinanceEmail(opts: {
   const gstLine = opts.gstNumber
     ? `<br><strong>GST number:</strong> ${escapeHtml(opts.gstNumber)}`
     : "";
+  // The prompt travels with the button, so stored templates get it too.
   const confirmationButton = `
-    <p style="margin:28px 0;">
+    <p style="margin:24px 0 0;">Once you've made this payment, please click <strong>Payment made</strong> below to confirm it. This marks invoice ${invoiceNumber} as paid on the booking platform.</p>
+    <p style="margin:12px 0 28px;">
       <a href="${escapeHtml(confirmationUrl)}" style="display:inline-block;border-radius:12px;background:#18a83b;color:#ffffff;padding:13px 22px;font-weight:700;text-decoration:none;">
         Payment made
       </a>
@@ -964,6 +985,10 @@ export async function sendPaymentApprovalToFinanceEmail(opts: {
     bookingSessionId: opts.bookingSessionId,
     templateKey: "invoice_to_finance",
     recipientEmail: opts.toEmail,
+    // info@esf.nz keeps a manual eye on every payment sent to finance.
+    ...(opts.toEmail.trim().toLowerCase() === FINANCE_COPY_EMAIL
+      ? {}
+      : { cc: [FINANCE_COPY_EMAIL] }),
     subject: template?.subject ?? `Ambassador invoice ${opts.invoiceNumber} - ${opts.ambassadorName}`,
     includeUnsubscribe: false,
     html:

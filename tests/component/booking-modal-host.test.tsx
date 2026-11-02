@@ -77,7 +77,11 @@ describe("BookingModalHost", () => {
       />
     );
 
-    const schoolName = screen.getByRole("textbox", { name: /School name/i });
+    // In-person bookings open on the student-minimum question; confirming the
+    // group is large enough resumes at the requested review step.
+    fireEvent.click(screen.getByRole("button", { name: /^Yes, \d+\+ students/i }));
+
+    const schoolName = await screen.findByRole("textbox", { name: /School name/i });
     await waitFor(() => expect(schoolName).toBeEnabled());
 
     const expectedStudents = screen.getByRole("spinbutton", {

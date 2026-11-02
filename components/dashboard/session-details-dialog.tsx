@@ -5,9 +5,9 @@ import {
   CalendarDays,
   CheckCircle2,
   Copy,
-  MessageSquare,
   GraduationCap,
   Eye,
+  Handshake,
   MapPin,
   Mail,
   School2,
@@ -25,7 +25,12 @@ import {
   COMPLETION_STATUSES,
   schoolBookingStatus
 } from "@/components/dashboard/booking-status-control";
+import { RescheduleConfirmPanel } from "@/components/dashboard/reschedule-confirm-panel";
 import { StatusEmailForm } from "@/components/dashboard/status-email-form";
+import {
+  WITHDRAWAL_REASON_LABELS,
+  WithdrawalDecisionForms
+} from "@/components/dashboard/withdrawal-decision-forms";
 import { SecondaryTabs } from "@/components/ui/secondary-tabs";
 
 import { getSignedFeedbackLinkAction, revokeBookingGuestAccessAction } from "@/app/portal/actions";
@@ -49,8 +54,10 @@ import {
   yahooCalendarUrl,
   type CalendarEventInput
 } from "@/lib/services/calendar-links";
+import { bookingSourceLabel } from "@/lib/booking-source";
+import { needsRescheduleConfirmation } from "@/lib/session-status";
 import { siteUrl } from "@/lib/site-url";
-import { cn, formatDateOnly, formatWeekdayDate } from "@/lib/utils";
+import { cn, formatDateOnly, formatWeekdayDate, initials } from "@/lib/utils";
 
 const NZ_TIME_ZONE = "Pacific/Auckland";
 
@@ -87,6 +94,7 @@ export function SessionDetailsButton({
   updateMeetingLinkAction,
   createTeamsLinkAction,
   updateStatusInPlaceAction,
+  confirmRescheduleAction,
   open: controlledOpen,
   onOpen,
   onClose,
@@ -108,6 +116,8 @@ export function SessionDetailsButton({
   createTeamsLinkAction?: SessionDialogAction;
   // Staff/admin only: change the booking's status without leaving the dialog.
   updateStatusInPlaceAction?: SessionDialogAction;
+  // Staff/admin only: accept a date the school moved the session to.
+  confirmRescheduleAction?: SessionDialogAction;
   // Optional control from a parent (the bookings list keeps one dialog open
   // even if the booking moves page after a change). onOpen replaces the
   // built-in dialog; hideTrigger renders the dialog only.
@@ -218,430 +228,347 @@ export function SessionDetailsButton({
       {open
         ? createPortal(
             <BookingDialogShell
+              kicker={isOnline ? "Online session" : "Session"}
               title={session.presentationTitle}
+              description={`${formatWeekdayDate(session.startsAt)} · ${formatNzTime(session.startsAt)} – ${formatNzTime(session.endsAt)} · ${session.schoolName}`}
               onClose={closeDialog}
               maxWidthClassName="max-w-[1120px]"
-              bodyClassName="px-6 py-7 md:px-10 md:py-9 lg:px-12 lg:py-10"
               overlayClassName="z-[80]"
-              compact
-            >
-              {canReview && <SecondaryTabs ariaLabel="Booking details" value={tab} onChange={setTab} items={[
-                { value: "details", label: "Details", icon: CalendarDays },
-                { value: "emails", label: "Emails", icon: Mail }
-              ]} />}
-              {canReview && tab === "emails" ? <BookingEmailsPanel sessionId={session.id} /> : <>
-              <SessionChangeSummary session={session} />
-              <div className="mt-5 flex flex-wrap items-start justify-between gap-3">
-                <p className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-[-0.02em] text-[#117a2e] md:text-lg">
-                  <CalendarDays className="h-5 w-5 shrink-0 text-[#117a2e]" />
-                  {formatWeekdayDate(session.startsAt)}
-                  <span aria-hidden="true">·</span>
-                  {formatNzTime(session.startsAt)} – {formatNzTime(session.endsAt)}
-                </p>
-                {updateStatusInPlaceAction && session.bookingRequestId ? (
+              pinnedHeader
+              headerAside={
+                updateStatusInPlaceAction && session.bookingRequestId ? (
                   <DialogStatusControl session={session} action={updateStatusInPlaceAction} />
-                ) : null}
-              </div>
+                ) : undefined
+              }
+              headerBelow={
+                canReview ? (
+                  <SecondaryTabs ariaLabel="Booking details" value={tab} onChange={setTab} items={[
+                    { value: "details", label: "Details", icon: CalendarDays },
+                    { value: "emails", label: "Emails", icon: Mail }
+                  ]} />
+                ) : undefined
+              }
+            >
+              {canReview && tab === "emails" ? <BookingEmailsPanel sessionId={session.id} /> : (
+              <div className="grid gap-5">
+                <SessionChangeSummary session={session} />
 
-              <section aria-label="Session overview" className="mt-4 rounded-2xl bg-slate-50/80 p-5 md:p-6">
-              <div className="grid gap-5 md:grid-cols-3">
-                <DetailTile
-                  icon={<School2 className="h-6 w-6" />}
-                  label="School"
-                >
-                  <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    {session.schoolName}
-                  </p>
-                </DetailTile>
-
-                <DetailTile
-                  icon={<UsersRound className="h-6 w-6" />}
-                  label="Audience"
-                >
-                  <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    {session.yearLevels}
-                  </p>
-                </DetailTile>
-
-                <DetailTile
-                  icon={<GraduationCap className="h-6 w-6" />}
-                  label="Students"
-                >
-                  <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    {session.actualStudentCount ?? session.expectedStudentCount} students
-                  </p>
-                  <p className="text-sm text-[color:var(--text-soft)]">
-                    {session.actualStudentCount !== undefined
-                      ? `Final attendance · ${session.expectedStudentCount} expected`
-                      : "School booking estimate"}
-                  </p>
-                </DetailTile>
-              </div>
-
-              {updateStudentCountsAction ? (
-                <StudentNumbersForm session={session} action={updateStudentCountsAction} />
-              ) : null}
-
-              {isOnline && updateMeetingLinkAction ? (
-                <MeetingLinkSection
-                  session={session}
-                  updateMeetingLinkAction={updateMeetingLinkAction}
-                  createTeamsLinkAction={createTeamsLinkAction}
-                />
-              ) : null}
-
-              <div className="mt-5 grid gap-5 border-t border-slate-200/70 pt-5 md:grid-cols-2">
-                <DetailTile
-                  icon={<MapPin className="h-6 w-6" />}
-                  label="Location"
-                >
-                  {isOnline ? (
-                    <>
-                      <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                        Online (video call)
-                      </p>
-                      {session.meetingUrl ? (
-                        <a
-                          href={session.meetingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="break-all text-sm leading-6 font-semibold text-[#246bff] underline"
-                        >
-                          {session.meetingUrl}
-                        </a>
-                      ) : (
-                        <p className="text-sm text-[color:var(--text-soft)]">
-                          Video-call link to be added by our team.
-                        </p>
-                      )}
-                    </>
-                  ) : session.regionName ? (
-                    <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                      {session.regionName}
-                    </p>
-                  ) : null}
-                  {isOnline ? null : session.schoolAddress || session.locationAddress ? (
-                    <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-                      {session.locationAddress ?? session.schoolAddress}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-[color:var(--text-soft)]">
-                      Address to be confirmed by our team.
-                    </p>
-                  )}
-                </DetailTile>
-
-                <DetailTile
-                  icon={<UserRound className="h-6 w-6" />}
-                  label="School contact"
-                >
-                  {session.contactName ? (
-                    <>
-                      <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                        {session.contactName}
-                      </p>
-                      {session.contactPosition && <p className="text-sm text-slate-500">{session.contactPosition}</p>}
-                      <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-                        {session.contactEmail ? (
-                          <a
-                            href={`mailto:${session.contactEmail}`}
-                            className="text-[color:var(--navy)] underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
-                          >
-                            {session.contactEmail}
-                          </a>
-                        ) : null}
-                        {session.contactEmail && session.contactPhone ? " · " : ""}
-                        {session.contactPhone ?? ""}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm leading-6 text-[color:var(--text-soft)]">
-                      Contact details are shared once you are assigned to the session.
-                    </p>
-                  )}
-                </DetailTile>
-              </div>
-
-              </section>
-
-              <section aria-labelledby="session-ambassadors-heading" className="mt-6">
-                <h3 id="session-ambassadors-heading" className="text-base font-semibold text-[color:var(--navy)]">Ambassadors</h3>
-              <div className="mt-3 grid gap-5 md:grid-cols-2">
-              {session.assignedAmbassadorName ? (
-                <div className="min-w-0">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
-                      <UserRound className="h-5 w-5" />
-                    </span>
-                    Assigned ambassador
-                  </p>
-                  <div className="mt-2 pl-8">
-                    <p className="text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                      {session.assignedAmbassadorName}
-                    </p>
-                    {canReview && (session.assignedAmbassadorEmail || session.assignedAmbassadorPhone) ? (
-                      <p className="mt-1 text-sm leading-6 text-[color:var(--text-soft)]">
-                        {session.assignedAmbassadorEmail ? (
-                          <a
-                            href={`mailto:${session.assignedAmbassadorEmail}`}
-                            className="text-[color:var(--navy)] underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
-                          >
-                            {session.assignedAmbassadorEmail}
-                          </a>
-                        ) : null}
-                        {session.assignedAmbassadorEmail && session.assignedAmbassadorPhone
-                          ? " / "
-                          : ""}
-                        {session.assignedAmbassadorPhone ?? ""}
-                      </p>
-                    ) : null}
+                {/* Decisions waiting on staff come first. */}
+                {confirmRescheduleAction && needsRescheduleConfirmation(session) ? (
+                  <div>
+                    <RescheduleConfirmPanel session={session} action={confirmRescheduleAction} />
                   </div>
-                </div>
-              ) : canReview ? (
-                <div className="min-w-0">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
-                      <UserRound className="h-5 w-5" />
-                    </span>
-                    No ambassador assigned yet
-                    <InfoTooltip label="No ambassador assigned yet">
-                      Assign an active applicant or search approved ambassadors from the booking row.
-                    </InfoTooltip>
-                  </p>
-                </div>
-              ) : null}
-
-              {canReview ? (
-                <div className="min-w-0">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-500">
-                      <UsersRound className="h-5 w-5" />
-                    </span>
-                    Ambassador applications
-                  </p>
-                  {session.applicants?.length ? (
-                    <div className="mt-4 grid gap-2">
-                      {session.applicants.map((applicant) => (
-                        <div
-                          key={applicant.id}
-                          className="rounded-[12px] border border-slate-200 bg-white px-3 py-2.5"
-                        >
-                          <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-[#117a2e]" />
-                            {applicant.name}
-                          </p>
-                          <p className="mt-0.5 pl-6 text-xs text-[color:var(--text-soft)]">
-                            {applicantTrackRecord(applicant)}
-                          </p>
-                          {applicant.message ? (
-                            <p className="mt-1.5 whitespace-pre-wrap pl-6 text-sm leading-6 text-[color:var(--text-dark)]">
-                              {applicant.message}
-                            </p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 pl-8 text-sm leading-6 text-[color:var(--text-soft)]">
-                      No active applications.
+                ) : null}
+                {session.status === "reschedule_requested" && resolveRescheduleAction ? (
+                  <div className="rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                    <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                        <CalendarDays className="h-5 w-5" />
+                      </span>
+                      School reschedule request
                     </p>
-                  )}
-                </div>
-              ) : null}
-
-              </div>
-
-              </section>
-
-              {session.status === "reschedule_requested" && resolveRescheduleAction ? (
-                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
-                      <CalendarDays className="h-5 w-5" />
-                    </span>
-                    School reschedule request
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
-                    Preferred date: {session.rescheduleRequestedDate ? formatDateOnly(session.rescheduleRequestedDate) : "Not provided"}
-                    {session.rescheduleRequestNotes
-                      ? ` — ${session.rescheduleRequestNotes}`
-                      : ""}
-                  </p>
-                  <form
-                    action={resolveRescheduleAction}
-                    className="mt-4 grid gap-3 sm:grid-cols-2"
-                  >
-                    <input type="hidden" name="bookingSessionId" value={session.id} />
-                    <input
-                      type="hidden"
-                      name="returnTo"
-                      value={returnTo ?? "/staff/bookings"}
-                    />
-                    <input type="hidden" name="decision" value="approve" />
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
-                        Final date
-                      </span>
-                      <input
-                        name="finalDate"
-                        type="date"
-                        min={minimumBookingDate()}
-                        max={maximumBookingDate()}
-                        defaultValue={session.rescheduleRequestedDate}
-                        required
-                        className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
-                      />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
-                        Final time
-                      </span>
-                      <input
-                        name="finalTime"
-                        type="time"
-                        defaultValue={formatNzInputTime(session.startsAt)}
-                        required
-                        className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
-                      />
-                    </label>
-                    <PendingSubmitButton
-                      type="submit"
-                      pendingLabel="Approving reschedule..."
-                      className="sm:col-span-2"
-                    >
-                      Approve with final date and time
-                    </PendingSubmitButton>
-                  </form>
-                  <form action={resolveRescheduleAction} className="mt-3">
-                    <input type="hidden" name="bookingSessionId" value={session.id} />
-                    <input
-                      type="hidden"
-                      name="returnTo"
-                      value={returnTo ?? "/staff/bookings"}
-                    />
-                    <input type="hidden" name="decision" value="decline" />
-                    <PendingSubmitButton
-                      type="submit"
-                      variant="secondary"
-                      pendingLabel="Declining reschedule..."
-                    >
-                      Decline and keep original time
-                    </PendingSubmitButton>
-                  </form>
-                </div>
-              ) : null}
-
-              {session.status === "withdrawal_requested" && resolveWithdrawalAction ? (
-                <div className="mt-4 rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
-                  <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
-                      <AlertTriangle className="h-5 w-5" />
-                    </span>
-                    {session.assignedAmbassadorName ?? "Ambassador"} asked to withdraw
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-[#8f680f]">
-                    {session.withdrawalReason ? `"${session.withdrawalReason}"` : "No reason provided."}
-                  </p>
-                  <div className="mt-4 grid gap-3">
-                    <form action={resolveWithdrawalAction}>
-                      <input type="hidden" name="bookingSessionId" value={session.id} />
-                      <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                      <input type="hidden" name="decision" value="approve" />
-                      <PendingSubmitButton unstyled
-                        type="submit"
-                        className="inline-flex w-full items-center justify-center border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.18)] transition hover:bg-[#12852f] sm:w-auto"
-                      >
-                        Approve withdrawal - reopen session
-                      </PendingSubmitButton>
-                    </form>
+                    <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                      Preferred date: {session.rescheduleRequestedDate ? formatDateOnly(session.rescheduleRequestedDate) : "Not provided"}
+                      {session.rescheduleRequestNotes
+                        ? ` — ${session.rescheduleRequestNotes}`
+                        : ""}
+                    </p>
                     <form
-                      action={resolveWithdrawalAction}
-                      className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                      action={resolveRescheduleAction}
+                      className="mt-4 grid gap-3 sm:grid-cols-2"
                     >
                       <input type="hidden" name="bookingSessionId" value={session.id} />
-                      <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                      <input type="hidden" name="decision" value="decline" />
+                      <input
+                        type="hidden"
+                        name="returnTo"
+                        value={returnTo ?? "/staff/bookings"}
+                      />
+                      <input type="hidden" name="decision" value="approve" />
                       <label className="grid gap-1">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
-                          Reply note (optional)
+                          Final date
                         </span>
                         <input
-                          name="note"
-                          placeholder="Reply to the ambassador..."
+                          name="finalDate"
+                          type="date"
+                          min={minimumBookingDate()}
+                          max={maximumBookingDate()}
+                          defaultValue={session.rescheduleRequestedDate}
+                          required
                           className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
                         />
                       </label>
-                      <PendingSubmitButton unstyled
+                      <label className="grid gap-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+                          Final time
+                        </span>
+                        <input
+                          name="finalTime"
+                          type="time"
+                          defaultValue={formatNzInputTime(session.startsAt)}
+                          required
+                          className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
+                        />
+                      </label>
+                      <PendingSubmitButton
                         type="submit"
-                        className="inline-flex items-center justify-center border border-[#f2ddb0] bg-white text-[#9a5a00] transition hover:bg-[#fff2d8]"
+                        pendingLabel="Approving reschedule..."
+                        className="sm:col-span-2"
                       >
-                        Decline - keep assigned
+                        Approve with final date and time
+                      </PendingSubmitButton>
+                    </form>
+                    <form action={resolveRescheduleAction} className="mt-3">
+                      <input type="hidden" name="bookingSessionId" value={session.id} />
+                      <input
+                        type="hidden"
+                        name="returnTo"
+                        value={returnTo ?? "/staff/bookings"}
+                      />
+                      <input type="hidden" name="decision" value="decline" />
+                      <PendingSubmitButton
+                        type="submit"
+                        variant="secondary"
+                        pendingLabel="Declining reschedule..."
+                      >
+                        Decline and keep original time
                       </PendingSubmitButton>
                     </form>
                   </div>
-                </div>
-              ) : null}
-
-              {canReview ? (
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-5">
-                  <div>
-                    <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                      <MessageSquare className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
-                      Share school feedback form
-                      <InfoTooltip label="Share school feedback form">
-                        Only send this link to the school. Anyone with it can submit feedback on behalf of the school after the session, with no login.
-                      </InfoTooltip>
+                ) : null}
+                {session.status === "withdrawal_requested" && resolveWithdrawalAction ? (
+                  <div className="rounded-[22px] border border-[#f2ddb0] bg-[#fff8e8] p-5">
+                    <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[#9a5a00]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-white text-[#9a5a00] shadow-[0_8px_20px_rgba(154,90,0,0.12)]">
+                        <AlertTriangle className="h-5 w-5" />
+                      </span>
+                      {session.assignedAmbassadorName ?? "Ambassador"} asked to withdraw
                     </p>
+                    {session.withdrawalReasonType ? (
+                      <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#9a5a00]">
+                        Reason: {WITHDRAWAL_REASON_LABELS[session.withdrawalReasonType]}
+                      </p>
+                    ) : null}
+                    <p className="mt-3 text-sm leading-6 text-[#8f680f]">
+                      {session.withdrawalReason ? `"${session.withdrawalReason}"` : "No reason provided."}
+                    </p>
+                    <div className="mt-4">
+                      <WithdrawalDecisionForms
+                        session={session}
+                        action={resolveWithdrawalAction}
+                        returnTo={returnTo ?? "/staff/bookings"}
+                      />
+                    </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={copyFeedbackLink}
-                    className="shadow-none"
-                  >
-                    {feedbackLinkCopied ? (
-                      <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                    {feedbackLinkCopied ? "Link copied" : "Copy feedback link"}
-                  </Button>
-                </div>
-              ) : null}
+                ) : null}
 
-              <div className="mt-5 border-t border-slate-200/70 pt-5">
-                <p className="flex items-center gap-3 text-base font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-                  <span className="flex h-5 w-5 items-center justify-center text-slate-500">
-                    <CalendarDays className="h-5 w-5" />
-                  </span>
-                  Add to your calendar
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2.5">
-                  {calendarProviders.map((provider) => (
-                    <a
-                      key={provider.label}
-                      href={provider.href}
-                      {...(provider.download
-                        ? { download: provider.download }
-                        : { target: "_blank", rel: "noreferrer" })}
-                      className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-4 py-[9px] text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-slate-50"
-                    >
-                      {provider.icon}
-                      {provider.label}
-                    </a>
-                  ))}
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+                  <div className="grid min-w-0 gap-5">
+                    <DialogPanel title="Session">
+                      <dl className="grid gap-x-6 gap-y-6 sm:grid-cols-2">
+                        <DialogFact icon={School2} label="School">
+                          {session.schoolName}
+                        </DialogFact>
+                        <DialogFact icon={UsersRound} label="Audience">
+                          {session.yearLevels}
+                        </DialogFact>
+                        <DialogFact
+                          icon={GraduationCap}
+                          label="Students"
+                          detail={
+                            session.actualStudentCount !== undefined
+                              ? `Final attendance · ${session.expectedStudentCount} expected`
+                              : "School booking estimate"
+                          }
+                        >
+                          {session.actualStudentCount ?? session.expectedStudentCount} students
+                        </DialogFact>
+                        {canReview ? (
+                          <DialogFact icon={Handshake} label="Booked by">
+                            {bookingSourceLabel(session.bookingSource, session.sourcedByAmbassadorName)}
+                          </DialogFact>
+                        ) : null}
+                      </dl>
+                      {updateStudentCountsAction ? (
+                        <StudentNumbersForm session={session} action={updateStudentCountsAction} />
+                      ) : null}
+                    </DialogPanel>
+
+                    <DialogPanel title="Where and who">
+                      <dl className="grid gap-x-6 gap-y-6 sm:grid-cols-2">
+                        <DialogFact icon={MapPin} label="Location">
+                          {isOnline ? "Online (video call)" : session.regionName ?? "Location"}
+                          {isOnline ? (
+                            session.meetingUrl ? (
+                              <a
+                                href={session.meetingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 block break-all text-sm font-semibold text-[#246bff] underline"
+                              >
+                                {session.meetingUrl}
+                              </a>
+                            ) : (
+                              <span className="mt-0.5 block text-sm font-normal text-[color:var(--text-soft)]">
+                                Video-call link to be added by our team.
+                              </span>
+                            )
+                          ) : (
+                            <span className="mt-0.5 block text-sm font-normal text-[color:var(--text-soft)]">
+                              {session.locationAddress ?? session.schoolAddress ?? "Address to be confirmed by our team."}
+                            </span>
+                          )}
+                        </DialogFact>
+                        <DialogFact icon={UserRound} label="School contact">
+                          {session.contactName ?? (
+                            <span className="text-sm font-normal text-[color:var(--text-soft)]">
+                              Contact details are shared once you are assigned to the session.
+                            </span>
+                          )}
+                          {session.contactName && session.contactPosition ? (
+                            <span className="block text-sm font-normal text-[color:var(--text-soft)]">
+                              {session.contactPosition}
+                            </span>
+                          ) : null}
+                          {session.contactName && (session.contactEmail || session.contactPhone) ? (
+                            <span className="mt-0.5 block break-all text-sm font-normal text-[color:var(--text-soft)]">
+                              {session.contactEmail ? (
+                                <a
+                                  href={`mailto:${session.contactEmail}`}
+                                  className="text-[color:var(--navy)] underline decoration-slate-300 underline-offset-4 hover:decoration-slate-500"
+                                >
+                                  {session.contactEmail}
+                                </a>
+                              ) : null}
+                              {session.contactEmail && session.contactPhone ? " · " : ""}
+                              {session.contactPhone ?? ""}
+                            </span>
+                          ) : null}
+                        </DialogFact>
+                      </dl>
+                      {isOnline && updateMeetingLinkAction ? (
+                        <MeetingLinkSection
+                          session={session}
+                          updateMeetingLinkAction={updateMeetingLinkAction}
+                          createTeamsLinkAction={createTeamsLinkAction}
+                        />
+                      ) : null}
+                    </DialogPanel>
+                  </div>
+
+                  <aside className="grid min-w-0 gap-5">
+                    <DialogPanel title="Ambassador">
+                      {session.assignedAmbassadorName ? (
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eaf8ee] text-sm font-semibold text-[#117a2e]">
+                            {initials(session.assignedAmbassadorName)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[color:var(--navy)]">{session.assignedAmbassadorName}</p>
+                            {canReview && session.assignedAmbassadorEmail ? (
+                              <a
+                                href={`mailto:${session.assignedAmbassadorEmail}`}
+                                className="block break-all text-sm text-[color:var(--text-soft)] underline decoration-slate-300 underline-offset-4"
+                              >
+                                {session.assignedAmbassadorEmail}
+                              </a>
+                            ) : null}
+                            {canReview && session.assignedAmbassadorPhone ? (
+                              <p className="text-sm text-[color:var(--text-soft)]">{session.assignedAmbassadorPhone}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-6 text-[color:var(--text-soft)]">
+                          No ambassador assigned yet.
+                          {canReview ? " Assign one from the booking row." : ""}
+                        </p>
+                      )}
+                      {canReview ? (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
+                            Applications ({session.applicants?.length ?? 0})
+                          </p>
+                          {session.applicants?.length ? (
+                            <div className="mt-2 grid gap-2">
+                              {session.applicants.map((applicant) => (
+                                <div
+                                  key={applicant.id}
+                                  className="rounded-[12px] border border-slate-200 bg-slate-50/60 px-3 py-2.5"
+                                >
+                                  <p className="text-sm font-semibold text-[color:var(--navy)]">{applicant.name}</p>
+                                  <p className="text-xs text-[color:var(--text-soft)]">
+                                    {applicantTrackRecord(applicant)}
+                                  </p>
+                                  {applicant.message ? (
+                                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[color:var(--text-dark)]">
+                                      {applicant.message}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-sm text-[color:var(--text-soft)]">No active applications.</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </DialogPanel>
+
+                    {canReview ? (
+                      <DialogPanel
+                        title="School feedback form"
+                        info="Only send this link to the school. Anyone with it can submit feedback on behalf of the school after the session, with no login."
+                      >
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={copyFeedbackLink}
+                          className="w-full shadow-none"
+                        >
+                          {feedbackLinkCopied ? (
+                            <CheckCircle2 className="h-4 w-4 text-[#117a2e]" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                          {feedbackLinkCopied ? "Link copied" : "Copy feedback link"}
+                        </Button>
+                      </DialogPanel>
+                    ) : null}
+
+                    <DialogPanel title="Add to calendar">
+                      <div className="grid grid-cols-2 gap-2">
+                        {calendarProviders.map((provider) => (
+                          <a
+                            key={provider.label}
+                            href={provider.href}
+                            {...(provider.download
+                              ? { download: provider.download }
+                              : { target: "_blank", rel: "noreferrer" })}
+                            className="inline-flex min-h-[36px] min-w-0 items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--border-soft)] bg-white px-2 py-[9px] text-[12px] font-semibold text-[color:var(--navy)] transition hover:bg-slate-50 last:col-span-2"
+                          >
+                            {provider.icon}
+                            <span className="truncate">{provider.label}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </DialogPanel>
+
+                    {canReview ? (
+                      <details className="rounded-[16px] border border-[color:var(--border-soft)] bg-white px-4 py-3">
+                        <summary className="cursor-pointer text-sm font-medium text-[color:var(--navy)]">Guest access security</summary>
+                        <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
+                        <form action={revokeBookingGuestAccessAction} className="mt-3">
+                          <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
+                          <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
+                          <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Ending access...">End guest access</PendingSubmitButton>
+                        </form>
+                      </details>
+                    ) : null}
+                  </aside>
                 </div>
               </div>
-              {canReview ? <details className="mt-5 border-t border-slate-200/70 pt-4">
-                <summary className="cursor-pointer text-sm font-medium">Guest access security</summary>
-                <p className="mt-2 text-sm text-slate-600">End all active guest sessions for this booking. The contact will need to enter their booking reference and email again.</p>
-                <form action={revokeBookingGuestAccessAction} className="mt-3">
-                  <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
-                  <input type="hidden" name="returnTo" value={returnTo ?? "/staff/bookings"} />
-                  <PendingSubmitButton type="submit" variant="secondary" pendingLabel="Ending access...">End guest access</PendingSubmitButton>
-                </form>
-              </details> : null}
-              </>}
+              )}
             </BookingDialogShell>,
             document.body
           )
@@ -700,6 +627,10 @@ function DialogStatusControl({
         }}
       >
         <input type="hidden" name="bookingRequestId" value={session.bookingRequestId} />
+        {/* Refused if the booking's status changed after the dialog loaded. */}
+        {session.bookingStatus ? (
+          <input type="hidden" name="expectedStatus" value={session.bookingStatus} />
+        ) : null}
         <AutoSaveBookingStatus
           key={currentStatus}
           currentStatus={currentStatus}
@@ -925,42 +856,54 @@ function MeetingLinkSection({
   );
 }
 
-function DetailTile({
-  icon,
-  label,
-  children,
-  className
+function DialogPanel({
+  title,
+  info,
+  children
 }: {
-  icon: ReactNode;
-  label: string;
+  title: string;
+  info?: string;
   children: ReactNode;
-  className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "flex items-start gap-3",
-        className
-      )}
-    >
-      <span
-        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-slate-400 [&>svg]:h-5 [&>svg]:w-5"
-      >
-        {icon}
+    <section className="min-w-0 rounded-[20px] border border-[color:var(--border-soft)] bg-white p-4 shadow-[0_1px_2px_rgba(4,15,75,0.04)] sm:p-5">
+      <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+        {title}
+        {info ? <InfoTooltip label={title}>{info}</InfoTooltip> : null}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function DialogFact({
+  icon: Icon,
+  label,
+  detail,
+  children
+}: {
+  icon: typeof School2;
+  label: string;
+  detail?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#e8f7ec] text-[color:var(--green)]">
+        <Icon className="h-4 w-4" />
       </span>
-      <div className="min-w-0 break-words">
-        <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--text-soft)]">
-          {label}
-        </span>
-        <div className="mt-1">{children}</div>
+      <div className="min-w-0">
+        <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">{label}</dt>
+        <dd className="mt-1.5 break-words font-semibold leading-snug text-[color:var(--navy)]">
+          {children}
+          {detail ? (
+            <span className="mt-1 block text-sm font-normal leading-snug text-[color:var(--text-soft)]">{detail}</span>
+          ) : null}
+        </dd>
       </div>
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Inline brand marks for the add-to-calendar buttons                  */
-/* ------------------------------------------------------------------ */
 
 function GoogleLogo() {
   return (

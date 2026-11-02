@@ -1,10 +1,13 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { updateTag } from "next/cache";
 import { z } from "zod";
+import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { requirePortalAccess } from "@/lib/services/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emailDeliveryContext } from "@/lib/services/email-delivery-context";
+import { SCHOOL_REPLY_TO } from "@/lib/services/email-triggers";
 import { sendSchoolSessionEmails } from "@/lib/services/school-session-email";
 import { sendTransactionalEmail, renderEmailEventHtml, type EmailEventInput } from "@/lib/services/email";
 
@@ -38,6 +41,19 @@ function fingerprint(message: EmailEventInput) {
   return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(message).filter(([key]) => key !== "notes").sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
 }
 
+// Falls back to the pre-0053 columns so history still loads before that
+// migration is applied (those rows simply have no viewable content).
+async function loadEmailLogs(bookingRequestId: string, sessionId: string) {
+  const query = (columns: string) => adminClient().from("email_logs").select(columns)
+    .or(`related_booking_request_id.eq.${bookingRequestId},related_booking_session_id.eq.${sessionId}`)
+    .order("created_at", { ascending: false });
+  const base = "id, recipient_email, template_key, status, created_at, sent_at, error_message, related_booking_session_id";
+  type LogRow = { id: string; recipient_email: string; template_key: string; status: string; created_at: string; sent_at: string | null; error_message: string | null; related_booking_session_id: string | null; subject?: string | null };
+  const result = await query(`${base}, subject`).returns<LogRow[]>();
+  if (result.error && /subject/.test(result.error.message)) return query(base).returns<LogRow[]>();
+  return result;
+}
+
 export async function loadBookingEmailsAction(sessionId: string) {
   await requirePortalAccess("staff");
   const admin = adminClient();
@@ -47,8 +63,7 @@ export async function loadBookingEmailsAction(sessionId: string) {
   if (error) throw new Error("Booking session could not be loaded.");
   const [{ data: booking, error: bookingError }, { data: logs, error: logError }, { data: attempts, error: attemptError }] = await Promise.all([
     admin.from("booking_requests").select("reference_code, manual_email_only, import_batch_id, contact_position, school_contacts!booking_requests_primary_contact_id_fkey(full_name,email,position)").eq("id", session.booking_request_id).single(),
-    admin.from("email_logs").select("id, recipient_email, template_key, status, created_at, sent_at, error_message, related_booking_session_id")
-      .or(`related_booking_request_id.eq.${session.booking_request_id},related_booking_session_id.eq.${sessionId}`).order("created_at", { ascending: false }),
+    loadEmailLogs(session.booking_request_id, sessionId),
     admin.from("booking_email_sends").select("id, status, created_at, sent_at, error_message, payload")
       .eq("booking_session_id", sessionId).neq("status", "preview").order("created_at", { ascending: false })
   ]);
@@ -56,12 +71,33 @@ export async function loadBookingEmailsAction(sessionId: string) {
   let available = true;
   try { eventFor(session.status); } catch { available = false; }
   return { booking, available, feedbackAvailable: ["completed_pending_report", "report_submitted", "payment_pending", "paid", "closed"].includes(session.status) && Date.parse(session.ends_at) <= Date.now(), history: [
-    ...(logs ?? []).filter(log => !log.related_booking_session_id || log.related_booking_session_id === sessionId),
+    ...(logs ?? []).filter(log => !log.related_booking_session_id || log.related_booking_session_id === sessionId)
+      // Content is only stored for emails logged after 0053; failed sends have none worth showing.
+      .map(log => ({ ...log, source: "log" as const, has_content: Boolean(log.subject) && log.status === "sent" })),
     ...(attempts ?? []).map(attempt => {
       const payload = attempt.payload as EmailEventInput;
-      return { id: attempt.id, status: attempt.status, created_at: attempt.created_at, sent_at: attempt.sent_at, error_message: attempt.error_message, recipient_email: payload.recipientEmail, template_key: payload.templateKey };
+      return { id: attempt.id, status: attempt.status, created_at: attempt.created_at, sent_at: attempt.sent_at, error_message: attempt.error_message, recipient_email: payload.recipientEmail, template_key: payload.templateKey, subject: payload.subject, source: "send" as const, has_content: true };
     })
   ].sort((a,b) => b.created_at.localeCompare(a.created_at)) };
+}
+
+// Staff-only: the stored content of one email from the booking's history.
+export async function loadSentEmailContentAction(source: "log" | "send", id: string) {
+  await requirePortalAccess("staff");
+  z.enum(["log", "send"]).parse(source);
+  z.uuid().parse(id);
+  const admin = adminClient();
+  if (source === "log") {
+    const { data, error } = await admin.from("email_logs")
+      .select("recipient_email, subject, html_body, sent_at, created_at").eq("id", id).single();
+    if (error || !data.html_body) throw new Error("This email's content wasn't saved.");
+    return { recipient: data.recipient_email as string, subject: (data.subject as string | null) ?? "", sentAt: (data.sent_at ?? data.created_at) as string, html: data.html_body as string };
+  }
+  const { data, error } = await admin.from("booking_email_sends")
+    .select("payload, sent_at, created_at").eq("id", id).neq("status", "preview").single();
+  if (error) throw new Error("This email could not be loaded.");
+  const payload = data.payload as EmailEventInput;
+  return { recipient: payload.recipientEmail, subject: payload.subject, sentAt: (data.sent_at ?? data.created_at) as string, html: renderEmailEventHtml(payload) };
 }
 
 export async function previewBookingEmailAction(sessionId: string, kind: "status" | "feedback" = "status", notes = "") {
@@ -102,7 +138,7 @@ export async function confirmBookingEmailAction(previewId: string) {
   let failure: string | null = null;
   let providerMessageId: string | null = null;
   try {
-    const result = await emailDeliveryContext.run({ manualBookingId: draft.booking_request_id }, () => sendTransactionalEmail(payload));
+    const result = await emailDeliveryContext.run({ manualBookingId: draft.booking_request_id }, () => sendTransactionalEmail({ ...payload, replyTo: SCHOOL_REPLY_TO }));
     providerMessageId = result.id;
     status = result.status === "sent" ? "sent" : "failed";
     failure = "error" in result ? result.error : status === "failed" ? "Email was not sent." : null;
@@ -113,6 +149,8 @@ export async function confirmBookingEmailAction(previewId: string) {
     status, error_message: failure, provider_message_id: providerMessageId, sent_at: status === "sent" ? new Date().toISOString() : null
   }).eq("id", draft.id);
   if (saveError) throw new Error("Delivery outcome could not be saved. Do not retry until provider logs have been checked.");
+  // Refresh the bookings list's "N emails sent" count.
+  updateTag(PLATFORM_DATA_TAG);
   if (status !== "sent") throw new Error(failure || "Email could not be sent.");
   return { message: "Email sent successfully." };
 }

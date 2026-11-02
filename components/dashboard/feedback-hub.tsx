@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  ChevronLeft,
-  ChevronRight,
   Gamepad2,
   Globe2,
   Mail,
@@ -13,6 +11,7 @@ import {
 import { useState, useTransition, type ReactNode } from "react";
 
 import { DataTable, dataTableHeadingClassName } from "@/components/dashboard/data-table";
+import { ListPagination } from "@/components/dashboard/list-pagination";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
@@ -219,7 +218,8 @@ export function FeedbackHub({
             ])}
             footerContent={
               matchingReviews.length > FEEDBACK_PAGE_SIZE ? (
-                <FeedbackPagination
+                <ListPagination
+                  pageSize={FEEDBACK_PAGE_SIZE}
                   currentPage={safeSchoolPage}
                   pageCount={schoolPageCount}
                   totalItems={matchingReviews.length}
@@ -288,7 +288,8 @@ export function FeedbackHub({
             })}
             footerContent={
               matchingReports.length > FEEDBACK_PAGE_SIZE ? (
-                <FeedbackPagination
+                <ListPagination
+                  pageSize={FEEDBACK_PAGE_SIZE}
                   currentPage={safeReportPage}
                   pageCount={reportPageCount}
                   totalItems={matchingReports.length}
@@ -301,87 +302,6 @@ export function FeedbackHub({
         </div>
       )}
     </div>
-  );
-}
-
-function FeedbackPagination({
-  currentPage,
-  pageCount,
-  totalItems,
-  itemLabel,
-  onPageChange
-}: {
-  currentPage: number;
-  pageCount: number;
-  totalItems: number;
-  itemLabel: string;
-  onPageChange: (page: number) => void;
-}) {
-  const firstItem = (currentPage - 1) * FEEDBACK_PAGE_SIZE + 1;
-  const lastItem = Math.min(currentPage * FEEDBACK_PAGE_SIZE, totalItems);
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-[color:var(--text-soft)]">
-        Showing {firstItem} to {lastItem} of {totalItems} {itemLabel}
-      </p>
-      <div className="flex items-center gap-1.5" aria-label={`${itemLabel} pagination`}>
-        <PaginationArrow
-          disabled={currentPage === 1}
-          label="Previous page"
-          onClick={() => onPageChange(currentPage - 1)}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </PaginationArrow>
-        {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
-          <button
-            key={pageNumber}
-            type="button"
-            onClick={() => onPageChange(pageNumber)}
-            aria-current={pageNumber === currentPage ? "page" : undefined}
-            className={cn(
-              "flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[8px] border px-2.5 text-[12px] font-semibold transition",
-              pageNumber === currentPage
-                ? "border-[rgba(24,168,59,0.4)] bg-[color:var(--green-soft)] text-[#117a2e]"
-                : "border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] hover:border-[rgba(4,15,75,0.2)]"
-            )}
-          >
-            {pageNumber}
-          </button>
-        ))}
-        <PaginationArrow
-          disabled={currentPage === pageCount}
-          label="Next page"
-          onClick={() => onPageChange(currentPage + 1)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </PaginationArrow>
-      </div>
-    </div>
-  );
-}
-
-function PaginationArrow({
-  children,
-  disabled,
-  label,
-  onClick
-}: {
-  children: ReactNode;
-  disabled: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-label={label}
-      onClick={onClick}
-      className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-[color:var(--border-soft)] bg-white text-[color:var(--navy)] transition hover:border-[rgba(4,15,75,0.2)] disabled:cursor-not-allowed disabled:opacity-35"
-    >
-      {children}
-    </button>
   );
 }
 

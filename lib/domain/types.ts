@@ -25,6 +25,8 @@ export type PaymentStatus =
   | "approved"
   | "paid";
 
+export type WithdrawalReasonType = "school_rescheduled" | "unavailable" | "other";
+
 export type FinanceEmailStatus = "pending" | "sent" | "failed";
 
 export type ReportStatus =
@@ -252,6 +254,10 @@ export interface BookingSessionView {
   applicants?: SessionApplicant[];
   bookingRequestId?: string;
   bookingStatus?: BookingStatus;
+  // Who sourced the parent booking; decides the ambassador's sourced rate.
+  bookingSource?: BookingRequestView["source"];
+  sourcedByAmbassadorId?: string;
+  sourcedByAmbassadorName?: string;
   withdrawalReason?: string;
   withdrawalRequestedAt?: string;
   rescheduleHistory?: Array<{
@@ -263,6 +269,10 @@ export interface BookingSessionView {
   rescheduleRequestNotes?: string;
   rescheduleRequestedAt?: string;
   reschedulePreviousStatus?: BookingStatus;
+  // Set when the school moved the session itself; cleared once staff
+  // confirm the new date. Puts the session in the "Rescheduling" view.
+  rescheduleConfirmationNeededAt?: string;
+  withdrawalReasonType?: WithdrawalReasonType;
 }
 
 export interface BookingRequestView {
@@ -270,6 +280,9 @@ export interface BookingRequestView {
   referenceCode?: string;
   // Logged as "record only": no emails of any kind are sent for it.
   recordOnly?: boolean;
+  // Successful emails to the school (automatic and sent by staff).
+  schoolEmailsSentCount?: number;
+  lastSchoolEmailSentAt?: string;
   schoolName: string;
   primaryContactPosition?: string;
   primaryContactName: string;
@@ -369,6 +382,30 @@ export interface PaymentRecord {
   amountCents: number;
   baseAmountCents: number;
   sourcingBonusCents: number;
+  // The tier's amount for the second session of the same booking and day,
+  // covered by this payment's report (included in amountCents): $50 within
+  // 1 hour, $100 over 2 and under 4 hours (0056), or the flat $50 before 0056.
+  additionalSessionCents?: number;
+  // Staff amount added at approval (included in amountCents): an optional
+  // extra, or for a custom-review payment the staff-chosen custom amount.
+  extraAmountCents?: number;
+  // Why the extra/custom amount was set, or why there was no payment.
+  paymentNote?: string;
+  // 0056 tier; undefined for payments created before 0056.
+  paymentTier?: "single" | "pair_within_60" | "pair_120_to_240" | "custom_review";
+  // Sessions the payment's report covers (0056 onwards).
+  coveredSessionCount?: number;
+  // Created for explicit staff custom review (reason and gap below); until
+  // customReviewedAt is set its amount is not an earned/payable total.
+  reviewRequired?: boolean;
+  reviewReason?: string;
+  reviewGapMinutes?: number;
+  customReviewedAt?: string;
+  // The same ambassador's sessions at that school that day which this payment
+  // does not already cover (other bookings, or a third+ session).
+  sameDayPaymentCount?: number;
+  // The ambassador's current profile gaps that block approval.
+  missingPaymentDetails?: string[];
   status: PaymentStatus;
   eligibilityReason: string;
   createdAt: string;
@@ -421,11 +458,33 @@ export interface ReportSummary {
   additionalNotes?: string;
   yearLevels?: string;
   sessionStartsAt?: string;
+  // Every session the report covers: the ambassador's sessions of this
+  // booking on the same NZ day (one report per double/triple session).
+  coveredSessions?: Array<{ id: string; startsAt: string; endsAt?: string }>;
   media?: Array<{ id?: string; url: string; type: string; title?: string }>;
   bookingRequestId?: string;
   bookingRequestedAt?: string;
   reviewedAt?: string;
   paymentRequired?: boolean;
+  paymentAmountCents?: number;
+  // Parts of paymentAmountCents: delivery, sourcing bonus and the tier's
+  // second-session amount.
+  paymentBaseAmountCents?: number;
+  paymentSourcingBonusCents?: number;
+  paymentAdditionalSessionCents?: number;
+  paymentTier?: PaymentRecord["paymentTier"];
+  // The payment needs an explicit staff custom review before approval.
+  paymentReviewRequired?: boolean;
+  paymentReviewReason?: string;
+  paymentReviewGapMinutes?: number;
+  paymentCustomReviewedAt?: string;
+  // Where the report's payment is now, for the dialog's status line.
+  paymentStatus?: PaymentStatus;
+  financeEmailStatus?: FinanceEmailStatus;
+  sentToFinanceAt?: string;
+  paidAt?: string;
+  paymentNote?: string;
+  sameDayPaymentCount?: number;
   paymentDetailsComplete?: boolean;
   missingPaymentDetails?: string[];
 }

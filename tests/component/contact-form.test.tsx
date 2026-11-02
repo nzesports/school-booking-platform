@@ -42,7 +42,9 @@ describe("ContactForm", () => {
     );
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("message has been sent");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("message has been sent")
+    );
     expect(action).toHaveBeenCalledOnce();
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Your name" })).toHaveValue("")

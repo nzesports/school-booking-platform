@@ -18,6 +18,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import type { BookingSessionView, ReportSummary } from "@/lib/domain/types";
+import { groupSameDaySessions, sessionGroupSummary } from "@/lib/same-day-sessions";
 import { colourWithAlpha } from "@/lib/presentation-colors";
 import { formatShortDate, formatTime } from "@/lib/utils";
 
@@ -31,9 +32,9 @@ export function AmbassadorReportsWorkspace({
   reports: ReportSummary[];
 }) {
   const outstandingSessions = useMemo(
-    () => completedSessions
+    () => groupSameDaySessions(completedSessions
       .filter((session) => session.reportStatus === "not_submitted")
-      .sort((a, b) => new Date(b.endsAt).getTime() - new Date(a.endsAt).getTime()),
+      .sort((a, b) => new Date(b.endsAt).getTime() - new Date(a.endsAt).getTime())),
     [completedSessions]
   );
   const submittedReports = useMemo(
@@ -80,8 +81,8 @@ export function AmbassadorReportsWorkspace({
           </div>
           {outstandingSessions.length > 0 ? (
             <div className="mt-4 grid gap-2.5">
-              {outstandingSessions.map((session) => (
-                <OutstandingReportRow key={session.id} session={session} />
+              {outstandingSessions.map((sessions) => (
+                <OutstandingReportRow key={sessions[0].id} sessions={sessions} />
               ))}
             </div>
           ) : (
@@ -133,7 +134,9 @@ export function AmbassadorReportsWorkspace({
   );
 }
 
-function OutstandingReportRow({ session }: { session: BookingSessionView }) {
+function OutstandingReportRow({ sessions }: { sessions: BookingSessionView[] }) {
+  const session = sessions[0];
+  const { presentationTitles } = sessionGroupSummary(sessions);
   const accent = session.presentationAccentColor ?? "#18A83B";
 
   return (
@@ -142,11 +145,12 @@ function OutstandingReportRow({ session }: { session: BookingSessionView }) {
           <Presentation className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-[180px] flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: accent }}>{session.presentationTitle}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: accent }}>{presentationTitles.join(" + ")}</p>
           <h3 className="mt-0.5 font-semibold text-[color:var(--navy)]">{session.schoolName}</h3>
           <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[color:var(--text-soft)]">
             <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}
+            {formatShortDate(session.startsAt, true)} · {sessions.map((item) => formatTime(item.startsAt)).join(" & ")}
+            {sessions.length > 1 ? ` · ${sessions.length} sessions` : ""}
           </p>
         </div>
         <ButtonLink href={`/ambassador/report/${session.id}`} className="shrink-0">

@@ -48,6 +48,8 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { PaymentRecord } from "@/lib/domain/types";
+import { describePaymentAmount, isAwaitingCustomReview } from "@/lib/payment-breakdown";
+import { groupSameDaySessions, sessionGroupSummary } from "@/lib/same-day-sessions";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
   averageReportRating,
@@ -106,6 +108,7 @@ export default async function AmbassadorPortalPage({
       session.reportStatus === "not_submitted" &&
       (session.status === "confirmed" || session.status === "completed_pending_report")
   );
+  const outstandingReportCount = groupSameDaySessions(reportableSessions).length;
   const nextReportSession = reportableSessions[0];
   const ambassadorPayments = portal.payments;
   const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
@@ -145,6 +148,10 @@ export default async function AmbassadorPortalPage({
   const selectedOpenSession = route.startsWith("open-bookings/")
     ? portal.openSessions.find((session) => session.id === slug?.[1]) ?? null
     : null;
+  const selectedOpenGroup = selectedOpenSession
+    ? groupSameDaySessions(portal.openSessions).find((group) => group.some((session) => session.id === selectedOpenSession.id)) ?? [selectedOpenSession]
+    : [];
+  const selectedOpenSummary = sessionGroupSummary(selectedOpenGroup);
   const isBookingsWorkspaceRoute = [
     "bookings",
     "open-bookings",
@@ -305,16 +312,26 @@ export default async function AmbassadorPortalPage({
               <>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">{selectedOpenSession.presentationTitle}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">{selectedOpenSummary.presentationTitles.join(" + ")}</p>
                     <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{selectedOpenSession.schoolName}</h2>
                   </div>
                   <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
                 </div>
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatDate(selectedOpenSession.startsAt)} · ${formatTime(selectedOpenSession.startsAt)}`} />
+                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatDate(selectedOpenSession.startsAt)} · ${selectedOpenGroup.map((session) => formatTime(session.startsAt)).join(" & ")}`} />
                   <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
-                  <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSession.expectedStudentCount} students · ${selectedOpenSession.yearLevels}`} />
+                  <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSummary.studentCount} students in total · ${selectedOpenSummary.yearLevels.join(" / ")}`} />
                 </div>
+                {selectedOpenGroup.length > 1 ? (
+                  <div className="mt-4 rounded-[18px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
+                    <p className="font-semibold">{selectedOpenGroup.length} sessions · one booking. Applying or withdrawing covers all of them.</p>
+                    <ul className="mt-2 grid gap-1">
+                      {selectedOpenGroup.map((session) => (
+                        <li key={session.id}>{formatTime(session.startsAt)} · {session.presentationTitle} · {session.expectedStudentCount} students</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </>
             ) : null}
             {selectedOpenSession?.myApplicationStatus === "applied" ? (
@@ -363,8 +380,8 @@ export default async function AmbassadorPortalPage({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#117a2e]">Payment starts with a report</p>
                   <h2 className="mt-1 text-xl font-semibold text-[color:var(--navy)]">
-                    {completedSessions.filter((session) => session.reportStatus === "not_submitted").length > 0
-                      ? `${completedSessions.filter((session) => session.reportStatus === "not_submitted").length} completed session report${completedSessions.filter((session) => session.reportStatus === "not_submitted").length === 1 ? " is" : "s are"} waiting`
+                    {outstandingReportCount > 0
+                      ? `${outstandingReportCount} completed session report${outstandingReportCount === 1 ? " is" : "s are"} waiting`
                       : "All completed sessions have reports"}
                   </h2>
                 </div>
@@ -379,7 +396,7 @@ export default async function AmbassadorPortalPage({
                 tone="green"
                 label="Total earned"
                 value={formatCurrency(portal.ambassador.estimatedEarningsCents)}
-                info="Delivery fees and sourcing bonuses"
+                info="Delivery fees, sourcing bonuses and second-session amounts. Payments still awaiting a staff review aren't counted yet."
               />
               <EarningsMetric
                 icon={<CheckCircle2 className="h-5 w-5" />}
@@ -393,10 +410,9 @@ export default async function AmbassadorPortalPage({
                 tone="amber"
                 label="Sourcing bonuses"
                 value={formatCurrency(
-                  ambassadorPayments.reduce(
-                    (total, payment) => total + payment.sourcingBonusCents,
-                    0
-                  )
+                  ambassadorPayments
+                    .filter((payment) => !isAwaitingCustomReview(payment))
+                    .reduce((total, payment) => total + payment.sourcingBonusCents, 0)
                 )}
                 info={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
               />
@@ -413,6 +429,7 @@ export default async function AmbassadorPortalPage({
                 "Total",
                 "Status",
                 "Approved",
+                "Sent to finance",
                 "Invoice reference"
               ]}
               rows={ambassadorPayments.map((record) => [
@@ -421,9 +438,17 @@ export default async function AmbassadorPortalPage({
                 record.sourcingBonusCents > 0
                   ? formatCurrency(record.sourcingBonusCents)
                   : "—",
-                formatCurrency(record.amountCents),
+                // Not an earned total until staff finish the custom review.
+                isAwaitingCustomReview(record)
+                  ? `Awaiting staff review (${formatCurrency(record.baseAmountCents + record.sourcingBonusCents)} recognised so far)`
+                  : describePaymentAmount({ ...record, additionalSessionCents: record.additionalSessionCents ?? 0, extraAmountCents: record.extraAmountCents ?? 0 }),
                 <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
-                record.invoiceGeneratedAt ? formatShortDate(record.invoiceGeneratedAt) : "Awaiting approval",
+                record.invoiceGeneratedAt ? formatShortDate(record.invoiceGeneratedAt) : record.status === "not_eligible" ? "No payment required" : "Awaiting approval",
+                record.sentToFinanceAt
+                  ? formatShortDate(record.sentToFinanceAt)
+                  : record.status === "approved"
+                    ? "Not yet"
+                    : "—",
                 <EarningsInvoiceAction key={`${record.id}-invoice-action`} record={record} />
               ])}
             />
@@ -535,6 +560,8 @@ function BookingDetail({ icon, label, value }: { icon: ReactNode; label: string;
 }
 
 function EarningsInvoiceAction({ record }: { record: PaymentRecord }) {
+  if (record.status === "not_eligible") return <span>No invoice required</span>;
+
   if (record.invoiceNumber) {
     return (
       <div className="flex min-w-[190px] items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
@@ -592,12 +619,20 @@ function EarningsMetric({
 function InvoiceStatusBadge({
   record
 }: {
-  record: {
-    status: PaymentRecord["status"];
-    paidAt?: string;
-  };
+  record: Pick<PaymentRecord, "status" | "paidAt" | "financeEmailStatus">;
 }) {
-  const label = record.status === "paid" ? "Paid" : record.status === "approved" ? "Approved" : "Received";
+  // "With finance" tells ambassadors their payment has actually been sent to
+  // be paid, so they know whether to chase us or finance.
+  const label =
+    record.status === "paid"
+      ? `Paid${record.paidAt ? ` ${formatShortDate(record.paidAt)}` : ""}`
+      : record.status === "approved"
+        ? record.financeEmailStatus === "sent"
+          ? "With finance"
+          : "Approved"
+        : record.status === "not_eligible"
+          ? "No payment"
+          : "Received";
   const className =
     record.status === "paid"
       ? "border-[rgba(24,168,59,0.22)] bg-[color:var(--green-soft)] text-[#1d6f35]"
@@ -627,7 +662,7 @@ function getAmbassadorNotice(
   if (submitted === "report") {
     return {
       tone: "success",
-      message: "Report received. Staff can now review it; eligible payments will be sent to finance automatically after approval."
+      message: "Report received. Staff can now review it and arrange eligible payments with finance."
     };
   }
 
@@ -674,10 +709,52 @@ function getAmbassadorNotice(
     };
   }
 
+  if (error === "session-not-open") {
+    return { tone: "error", message: "That session is no longer open for applications." };
+  }
+
+  if (error === "same-day-group-blocked") {
+    return {
+      tone: "error",
+      message:
+        "Nothing was changed: another of that booking's sessions on the same day can't be withdrawn from right now (for example, it has a reschedule pending). Contact the team."
+    };
+  }
+
+  if (error === "group-already-reported") {
+    return {
+      tone: "error",
+      message: "A report already exists for this booking on that day. Contact the team to review any additional payment."
+    };
+  }
+
+  if (error === "report-day-not-finished") {
+    return {
+      tone: "error",
+      message:
+        "One report covers all of that day's back-to-back sessions, so submit it once the last session has finished."
+    };
+  }
+
+  if (error === "payment-already-exists") {
+    return {
+      tone: "error",
+      message: "A payment is already recorded for one of these sessions. Contact the team so they can check it."
+    };
+  }
+
   if (error === "invalid-ambassador-booking") {
     return {
       tone: "error",
       message: "Check the booking details and try again. All required fields need a valid value."
+    };
+  }
+
+  if (error === "ambassador-booking-conflict") {
+    return {
+      tone: "error",
+      message:
+        "Not logged: you already have a session that overlaps this time. Pick a time that doesn't clash (back-to-back is fine), or contact the team."
     };
   }
 
@@ -743,7 +820,34 @@ function getAmbassadorNotice(
   if (error === "report-media-invalid") {
     return {
       tone: "error",
-      message: "Choose no more than 15 report files and keep each file at 5 MB or smaller."
+      message:
+        "Your photos or videos didn't finish uploading. Add them again (up to 15 files, 50 MB each) and resubmit."
+    };
+  }
+
+  if (error === "invalid-report") {
+    return {
+      tone: "error",
+      message: "Some report answers were missing or invalid. Check every required question and submit again."
+    };
+  }
+
+  if (error === "report-save-failed") {
+    return { tone: "error", message: "Your report couldn't be saved. Please try again." };
+  }
+
+  if (error === "report-already-submitted") {
+    return { tone: "error", message: "A report has already been submitted for that session." };
+  }
+
+  if (error === "session-not-assigned") {
+    return { tone: "error", message: "That session isn't assigned to you, so you can't report on it." };
+  }
+
+  if (error === "ambassador-not-found") {
+    return {
+      tone: "error",
+      message: "We couldn't find your ambassador profile. Contact the team so they can fix your account."
     };
   }
 
