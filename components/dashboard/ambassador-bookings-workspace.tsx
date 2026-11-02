@@ -114,7 +114,7 @@ export function AmbassadorBookingsWorkspace({
     })
   ) as Record<string, AmbassadorBookingCardMode>;
 
-  // Counts match the cards: back-to-back sessions of one booking on a day are
+  // Counts match the cards: sessions of one booking on a day are
   // one card, so they count once.
   const groupCount = (sessions: BookingSessionView[], partition?: (session: BookingSessionView) => string) =>
     groupSameDaySessions(sessions, partition).length;

@@ -395,7 +395,7 @@ function BookingCard({
         </span>
         {isMultiSession ? (
           <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef4fd] px-2.5 py-1 text-xs font-semibold text-[#1e4fae]">
-            {daySessions.length} back-to-back sessions · one booking, one report
+            {daySessions.length} sessions · one booking, one report
           </span>
         ) : null}
         <span className="inline-flex items-center gap-2">

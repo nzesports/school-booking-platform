@@ -32,7 +32,7 @@ export function AmbassadorOpenSessionDialog({
   unstyled = false
 }: {
   session: BookingSessionView;
-  // The booking's back-to-back sessions that day, including `session`.
+  // The booking's sessions that day, including `session`.
   // Applying or withdrawing on `session` carries across all of them.
   daySessions?: BookingSessionView[];
   action: (formData: FormData) => void | Promise<void>;
@@ -106,7 +106,7 @@ export function AmbassadorOpenSessionDialog({
               {isMultiSession ? (
                 <div className="mt-4 rounded-[18px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
                   <p className="font-semibold">
-                    {group.length} back-to-back sessions · one booking, one report. Applying or withdrawing
+                    {group.length} sessions · one booking, one report. Applying or withdrawing
                     covers all of them.
                   </p>
                   <ul className="mt-2 grid gap-1">
