@@ -22,6 +22,7 @@ import {
   Eye,
   Mail,
   MapPinned,
+  Presentation,
   School2,
   ShieldCheck,
   UserCheck,
@@ -278,6 +279,15 @@ export function OperationsAnalytics({
             icon: <CheckCircle2 className="h-5 w-5 text-[color:var(--green)]" />,
             value: pipeline.completed,
             label: pipeline.completed === 1 ? "completed booking" : "completed bookings",
+            href: bookingsHref("past")
+          },
+          {
+            icon: <Presentation className="h-5 w-5 text-[#246bff]" />,
+            value: pipeline.presentationsDelivered,
+            label:
+              pipeline.presentationsDelivered === 1
+                ? "presentation delivered"
+                : "presentations delivered",
             href: bookingsHref("past")
           },
           {
@@ -897,7 +907,7 @@ function GlanceStrip({
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--green)]">
         At a glance
       </p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:divide-x xl:divide-[color:rgba(4,15,75,0.08)]">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5 xl:divide-x xl:divide-[color:rgba(4,15,75,0.08)]">
         {items.map((item) => (
           <Link key={item.label} href={item.href} className="group flex items-center gap-3 xl:px-4 xl:first:pl-0">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]">
@@ -1532,6 +1542,13 @@ function buildBookingPipeline(
       BOOKING_REVIEW_STATUSES.has(booking.status) ||
       booking.sessions.some((session) => BOOKING_REVIEW_STATUSES.has(session.status))
   );
+  // Every session of those completed bookings in the period, so a multi-session
+  // booking counts each presentation it delivered.
+  const presentationsDelivered = completed.flatMap((booking) =>
+    booking.sessions.filter(
+      (session) => rangeSessionIds.has(session.id) && !isCancelledSession(session)
+    )
+  );
   const confirmed = rangeBookings.filter((booking) =>
     BOOKING_CONFIRMED_STATUSES.has(booking.status)
   );
@@ -1551,6 +1568,7 @@ function buildBookingPipeline(
     upcomingSessions: confirmedUpcoming.length,
     pending: rangeBookings.filter((booking) => BOOKING_PENDING_STATUSES.has(booking.status)).length,
     completed: completed.length,
+    presentationsDelivered: presentationsDelivered.length,
     cancelled: cancelled.length
   };
 }

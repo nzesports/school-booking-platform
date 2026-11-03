@@ -1548,7 +1548,7 @@ function WithdrawalReviewPanel({
             </p>
           ) : null}
         </div>
-        <div className="grid gap-3 sm:min-w-[380px]">
+        <div className="sm:min-w-[360px]">
           <WithdrawalDecisionForms session={session} action={action} returnTo={returnTo} />
         </div>
       </div>

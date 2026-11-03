@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  CalendarDays,
+  BriefcaseBusiness,
   Eye,
   Globe2,
   MessageSquareQuote,
-  School2,
   Star,
-  UserRound
+  UserRound,
+  UsersRound
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -41,12 +41,15 @@ export function SchoolFeedbackDetailsButton({
   reviews,
   className,
   label = "View",
+  iconOnly = false,
   footer
 }: {
   review: SchoolFeedbackSummary;
   reviews?: SchoolFeedbackSummary[];
   className?: string;
   label?: string;
+  // Just the eye icon, with the label kept for screen readers and on hover.
+  iconOnly?: boolean;
   footer?: ReactNode | ((review: SchoolFeedbackSummary) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
@@ -82,9 +85,11 @@ export function SchoolFeedbackDetailsButton({
           setOpen(true);
         }}
         className={className ?? ""}
+        aria-label={iconOnly ? label : undefined}
+        title={iconOnly ? label : undefined}
       >
         <Eye className="h-3.5 w-3.5" />
-        {label}
+        {iconOnly ? null : label}
       </Button>
 
       {/* Portalled to <body> so glassy card ancestors (backdrop-filter) can't
@@ -114,31 +119,22 @@ export function SchoolFeedbackDetailsButton({
             >
               <div ref={navigationAnchorRef} className="h-0" />
               <div className="mt-5 grid gap-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <InfoTile
-                    icon={<School2 className="h-4 w-4" />}
-                    label="School"
-                    value={review.schoolName}
-                  />
+                <div className="grid gap-4 rounded-[18px] border border-[color:var(--border-soft)] bg-white/92 p-4 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-[color:var(--border-soft)]">
                   <InfoTile
                     icon={<UserRound className="h-4 w-4" />}
                     label="Submitted by"
                     value={details?.firstName && details?.lastName ? `${details.firstName} ${details.lastName}` : review.attribution ?? "School contact"}
                   />
                   <InfoTile
-                    icon={<UserRound className="h-4 w-4" />}
+                    icon={<BriefcaseBusiness className="h-4 w-4" />}
                     label="Role at school"
-                    value={details?.role ?? "Not recorded"}
+                    value={details?.role}
                   />
                   <InfoTile
-                    icon={<UserRound className="h-4 w-4" />}
-                    label="Students attended (school-reported)"
-                    value={details?.studentsAttended == null ? "Not recorded" : String(details.studentsAttended)}
-                  />
-                  <InfoTile
-                    icon={<CalendarDays className="h-4 w-4" />}
-                    label="Submitted"
-                    value={formatShortDate(review.createdAt)}
+                    icon={<UsersRound className="h-4 w-4" />}
+                    label="Students attended"
+                    value={details?.studentsAttended == null ? undefined : String(details.studentsAttended)}
+                    hint="school-reported"
                   />
                 </div>
 
@@ -266,19 +262,30 @@ export function SchoolFeedbackDetailsButton({
 function InfoTile({
   icon,
   label,
-  value
+  value,
+  hint
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
+  value?: string;
+  hint?: string;
 }) {
   return (
-    <div className="rounded-[16px] border border-[color:var(--border-soft)] bg-white/92 px-3.5 py-3">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-[color:var(--text-soft)]">
+    <div className="min-w-0 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+      <p className="flex items-center gap-1.5 text-xs text-[color:var(--text-soft)]">
         {icon}
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-semibold text-[color:var(--navy)]">{value}</p>
+      {value ? (
+        <p className="mt-1 text-sm font-semibold text-[color:var(--navy)]">
+          {value}
+          {hint ? (
+            <span className="ml-1.5 text-xs font-normal text-[color:var(--text-soft)]">{hint}</span>
+          ) : null}
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-[color:var(--text-soft)]">Not recorded</p>
+      )}
     </div>
   );
 }

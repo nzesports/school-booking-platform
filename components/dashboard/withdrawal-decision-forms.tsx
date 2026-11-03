@@ -9,9 +9,9 @@ export const WITHDRAWAL_REASON_LABELS: Record<WithdrawalReasonType, string> = {
 };
 
 const primaryClassName =
-  "inline-flex w-full items-center justify-center border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.2)] transition hover:bg-[#12852f]";
+  "border border-[#18a83b] bg-[#18a83b] text-white shadow-[0_3px_10px_rgba(24,168,59,0.2)] hover:bg-[#12852f]";
 const secondaryClassName =
-  "inline-flex w-full items-center justify-center border border-[#f2ddb0] bg-white text-[#9a5a00] transition hover:bg-[#fff2d8]";
+  "border border-[#f2ddb0] bg-white text-[#9a5a00] hover:bg-[#fff2d8]";
 
 // The three ways staff can settle an ambassador's withdrawal request. Shared
 // by the bookings list and the booking details dialog so both read the same.
@@ -29,20 +29,20 @@ export function WithdrawalDecisionForms({
   const decisions = [
     {
       decision: "cancel_rebooked",
-      label: "Cancel this session (rebooked)",
+      label: "Cancel (rebooked)",
       hint: "The school is already booked on a new date. Cancels this session; the school isn't emailed.",
       primary: schoolRescheduled
     },
     {
       decision: "reopen",
-      label: "Reopen for another ambassador",
+      label: "Reopen session",
       hint: `Removes ${name} and puts the session back in the open pool.`,
       primary: !schoolRescheduled
     },
     {
       decision: "keep",
-      label: `Keep ${name} assigned`,
-      hint: `${name} still delivers this session. Add a note to explain why.`,
+      label: `Keep ${name}`,
+      hint: `${name} still delivers this session.`,
       primary: false
     }
   ];
@@ -50,15 +50,12 @@ export function WithdrawalDecisionForms({
   const ordered = schoolRescheduled ? decisions : [decisions[1], decisions[0], decisions[2]];
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-2 sm:grid-cols-2">
       {ordered.map((item) => (
         <form
           key={item.decision}
           action={action}
-          className={cn(
-            "grid gap-2",
-            item.decision === "keep" && "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
-          )}
+          className={cn("flex gap-2", item.decision === "keep" && "sm:col-span-2")}
         >
           <input type="hidden" name="bookingSessionId" value={session.id} />
           <input type="hidden" name="returnTo" value={returnTo} />
@@ -67,19 +64,20 @@ export function WithdrawalDecisionForms({
             <input
               name="note"
               placeholder={`Note to ${name} (optional)`}
-              className="min-h-[36px] rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
+              className="min-h-[36px] min-w-0 flex-1 rounded-[8px] border border-[#f2ddb0] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none"
             />
           ) : null}
-          <div className="grid gap-1">
-            <PendingSubmitButton
-              unstyled
-              type="submit"
-              className={item.primary ? primaryClassName : secondaryClassName}
-            >
-              {item.label}
-            </PendingSubmitButton>
-            <p className="text-[11px] leading-4 text-[#8f680f]">{item.hint}</p>
-          </div>
+          <PendingSubmitButton
+            unstyled
+            type="submit"
+            title={item.hint}
+            className={cn(
+              item.primary ? primaryClassName : secondaryClassName,
+              item.decision === "keep" ? "shrink-0" : "w-full"
+            )}
+          >
+            {item.label}
+          </PendingSubmitButton>
         </form>
       ))}
     </div>

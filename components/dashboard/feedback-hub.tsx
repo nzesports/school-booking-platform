@@ -4,7 +4,6 @@ import {
   Gamepad2,
   Globe2,
   Mail,
-  MessagesSquare,
   Search,
   Star
 } from "lucide-react";
@@ -15,9 +14,10 @@ import { ListPagination } from "@/components/dashboard/list-pagination";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ReportsOverview } from "@/components/dashboard/reports-overview";
 import { SchoolFeedbackDetailsButton } from "@/components/dashboard/school-feedback-details-dialog";
+import { StarRating } from "@/components/ui/star-rating";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { BookingSessionView, ReportSummary, SchoolFeedbackSummary } from "@/lib/domain/types";
-import { cn, formatDateTime, formatShortDate } from "@/lib/utils";
+import { cn, formatDateTime, formatShortDate, initials } from "@/lib/utils";
 
 type FeedbackTab = "school" | "ambassador";
 const FEEDBACK_PAGE_SIZE = 10;
@@ -116,6 +116,15 @@ export function FeedbackHub({
     (safeSchoolPage - 1) * FEEDBACK_PAGE_SIZE,
     safeSchoolPage * FEEDBACK_PAGE_SIZE
   );
+  // The feedback dialog's footer, wherever it's opened from on this page.
+  const dialogWebsiteToggle = (activeReview: SchoolFeedbackSummary) => (
+    <ShowOnWebsiteToggle
+      key={`${activeReview.id}-dialog-${activeReview.isApproved}-${activeReview.isPublic}`}
+      review={activeReview}
+      action={feedbackDecisionAction}
+      returnTo={returnTo}
+    />
+  );
   const reportPageCount = Math.max(1, Math.ceil(matchingReports.length / FEEDBACK_PAGE_SIZE));
   const safeReportPage = Math.min(reportPage, reportPageCount);
   const pagedReports = matchingReports.slice(
@@ -160,7 +169,11 @@ export function FeedbackHub({
 
       {tab === "school" ? (
         <div className="grid gap-5">
-          <SchoolFeedbackOverview reviews={visibleReviews} periodLabel={periodLabel} />
+          <SchoolFeedbackOverview
+            reviews={visibleReviews}
+            periodLabel={periodLabel}
+            dialogFooter={dialogWebsiteToggle}
+          />
           <DataTable
             title="School feedback submissions"
             columns={["School", "Presentation", "Submitted", "Rating", "Show on website", "Submission"]}
@@ -206,14 +219,7 @@ export function FeedbackHub({
                 key={`${review.id}-view`}
                 review={review}
                 reviews={matchingReviews}
-                footer={(activeReview) => (
-                  <ShowOnWebsiteToggle
-                    key={`${activeReview.id}-dialog-${activeReview.isApproved}-${activeReview.isPublic}`}
-                    review={activeReview}
-                    action={feedbackDecisionAction}
-                    returnTo={returnTo}
-                  />
-                )}
+                footer={dialogWebsiteToggle}
               />
             ])}
             footerContent={
@@ -355,10 +361,12 @@ function ShowOnWebsiteToggle({
 
 function SchoolFeedbackOverview({
   reviews,
-  periodLabel
+  periodLabel,
+  dialogFooter
 }: {
   reviews: SchoolFeedbackSummary[];
   periodLabel?: string;
+  dialogFooter: (review: SchoolFeedbackSummary) => ReactNode;
 }) {
   const ratings = reviews
     .map((review) => review.rating)
@@ -394,6 +402,23 @@ function SchoolFeedbackOverview({
     };
   });
   const latest = reviews.filter((review) => review.quote?.trim()).slice(0, 3);
+  const engagement = [
+    {
+      icon: <Gamepad2 className="h-3.5 w-3.5 shrink-0" />,
+      value: consideringPct === null ? "—" : `${consideringPct}%`,
+      label: "considering a club"
+    },
+    {
+      icon: <Mail className="h-3.5 w-3.5 shrink-0" />,
+      value: String(mailingListCount),
+      label: mailingListCount === 1 ? "mailing list opt-in" : "mailing list opt-ins"
+    },
+    {
+      icon: <Globe2 className="h-3.5 w-3.5 shrink-0" />,
+      value: `${liveCount} of ${reviews.length}`,
+      label: "live on website"
+    }
+  ];
 
   return (
     <section className="surface-panel rounded-[28px] p-5 md:p-6">
@@ -403,96 +428,122 @@ function SchoolFeedbackOverview({
           : "Across all school feedback"}
       </h2>
 
-      <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-5">
-        <OverviewTile
-          icon={<MessagesSquare className="h-5 w-5" />}
-          iconClassName="bg-[#e8f1fd] text-[#2563eb]"
-          label="Reviews submitted"
-          value={String(reviews.length)}
-        />
-        <OverviewTile
-          icon={<Star className="h-5 w-5" />}
-          iconClassName="bg-[#fff5df] text-[#b7791f]"
-          label="Overall rating"
-          value={overall === null ? "—" : `${overall.toFixed(1)}/5`}
-        />
-        <OverviewTile
-          icon={<Gamepad2 className="h-5 w-5" />}
-          iconClassName="bg-[#eaf8ee] text-[#117a2e]"
-          label="Considering a club"
-          value={consideringPct === null ? "—" : `${consideringPct}%`}
-        />
-        <OverviewTile
-          icon={<Mail className="h-5 w-5" />}
-          iconClassName="bg-[#ece9ff] text-[#5b4fc0]"
-          label="Mailing list opt-ins"
-          value={String(mailingListCount)}
-        />
-        <OverviewTile
-          icon={<Globe2 className="h-5 w-5" />}
-          iconClassName="bg-[#fde8f0] text-[#be185d]"
-          label="Live on website"
-          value={String(liveCount)}
-        />
-      </div>
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)]">
-        <div className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-[color:var(--navy)]">Average ratings</p>
-            {overall !== null ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff5df] px-3 py-1 text-sm font-semibold text-[#b7791f]">
-                <Star className="h-4 w-4 fill-[#f4b63f] text-[#f4b63f]" />
-                {overall.toFixed(1)} / 5 overall
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-4 grid gap-3">
-            {categoryRows.map((row) => (
-              <div
-                key={row.label}
-                className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)_44px] items-center gap-3"
-              >
-                <span className="text-sm text-[color:var(--text-soft)]">{row.label}</span>
-                <div className="h-2.5 rounded-full bg-[#e6ecf5]">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      (row.value ?? 0) >= 4
-                        ? "bg-[linear-gradient(135deg,#18a83b,#47c96a)]"
-                        : "bg-[linear-gradient(135deg,#2563eb,#60a5fa)]"
-                    )}
-                    style={{ width: `${((row.value ?? 0) / 5) * 100}%` }}
-                  />
-                </div>
-                <span className="text-right text-sm font-semibold text-[color:var(--navy)]">
-                  {row.value === null ? "—" : row.value.toFixed(1)}
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        {/* Stretched to the latest feedback's height; any spare room is shared
+            between the sections rather than left empty at the bottom. */}
+        <div className="flex flex-col justify-between gap-6 rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5 md:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--navy)]">Overall rating</p>
+              <p className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-5xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+                  {overall === null ? "—" : overall.toFixed(1)}
                 </span>
+                <span className="text-base text-[color:var(--text-soft)]">/ 5</span>
+              </p>
+              {overall !== null ? (
+                <StarRating rating={overall} className="mt-2" starClassName="h-5 w-5" />
+              ) : null}
+            </div>
+            <p className="text-sm text-[color:var(--text-soft)]">
+              From {reviews.length} {reviews.length === 1 ? "review" : "reviews"}
+            </p>
+          </div>
+
+          <div className="grid gap-4 border-t border-[color:var(--border-soft)] pt-5">
+            {categoryRows.map((row) => {
+              // Below 4 the bar turns amber so a slipping category stands out.
+              const strong = (row.value ?? 0) >= 4;
+
+              return (
+                <div key={row.label} className="grid gap-1.5">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-[color:var(--text-soft)]">{row.label}</span>
+                    <span className="font-semibold text-[color:var(--navy)]">
+                      {row.value === null ? "—" : row.value.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className={cn("h-2 rounded-full", strong ? "bg-[#e3f4e7]" : "bg-[#fdf0d9]")}>
+                    <div
+                      className={cn("h-full rounded-full", strong ? "bg-[#18a83b]" : "bg-[#f5a623]")}
+                      style={{ width: `${((row.value ?? 0) / 5) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-3 divide-x divide-[color:var(--border-soft)] border-t border-[color:var(--border-soft)] pt-5">
+            {engagement.map((item) => (
+              <div key={item.label} className="grid content-start gap-1 px-3 first:pl-0 last:pr-0">
+                <p className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                  {item.value}
+                </p>
+                <p className="flex items-start gap-1.5 text-xs leading-4 text-[color:var(--text-soft)]">
+                  {item.icon}
+                  {item.label}
+                </p>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5">
+        <div className="rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-5 md:p-6">
           <p className="text-sm font-semibold text-[color:var(--navy)]">Latest feedback</p>
-          <div className="mt-3 grid gap-3">
+          <div className="mt-4 grid gap-3">
             {latest.length === 0 ? (
               <p className="text-sm text-[color:var(--text-soft)]">
                 Written feedback from schools will appear here.
               </p>
             ) : null}
-            {latest.map((review) => (
-              <blockquote
-                key={review.id}
-                className="rounded-[16px] bg-[#f6f9fd] px-4 py-3 text-sm leading-6 text-[color:var(--navy)]"
-              >
-                “{review.quote.trim()}”
-                <footer className="mt-1 text-xs text-[color:var(--text-soft)]">
-                  {review.attribution ?? "School contact"} · {review.schoolName} ·{" "}
-                  {review.presentationTitle} · {formatShortDate(review.createdAt)}
-                </footer>
-              </blockquote>
-            ))}
+            {latest.map((review) => {
+              // The form's own name fields read cleaner than the stored
+              // "Name, Role" attribution, which older reviews fall back to.
+              const fullName = [review.details?.firstName, review.details?.lastName]
+                .filter(Boolean)
+                .join(" ");
+              const name = fullName || review.attribution || "School contact";
+              const role = fullName ? review.details?.role : undefined;
+
+              return (
+                <figure key={review.id} className="grid gap-2 rounded-[18px] bg-[#f6f9fd] p-4">
+                  {typeof review.rating === "number" ? (
+                    <StarRating rating={review.rating} starClassName="h-3.5 w-3.5" />
+                  ) : null}
+                  <blockquote className="text-[15px] leading-7 text-[color:var(--navy)]">
+                    “{review.quote.trim()}”
+                  </blockquote>
+                  <figcaption className="mt-1 flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eaf8ee] text-[11px] font-semibold text-[#117a2e]">
+                      {initials(name)}
+                    </span>
+                    <span className="min-w-0 flex-1 text-xs leading-5">
+                      <span className="block truncate font-semibold text-[color:var(--navy)]">
+                        {name}
+                        {role ? (
+                          <span className="font-normal text-[color:var(--text-soft)]"> · {role}</span>
+                        ) : null}
+                      </span>
+                      <span className="block truncate text-[color:var(--text-soft)]">
+                        {review.schoolName} · {review.presentationTitle}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-[color:var(--text-soft)]">
+                      {formatShortDate(review.createdAt)}
+                    </span>
+                    <SchoolFeedbackDetailsButton
+                      review={review}
+                      reviews={reviews}
+                      footer={dialogFooter}
+                      label="View feedback"
+                      iconOnly
+                      className="shrink-0"
+                    />
+                  </figcaption>
+                </figure>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -500,33 +551,3 @@ function SchoolFeedbackOverview({
   );
 }
 
-function OverviewTile({
-  icon,
-  iconClassName,
-  label,
-  value
-}: {
-  icon: ReactNode;
-  iconClassName: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-3.5 rounded-[22px] border border-[color:var(--border-soft)] bg-white/92 p-4">
-      <div
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
-          iconClassName
-        )}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-[color:var(--text-soft)]">{label}</p>
-        <p className="truncate text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
