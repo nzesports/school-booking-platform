@@ -40,6 +40,7 @@ import {
   buildSchoolDeliverySummaries,
   filterBookingsByLifecycle,
   isCancelledSession,
+  isCompletedBooking,
   isDeliveredSession,
   sessionInRange,
   type BookingLifecycleView,
@@ -103,10 +104,12 @@ export function BookingLifecyclePanel({
   const isMissingStudents = (session: BookingSessionView) =>
     isCompleted(session) &&
     !(Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0) > 0);
-  const metricBookings = metric === "all" ? periodBookings : periodBookings.map(booking => ({
+  // Completed counts bookings by their own status, the same as the dashboard's
+  // completed bookings; the other tiles count sessions.
+  const completedBookings = periodBookings.filter(isCompletedBooking);
+  const metricBookings = metric === "all" ? periodBookings : metric === "completed" ? completedBookings : periodBookings.map(booking => ({
     ...booking,
     sessions: booking.sessions.filter(session => {
-      if (metric === "completed") return isCompleted(session);
       if (metric === "cancelled") return isCancelled(session);
       if (metric === "pending") return isPending(session);
       if (metric === "confirmed") return isConfirmed(session);
@@ -126,7 +129,7 @@ export function BookingLifecyclePanel({
   };
   const sessions = periodBookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
-  const completedCount = sessions.filter(isCompleted).length;
+  const completedCount = completedBookings.length;
   const cancelledCount = sessions.filter(isCancelled).length;
   const confirmedCount = sessions.filter(isConfirmed).length;
   const pendingCount = sessions.filter(isPending).length;
@@ -145,7 +148,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#eef8f1] hover:bg-[#eaf8ee]"
           label="Completed"
           value={String(completedCount)}
-          info="Delivered sessions whose date has passed"
+          info="Bookings whose status is completed: report due, reported, payment pending, paid or closed"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#7c3aed]"
@@ -211,7 +214,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
           label="All sessions"
           value={String(sessions.length)}
-          info={`Every session in the selected period, whatever its status: ${completedCount} completed + ${confirmedCount} confirmed + ${reschedulingCount} rescheduling + ${withdrawalCount} withdrawal + ${pendingCount} pending + ${cancelledCount} cancelled.`}
+          info="Every session in the selected period, whatever its status"
         />
       </div>
 

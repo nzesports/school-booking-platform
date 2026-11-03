@@ -60,6 +60,17 @@ const deliveredCapableStatuses = new Set<BookingStatus>([
 
 const cancelledStatuses = new Set<BookingStatus>(["cancelled", "declined"]);
 
+// A booking is completed only when its own status says so. Sessions whose
+// date has passed don't make a booking completed while the booking still
+// reads requested, reschedule requested or anything else.
+export const completedBookingStatuses = new Set<string>([
+  "completed_pending_report",
+  "report_submitted",
+  "payment_pending",
+  "paid",
+  "closed"
+]);
+
 const actionStatuses = new Set<BookingStatus>([
   "requested",
   "tentative",
@@ -477,10 +488,7 @@ export function bookingNeedsAction(booking: BookingRequestView) {
 }
 
 export function isCompletedBooking(booking: BookingRequestView) {
-  return (
-    ["report_submitted", "paid", "closed"].includes(booking.status) ||
-    (booking.sessions.length > 0 && booking.sessions.every((session) => isDeliveredSession(session)))
-  );
+  return completedBookingStatuses.has(booking.status);
 }
 
 export function isFutureSession(session: BookingSessionView, now = new Date()) {
@@ -700,7 +708,7 @@ export function buildRangeMetrics(
       label: "Completed bookings",
       value: String(completedBookings.length),
       trend: "Delivered lifecycle",
-      detail: "Reported, paid, closed, or all sessions delivered",
+      detail: "Booking status completed: report due, reported, payment pending, paid or closed",
       icon: "school",
       tone: "blue"
     },

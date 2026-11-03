@@ -6,7 +6,13 @@
       "Bash(npx eslint *)",
       "Bash(npm install *)",
       "Bash(python3 -)",
-      "Bash(awk '{print $NF}')"
+      "Bash(awk '{print $NF}')",
+      "Bash(node /private/tmp/claude-501/-Users-laylaloots-school-booking-platform/1ab9a27e-d961-4f9f-99b3-dafec1f23258/scratchpad/vercel-dep-detail.mjs dpl_8fqfeTmo6zhsPnChvjLEa3ZPPYAE)",
+      "Bash(git fetch *)",
+      "Bash(/private/tmp/claude-501/-Users-laylaloots-school-booking-platform/1ab9a27e-d961-4f9f-99b3-dafec1f23258/scratchpad/backup/release-run.zsh prod *)",
+      "Read(//Users/laylaloots/NZEsports-Backups/release-2026-11-03/**)",
+      "Bash(printf '22:01 project resumed: paused=false, production 864a41a, domain -> dpl_HMkPvcNtKyyPqRT8MQ6mhK1eyj4n, autoAssignCustomDomains=true, cron enabled \\(enabledAt 09:01:48Z\\), site 200, cron endpoint 401 unauthenticated.\\\\n')",
+      "Read(//Users/laylaloots/Documents/Codex/2026-11-02/task-2/qa-evidence/prod-release-2026-11-03/**)"
     ]
   }
 }

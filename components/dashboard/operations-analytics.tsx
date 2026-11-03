@@ -81,13 +81,6 @@ const BOOKING_PENDING_STATUSES = new Set([
   "reschedule_requested"
 ]);
 const BOOKING_CONFIRMED_STATUSES = new Set(["ambassador_assigned", "confirmed"]);
-const BOOKING_COMPLETED_STATUSES = new Set([
-  "completed_pending_report",
-  "report_submitted",
-  "payment_pending",
-  "paid",
-  "closed"
-]);
 const BOOKING_CANCELLED_STATUSES = new Set(["cancelled", "declined"]);
 
 type RegionSummary = { id: string; name: string; slug: string; isActive: boolean };
@@ -283,8 +276,8 @@ export function OperationsAnalytics({
           },
           {
             icon: <CheckCircle2 className="h-5 w-5 text-[color:var(--green)]" />,
-            value: deliveredRangeSessions.length,
-            label: deliveredRangeSessions.length === 1 ? "session completed" : "sessions completed",
+            value: pipeline.completed,
+            label: pipeline.completed === 1 ? "completed booking" : "completed bookings",
             href: bookingsHref("past")
           },
           {
@@ -1528,8 +1521,11 @@ function buildBookingPipeline(
   const cancelled = rangeBookings.filter((booking) =>
     BOOKING_CANCELLED_STATUSES.has(booking.status)
   );
-  const completed = rangeBookings.filter((booking) =>
-    BOOKING_COMPLETED_STATUSES.has(booking.status)
+  // Dated by its sessions, as on the Bookings page, so a historical booking
+  // imported during the period isn't counted as completed in it.
+  const completed = rangeBookings.filter(
+    (booking) =>
+      isCompletedBooking(booking) && booking.sessions.some((session) => rangeSessionIds.has(session.id))
   );
   const needsReview = rangeBookings.filter(
     (booking) =>
@@ -1640,7 +1636,7 @@ function buildBookingStatusBreakdown(yearBookings: BookingRequestView[]) {
   const cancelledIds = new Set(cancelled.map((booking) => booking.id));
   const completed = yearBookings.filter(
     (booking) =>
-      !cancelledIds.has(booking.id) && BOOKING_COMPLETED_STATUSES.has(booking.status)
+      !cancelledIds.has(booking.id) && isCompletedBooking(booking)
   );
   const completedIds = new Set(completed.map((booking) => booking.id));
   const open = yearBookings.filter(
