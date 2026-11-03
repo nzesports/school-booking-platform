@@ -511,7 +511,8 @@ function SchoolFeedbackOverview({
                   {typeof review.rating === "number" ? (
                     <StarRating rating={review.rating} starClassName="h-3.5 w-3.5" />
                   ) : null}
-                  <blockquote className="text-[15px] leading-7 text-[color:var(--navy)]">
+                  {/* Long reviews are cut to three lines; the eye button opens the full text. */}
+                  <blockquote className="line-clamp-3 text-[15px] leading-7 text-[color:var(--navy)]">
                     “{review.quote.trim()}”
                   </blockquote>
                   <figcaption className="mt-1 flex items-center gap-3">
