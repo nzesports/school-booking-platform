@@ -20,6 +20,7 @@ export type DashboardRange =
   | "term"
   | "biannual"
   | "year"
+  | "lastyear"
   | "all"
   | "custom";
 export type DashboardCustomRange = { from: string; to: string };
@@ -32,6 +33,7 @@ export const dashboardRangeOptions: Array<{ value: DashboardRange; label: string
   { value: "term", label: "This term" },
   { value: "biannual", label: "Bi-annual" },
   { value: "year", label: "This year" },
+  { value: "lastyear", label: "Last year" },
   { value: "all", label: "All time" },
   { value: "custom", label: "Custom range" }
 ];
@@ -277,6 +279,10 @@ export function dashboardRangeWindow(
       start: nzMidnight(today.year, termStartMonth),
       end: nzMidnight(today.year, termStartMonth + 3)
     };
+  }
+
+  if (range === "lastyear") {
+    return { start: nzMidnight(today.year - 1, 0), end: nzMidnight(today.year, 0) };
   }
 
   if (range === "biannual") {

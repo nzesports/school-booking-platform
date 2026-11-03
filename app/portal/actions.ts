@@ -5146,7 +5146,7 @@ const reportMediaUploadRequestSchema = z
 async function prepareReportMediaUploads(userId: string, files: unknown) {
   const parsed = reportMediaUploadRequestSchema.safeParse(files);
   if (!parsed.success) {
-    return { error: "Choose up to 15 photos, videos or PDFs, 5 MB each." };
+    return { error: "Choose up to 15 photos, videos or PDFs, 50 MB each." };
   }
   try {
     return {

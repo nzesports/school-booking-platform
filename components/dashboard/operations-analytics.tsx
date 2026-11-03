@@ -277,8 +277,9 @@ export function OperationsAnalytics({
           },
           {
             icon: <CheckCircle2 className="h-5 w-5 text-[color:var(--green)]" />,
-            value: pipeline.completed,
-            label: pipeline.completed === 1 ? "completed booking" : "completed bookings",
+            value: pipeline.schoolsVisited,
+            label: pipeline.schoolsVisited === 1 ? "school visited" : "schools visited",
+            info: "Each school counted once, however many times we presented there in this period. Only completed bookings count.",
             href: bookingsHref("past")
           },
           {
@@ -288,6 +289,7 @@ export function OperationsAnalytics({
               pipeline.presentationsDelivered === 1
                 ? "presentation delivered"
                 : "presentations delivered",
+            info: "Every presentation delivered in this period. This includes a singular and/or multiple bookings from the same school. Only completed bookings count.",
             href: bookingsHref("past")
           },
           {
@@ -900,7 +902,7 @@ function YearNavigator({
 function GlanceStrip({
   items
 }: {
-  items: Array<{ icon: ReactNode; value: number; label: string; href: string }>;
+  items: Array<{ icon: ReactNode; value: number; label: string; href: string; info?: string }>;
 }) {
   return (
     <Card className="rounded-[28px] border-[#d7efdd] bg-[linear-gradient(135deg,#f1faf3,#f8fdf9)]">
@@ -909,19 +911,27 @@ function GlanceStrip({
       </p>
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5 xl:divide-x xl:divide-[color:rgba(4,15,75,0.08)]">
         {items.map((item) => (
-          <Link key={item.label} href={item.href} className="group flex items-center gap-3 xl:px-4 xl:first:pl-0">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]">
-              {item.icon}
-            </div>
-            <div>
-              <p className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
-                {item.value.toLocaleString("en-NZ")}
-              </p>
-              <p className="text-sm text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
-                {item.label}
-              </p>
-            </div>
-          </Link>
+          // The help button sits beside the link rather than inside it.
+          <div key={item.label} className="flex items-center gap-1.5 xl:px-4 xl:first:pl-0">
+            <Link href={item.href} className="group flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(4,15,75,0.06)]">
+                {item.icon}
+              </div>
+              <div>
+                <p className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">
+                  {item.value.toLocaleString("en-NZ")}
+                </p>
+                <p className="text-sm text-[color:var(--text-soft)] group-hover:text-[color:var(--navy)]">
+                  {item.label}
+                </p>
+              </div>
+            </Link>
+            {item.info ? (
+              <InfoTooltip label={item.label} className="self-end">
+                {item.info}
+              </InfoTooltip>
+            ) : null}
+          </div>
         ))}
       </div>
     </Card>
@@ -1569,6 +1579,10 @@ function buildBookingPipeline(
     pending: rangeBookings.filter((booking) => BOOKING_PENDING_STATUSES.has(booking.status)).length,
     completed: completed.length,
     presentationsDelivered: presentationsDelivered.length,
+    // A school with several completed bookings in the period counts once.
+    schoolsVisited: new Set(
+      completed.map((booking) => booking.sessions[0]?.schoolId ?? booking.schoolName)
+    ).size,
     cancelled: cancelled.length
   };
 }

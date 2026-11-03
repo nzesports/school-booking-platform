@@ -34,6 +34,10 @@ import {
 } from "@/components/dashboard/ambassador-bookings-workspace";
 import { AmbassadorDashboard, EarningsYearChart } from "@/components/dashboard/ambassador-dashboard";
 import { AmbassadorManualBookingDialog } from "@/components/dashboard/ambassador-manual-booking-dialog";
+import {
+  AmbassadorPayRatesProvider,
+  PayEstimate
+} from "@/components/dashboard/ambassador-open-session-dialog";
 import { AmbassadorProfileWorkspace } from "@/components/dashboard/ambassador-profile";
 import { PresentationMaterialsWorkspace } from "@/components/dashboard/presentation-materials-workspace";
 import { AmbassadorReportForm } from "@/components/dashboard/ambassador-report-form";
@@ -94,6 +98,12 @@ export default async function AmbassadorPortalPage({
     delivery: formatCurrency(paymentSettings.defaultAmountCents),
     sourcingBonus: formatCurrency(sourcedCents - paymentSettings.defaultAmountCents),
     sourced: formatCurrency(sourcedCents)
+  };
+  // Open bookings show what they'd pay; ambassadors don't earn the sourcing
+  // bonus on them, so only the delivery fee and the payment threshold matter.
+  const payRates = {
+    deliveryCents: paymentSettings.defaultAmountCents,
+    eligibleThreshold: paymentSettings.eligibleAttendeeThreshold
   };
   const notifications = await loadUserNotifications(actor.id);
   const ownedSessions = portal.assignedSessions;
@@ -271,225 +281,228 @@ export default async function AmbassadorPortalPage({
           </Card>
         ) : null}
 
-        {route === "" ? (
-          <AmbassadorDashboard
-            ambassador={portal.ambassador}
-            openSessions={portal.openSessions}
-            upcomingSessions={upcomingSessions}
-            completedSessions={completedSessions}
-            reports={portal.reports}
-            payments={ambassadorPayments}
-            trainingModules={portal.trainingModules}
-            resources={portal.resources}
-            presentations={portal.presentations}
-            materialsConsentAcceptedAt={materialsConsentAcceptedAt}
-            applyAction={applyToSessionAction}
-            withdrawApplicationAction={withdrawApplicationAction}
-            requestWithdrawalAction={requestSessionWithdrawalAction}
-          />
-        ) : null}
-        {isBookingsWorkspaceRoute ? (
-          <AmbassadorBookingsWorkspace
-            key={initialBookingsTab}
-            initialTab={initialBookingsTab}
-            openSessions={portal.openSessions}
-            upcomingSessions={upcomingSessions}
-            completedSessions={completedSessions}
-            sourcedBookings={portal.sourcedBookings}
-            nowIso={now.toISOString()}
-            applyAction={applyToSessionAction}
-            withdrawApplicationAction={withdrawApplicationAction}
-            requestWithdrawalAction={requestSessionWithdrawalAction}
-          />
-        ) : null}
+        <AmbassadorPayRatesProvider rates={payRates}>
+          {route === "" ? (
+            <AmbassadorDashboard
+              ambassador={portal.ambassador}
+              openSessions={portal.openSessions}
+              upcomingSessions={upcomingSessions}
+              completedSessions={completedSessions}
+              reports={portal.reports}
+              payments={ambassadorPayments}
+              trainingModules={portal.trainingModules}
+              resources={portal.resources}
+              presentations={portal.presentations}
+              materialsConsentAcceptedAt={materialsConsentAcceptedAt}
+              applyAction={applyToSessionAction}
+              withdrawApplicationAction={withdrawApplicationAction}
+              requestWithdrawalAction={requestSessionWithdrawalAction}
+            />
+          ) : null}
+          {isBookingsWorkspaceRoute ? (
+            <AmbassadorBookingsWorkspace
+              key={initialBookingsTab}
+              initialTab={initialBookingsTab}
+              openSessions={portal.openSessions}
+              upcomingSessions={upcomingSessions}
+              completedSessions={completedSessions}
+              sourcedBookings={portal.sourcedBookings}
+              nowIso={now.toISOString()}
+              applyAction={applyToSessionAction}
+              withdrawApplicationAction={withdrawApplicationAction}
+              requestWithdrawalAction={requestSessionWithdrawalAction}
+            />
+          ) : null}
 
-        {route.startsWith("open-bookings/") ? (
-          <Card className="rounded-[34px]">
-            <ButtonLink href="/ambassador/bookings" variant="ghost" className="mb-5">
-              <ArrowLeft className="h-4 w-4" /> Back to open bookings
-            </ButtonLink>
-            {selectedOpenSession ? (
-              <>
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">{selectedOpenSummary.presentationTitles.join(" + ")}</p>
-                    <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{selectedOpenSession.schoolName}</h2>
+          {route.startsWith("open-bookings/") ? (
+            <Card className="rounded-[34px]">
+              <ButtonLink href="/ambassador/bookings" variant="ghost" className="mb-5">
+                <ArrowLeft className="h-4 w-4" /> Back to open bookings
+              </ButtonLink>
+              {selectedOpenSession ? (
+                <>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[color:var(--green)]">{selectedOpenSummary.presentationTitles.join(" + ")}</p>
+                      <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{selectedOpenSession.schoolName}</h2>
+                    </div>
+                    <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
                   </div>
-                  <StatusBadge value={selectedOpenSession.myApplicationStatus === "applied" ? "applied" : "tentative"} label={selectedOpenSession.myApplicationStatus === "applied" ? "Applied" : "Open"} />
-                </div>
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatDate(selectedOpenSession.startsAt)} · ${selectedOpenGroup.map((session) => formatTime(session.startsAt)).join(" & ")}`} />
-                  <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
-                  <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSummary.studentCount} students in total · ${selectedOpenSummary.yearLevels.join(" / ")}`} />
-                </div>
-                {selectedOpenGroup.length > 1 ? (
-                  <div className="mt-4 rounded-[18px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
-                    <p className="font-semibold">{selectedOpenGroup.length} sessions · one booking. Applying or withdrawing covers all of them.</p>
-                    <ul className="mt-2 grid gap-1">
-                      {selectedOpenGroup.map((session) => (
-                        <li key={session.id}>{formatTime(session.startsAt)} · {session.presentationTitle} · {session.expectedStudentCount} students</li>
-                      ))}
-                    </ul>
+                  <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                    <BookingDetail icon={<Clock3 className="h-4 w-4" />} label="Date and time" value={`${formatDate(selectedOpenSession.startsAt)} · ${selectedOpenGroup.map((session) => formatTime(session.startsAt)).join(" & ")}`} />
+                    <BookingDetail icon={<MapPin className="h-4 w-4" />} label="Location" value={selectedOpenSession.regionName ?? selectedOpenSession.regionSlug} />
+                    <BookingDetail icon={<UsersRound className="h-4 w-4" />} label="Audience" value={`${selectedOpenSummary.studentCount} students in total · ${selectedOpenSummary.yearLevels.join(" / ")}`} />
                   </div>
-                ) : null}
-              </>
-            ) : null}
-            {selectedOpenSession?.myApplicationStatus === "applied" ? (
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <p className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
-                  <CheckCircle2 className="h-4 w-4" /> You&apos;ve applied. Staff are reviewing applications now.
-                </p>
-                <AmbassadorApplicationWithdrawDialog sessionId={selectedOpenSession.id} action={withdrawApplicationAction} returnTo="/ambassador/bookings?tab=applied" />
-              </div>
-            ) : selectedOpenSession ? (
-              <form action={applyToSessionAction} className="mt-6 grid gap-4">
-                <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
-                <input type="hidden" name="returnTo" value="/ambassador/bookings?tab=applied" />
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[color:var(--navy)]">
-                    Anything we should know?{" "}
-                    <span className="font-normal text-[color:var(--text-soft)]">(optional)</span>
-                  </span>
-                  <Textarea
-                    name="message"
-                    maxLength={2000}
-                    placeholder="e.g. your availability on the day, travel plans, or experience with this presentation."
-                  />
-                </label>
-                <Button type="submit">Submit application</Button>
-              </form>
-            ) : (
-              <p className="mt-4 text-sm text-[color:var(--text-soft)]">This booking is no longer available.</p>
-            )}
-          </Card>
-        ) : null}
-
-        {selectedReportSessionId ? (
-          <AmbassadorReportForm
-            sessions={reportableSessions}
-            initialSessionId={selectedReportSessionId === "new" ? undefined : selectedReportSessionId}
-            presenterName={actor.fullName}
-            action={submitAmbassadorReportAction}
-          />
-        ) : null}
-
-        {route === "earnings" ? (
-          <div className="grid gap-5">
-            <Card className="rounded-[26px] border-[#cce8d3] bg-[linear-gradient(110deg,#f2fbf5,#ffffff)]">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#117a2e]">Payment starts with a report</p>
-                  <h2 className="mt-1 text-xl font-semibold text-[color:var(--navy)]">
-                    {outstandingReportCount > 0
-                      ? `${outstandingReportCount} completed session report${outstandingReportCount === 1 ? " is" : "s are"} waiting`
-                      : "All completed sessions have reports"}
-                  </h2>
+                  {selectedOpenGroup.length > 1 ? (
+                    <div className="mt-4 rounded-[18px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
+                      <p className="font-semibold">{selectedOpenGroup.length} sessions · one booking. Applying or withdrawing covers all of them.</p>
+                      <ul className="mt-2 grid gap-1">
+                        {selectedOpenGroup.map((session) => (
+                          <li key={session.id}>{formatTime(session.startsAt)} · {session.presentationTitle} · {session.expectedStudentCount} students</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <PayEstimate group={selectedOpenGroup} studentCount={selectedOpenSummary.studentCount} rates={payRates} />
+                </>
+              ) : null}
+              {selectedOpenSession?.myApplicationStatus === "applied" ? (
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <p className="inline-flex min-h-[48px] items-center gap-2 rounded-[18px] border border-[rgba(24,168,59,0.28)] bg-[color:var(--green-soft)] px-5 py-3 text-sm font-semibold text-[#1d6f35]">
+                    <CheckCircle2 className="h-4 w-4" /> You&apos;ve applied. Staff are reviewing applications now.
+                  </p>
+                  <AmbassadorApplicationWithdrawDialog sessionId={selectedOpenSession.id} action={withdrawApplicationAction} returnTo="/ambassador/bookings?tab=applied" />
                 </div>
-                <ButtonLink href="/ambassador/reports">
-                  Submit report <ArrowLeft className="h-4 w-4 rotate-180" />
-                </ButtonLink>
-              </div>
+              ) : selectedOpenSession ? (
+                <form action={applyToSessionAction} className="mt-6 grid gap-4">
+                  <input type="hidden" name="bookingSessionId" value={slug?.[1] ?? ""} />
+                  <input type="hidden" name="returnTo" value="/ambassador/bookings?tab=applied" />
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[color:var(--navy)]">
+                      Anything we should know?{" "}
+                      <span className="font-normal text-[color:var(--text-soft)]">(optional)</span>
+                    </span>
+                    <Textarea
+                      name="message"
+                      maxLength={2000}
+                      placeholder="e.g. your availability on the day, travel plans, or experience with this presentation."
+                    />
+                  </label>
+                  <Button type="submit">Submit application</Button>
+                </form>
+              ) : (
+                <p className="mt-4 text-sm text-[color:var(--text-soft)]">This booking is no longer available.</p>
+              )}
             </Card>
-            <div className="grid gap-4 md:grid-cols-3">
-              <EarningsMetric
-                icon={<Coins className="h-5 w-5" />}
-                tone="green"
-                label="Total earned"
-                value={formatCurrency(portal.ambassador.estimatedEarningsCents)}
-                info="Delivery fees, sourcing bonuses and second-session amounts. Payments still awaiting a staff review aren't counted yet."
-              />
-              <EarningsMetric
-                icon={<CheckCircle2 className="h-5 w-5" />}
-                tone="blue"
-                label="Paid to date"
-                value={formatCurrency(portal.ambassador.paidPaymentsCents)}
-                detail={`${ambassadorPayments.filter((payment) => payment.status === "paid").length} completed payment${ambassadorPayments.filter((payment) => payment.status === "paid").length === 1 ? "" : "s"}`}
-              />
-              <EarningsMetric
-                icon={<BookOpenCheck className="h-5 w-5" />}
-                tone="amber"
-                label="Sourcing bonuses"
-                value={formatCurrency(
-                  ambassadorPayments
-                    .filter((payment) => !isAwaitingCustomReview(payment))
-                    .reduce((total, payment) => total + payment.sourcingBonusCents, 0)
-                )}
-                info={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
+          ) : null}
+
+          {selectedReportSessionId ? (
+            <AmbassadorReportForm
+              sessions={reportableSessions}
+              initialSessionId={selectedReportSessionId === "new" ? undefined : selectedReportSessionId}
+              presenterName={actor.fullName}
+              action={submitAmbassadorReportAction}
+            />
+          ) : null}
+
+          {route === "earnings" ? (
+            <div className="grid gap-5">
+              <Card className="rounded-[26px] border-[#cce8d3] bg-[linear-gradient(110deg,#f2fbf5,#ffffff)]">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#117a2e]">Payment starts with a report</p>
+                    <h2 className="mt-1 text-xl font-semibold text-[color:var(--navy)]">
+                      {outstandingReportCount > 0
+                        ? `${outstandingReportCount} completed session report${outstandingReportCount === 1 ? " is" : "s are"} waiting`
+                        : "All completed sessions have reports"}
+                    </h2>
+                  </div>
+                  <ButtonLink href="/ambassador/reports">
+                    Submit report <ArrowLeft className="h-4 w-4 rotate-180" />
+                  </ButtonLink>
+                </div>
+              </Card>
+              <div className="grid gap-4 md:grid-cols-3">
+                <EarningsMetric
+                  icon={<Coins className="h-5 w-5" />}
+                  tone="green"
+                  label="Total earned"
+                  value={formatCurrency(portal.ambassador.estimatedEarningsCents)}
+                  info="Delivery fees, sourcing bonuses and second-session amounts. Payments still awaiting a staff review aren't counted yet."
+                />
+                <EarningsMetric
+                  icon={<CheckCircle2 className="h-5 w-5" />}
+                  tone="blue"
+                  label="Paid to date"
+                  value={formatCurrency(portal.ambassador.paidPaymentsCents)}
+                  detail={`${ambassadorPayments.filter((payment) => payment.status === "paid").length} completed payment${ambassadorPayments.filter((payment) => payment.status === "paid").length === 1 ? "" : "s"}`}
+                />
+                <EarningsMetric
+                  icon={<BookOpenCheck className="h-5 w-5" />}
+                  tone="amber"
+                  label="Sourcing bonuses"
+                  value={formatCurrency(
+                    ambassadorPayments
+                      .filter((payment) => !isAwaitingCustomReview(payment))
+                      .reduce((total, payment) => total + payment.sourcingBonusCents, 0)
+                  )}
+                  info={`Additional ${payoutLabels.sourcingBonus} school-sourcing payments`}
+                />
+              </div>
+              <Card className="rounded-[26px]">
+                <EarningsYearChart payments={ambassadorPayments} />
+              </Card>
+              <DataTable
+                title="Earnings and payment status"
+                columns={[
+                  "Session",
+                  "Delivery fee",
+                  "Sourcing bonus",
+                  "Total",
+                  "Status",
+                  "Approved",
+                  "Sent to finance",
+                  "Invoice reference"
+                ]}
+                rows={ambassadorPayments.map((record) => [
+                  paymentSessionLabel(record.bookingSessionId),
+                  formatCurrency(record.baseAmountCents),
+                  record.sourcingBonusCents > 0
+                    ? formatCurrency(record.sourcingBonusCents)
+                    : "—",
+                  // Not an earned total until staff finish the custom review.
+                  isAwaitingCustomReview(record)
+                    ? `Awaiting staff review (${formatCurrency(record.baseAmountCents + record.sourcingBonusCents)} recognised so far)`
+                    : describePaymentAmount({ ...record, additionalSessionCents: record.additionalSessionCents ?? 0, extraAmountCents: record.extraAmountCents ?? 0 }),
+                  <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
+                  record.invoiceGeneratedAt ? formatShortDate(record.invoiceGeneratedAt) : record.status === "not_eligible" ? "No payment required" : "Awaiting approval",
+                  record.sentToFinanceAt
+                    ? formatShortDate(record.sentToFinanceAt)
+                    : record.status === "approved"
+                      ? "Not yet"
+                      : "—",
+                  <EarningsInvoiceAction key={`${record.id}-invoice-action`} record={record} />
+                ])}
               />
             </div>
-            <Card className="rounded-[26px]">
-              <EarningsYearChart payments={ambassadorPayments} />
-            </Card>
-            <DataTable
-              title="Earnings and payment status"
-              columns={[
-                "Session",
-                "Delivery fee",
-                "Sourcing bonus",
-                "Total",
-                "Status",
-                "Approved",
-                "Sent to finance",
-                "Invoice reference"
-              ]}
-              rows={ambassadorPayments.map((record) => [
-                paymentSessionLabel(record.bookingSessionId),
-                formatCurrency(record.baseAmountCents),
-                record.sourcingBonusCents > 0
-                  ? formatCurrency(record.sourcingBonusCents)
-                  : "—",
-                // Not an earned total until staff finish the custom review.
-                isAwaitingCustomReview(record)
-                  ? `Awaiting staff review (${formatCurrency(record.baseAmountCents + record.sourcingBonusCents)} recognised so far)`
-                  : describePaymentAmount({ ...record, additionalSessionCents: record.additionalSessionCents ?? 0, extraAmountCents: record.extraAmountCents ?? 0 }),
-                <InvoiceStatusBadge key={`${record.id}-status`} record={record} />,
-                record.invoiceGeneratedAt ? formatShortDate(record.invoiceGeneratedAt) : record.status === "not_eligible" ? "No payment required" : "Awaiting approval",
-                record.sentToFinanceAt
-                  ? formatShortDate(record.sentToFinanceAt)
-                  : record.status === "approved"
-                    ? "Not yet"
-                    : "—",
-                <EarningsInvoiceAction key={`${record.id}-invoice-action`} record={record} />
-              ])}
+          ) : null}
+
+          {route === "training" || route.startsWith("training/") ? (
+            <TrainingWorkspace
+              modules={portal.trainingModules}
+              presentations={portal.presentations}
+              resources={trainingResources}
+              packs={portal.trainingPacks}
             />
-          </div>
-        ) : null}
+          ) : null}
 
-        {route === "training" || route.startsWith("training/") ? (
-          <TrainingWorkspace
-            modules={portal.trainingModules}
-            presentations={portal.presentations}
-            resources={trainingResources}
-            packs={portal.trainingPacks}
-          />
-        ) : null}
+          {route === "materials" ? (
+            materialsConsentAcceptedAt ? (
+              <PresentationMaterialsWorkspace
+                resources={presentationMaterials}
+                consentAcceptedAt={materialsConsentAcceptedAt}
+              />
+            ) : (
+              <MaterialsConsentForm
+                ambassadorName={portal.ambassador.name || actor.fullName}
+                action={acceptAmbassadorMaterialsConsentAction}
+              />
+            )
+          ) : null}
 
-        {route === "materials" ? (
-          materialsConsentAcceptedAt ? (
-            <PresentationMaterialsWorkspace
-              resources={presentationMaterials}
-              consentAcceptedAt={materialsConsentAcceptedAt}
+          {route === "profile" ? (
+            <AmbassadorProfileWorkspace
+              ambassador={portal.ambassador}
+              regions={portal.regions}
+              stats={profileStats}
+              action={saveAmbassadorProfileAction}
             />
-          ) : (
-            <MaterialsConsentForm
-              ambassadorName={portal.ambassador.name || actor.fullName}
-              action={acceptAmbassadorMaterialsConsentAction}
-            />
-          )
-        ) : null}
+          ) : null}
 
-        {route === "profile" ? (
-          <AmbassadorProfileWorkspace
-            ambassador={portal.ambassador}
-            regions={portal.regions}
-            stats={profileStats}
-            action={saveAmbassadorProfileAction}
-          />
-        ) : null}
-
-        {route === "reports" ? (
-          <AmbassadorReportsWorkspace completedSessions={completedSessions} reports={portal.reports} />
-        ) : null}
+          {route === "reports" ? (
+            <AmbassadorReportsWorkspace completedSessions={completedSessions} reports={portal.reports} />
+          ) : null}
+        </AmbassadorPayRatesProvider>
       </DashboardShell>
     </main>
   );
