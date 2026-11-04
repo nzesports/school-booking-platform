@@ -468,7 +468,7 @@ export function OperationsAnalytics({
             }
           >
             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
-              <LegendDot color="#b8c1cf" label={String(presentationsFromYear)} />
+              <LegendDot color="#18a83b" label={String(presentationsFromYear)} />
               <LegendDot color="#246bff" label={String(presentationsToYear)} />
             </div>
             <ComparisonLineChart
@@ -1336,11 +1336,10 @@ function ComparisonLineChart({
         ))}
         <polyline
           fill="none"
-          stroke="#b8c1cf"
-          strokeDasharray="6 6"
+          stroke="#18a83b"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="2"
+          strokeWidth="3"
           points={linePoints("previous")}
         />
         <polyline
@@ -1364,6 +1363,7 @@ function ComparisonLineChart({
               height={chartHeight}
               fill="transparent"
             />
+            <circle cx={pointX(index)} cy={pointY(point.previous)} r="4" fill="#18a83b" stroke="white" strokeWidth="2" />
             <circle cx={pointX(index)} cy={pointY(point.current)} r="4" fill="#246bff" stroke="white" strokeWidth="2" />
             <text
               x={pointX(index)}
