@@ -279,7 +279,7 @@ export function OperationsAnalytics({
             icon: <CheckCircle2 className="h-5 w-5 text-[color:var(--green)]" />,
             value: pipeline.schoolsVisited,
             label: pipeline.schoolsVisited === 1 ? "school visited" : "schools visited",
-            info: "Each school counted once, however many times we presented there in this period. Only completed bookings count.",
+            info: "Unique schools visited in this period. Completed bookings only.",
             href: bookingsHref("past")
           },
           {
@@ -289,7 +289,7 @@ export function OperationsAnalytics({
               pipeline.presentationsDelivered === 1
                 ? "presentation delivered"
                 : "presentations delivered",
-            info: "Every presentation delivered in this period. This includes a singular and/or multiple bookings from the same school. Only completed bookings count.",
+            info: "Includes single or multiple bookings from the same school. Only completed bookings are counted.",
             href: bookingsHref("past")
           },
           {
@@ -350,6 +350,7 @@ export function OperationsAnalytics({
             label="Completed bookings"
             value={pipeline.completed}
             href={bookingsHref("past")}
+            info="This includes schools visited once and schools visited multiple times on separate occasions (not back-to-back sessions)."
           />
           <PipelineCard
             icon={<CircleX className="h-5 w-5 text-[#b3372e]" />}
@@ -943,13 +944,15 @@ function PipelineCard({
   label,
   value,
   href,
-  withArrow
+  withArrow,
+  info
 }: {
   icon: ReactNode;
   label: string;
   value: number;
   href: string;
   withArrow?: boolean;
+  info?: string;
 }) {
   return (
     <div className="relative">
@@ -963,6 +966,12 @@ function PipelineCard({
         <p className="text-sm font-medium text-[color:var(--text-soft)]">{label}</p>
         <p className="text-3xl font-semibold tracking-[-0.05em] text-[color:var(--navy)]">{value}</p>
       </Link>
+      {/* Beside the link rather than inside it, so it doesn't navigate. */}
+      {info ? (
+        <InfoTooltip label={label} className="absolute right-3 top-3">
+          {info}
+        </InfoTooltip>
+      ) : null}
       {withArrow ? (
         <ChevronRight className="absolute -right-3 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-[color:var(--text-soft)] xl:block" />
       ) : null}
