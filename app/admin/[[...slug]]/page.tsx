@@ -199,6 +199,15 @@ export default async function AdminPortalPage({
   const analyticsYear = /^\d{4}$/.test(rawAnalyticsYear ?? "")
     ? Number(rawAnalyticsYear)
     : undefined;
+  // The presentations chart's two comparison years, typed in on the chart.
+  const readYearParam = (value?: string | string[]) => {
+    const raw = Array.isArray(value) ? value[0] : value;
+    return /^\d{4}$/.test(raw ?? "") ? Number(raw) : undefined;
+  };
+  const compareFrom = readYearParam(resolvedSearchParams.compareFrom);
+  const compareTo = readYearParam(resolvedSearchParams.compareTo);
+  const studentsFrom = readYearParam(resolvedSearchParams.studentsFrom);
+  const studentsTo = readYearParam(resolvedSearchParams.studentsTo);
   const activeBookingView = readBookingLifecycleView(resolvedSearchParams.status);
   const ambassadorListStatus = readAmbassadorListStatus({
     status: readSearchParam(resolvedSearchParams, "status"),
@@ -460,7 +469,7 @@ export default async function AdminPortalPage({
                     ? `/admin/bookings?range=${option.value}&status=${activeBookingView}`
                     : route === "feedback"
                     ? `/admin/feedback?range=${option.value}${presentationFilterId ? `&presentation=${presentationFilterId}` : ""}`
-                    : `/admin?range=${option.value}${analyticsYear ? `&analyticsYear=${analyticsYear}` : ""}`
+                    : `/admin?range=${option.value}`
               }))
             : undefined
         }
@@ -553,6 +562,10 @@ export default async function AdminPortalPage({
             range={dashboardRange}
             customRange={customRange}
             analyticsYear={analyticsYear}
+            compareFrom={compareFrom}
+            compareTo={compareTo}
+            studentsFrom={studentsFrom}
+            studentsTo={studentsTo}
             periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
             bookings={portal.bookings}
             reports={portal.reports}

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Form from "next/form";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -29,9 +30,10 @@ import {
   UsersRound
 } from "lucide-react";
 
-import { ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { Input } from "@/components/ui/input";
 import { StarRating } from "@/components/ui/star-rating";
 import type {
   AmbassadorProfile,
@@ -95,6 +97,10 @@ export function OperationsAnalytics({
   range,
   customRange,
   analyticsYear,
+  compareFrom,
+  compareTo,
+  studentsFrom,
+  studentsTo,
   periodLabel,
   bookings,
   reports,
@@ -117,6 +123,12 @@ export function OperationsAnalytics({
   range: DashboardRange;
   customRange?: DashboardCustomRange | null;
   analyticsYear?: number;
+  // The two years the presentations chart compares, typed in on the chart.
+  compareFrom?: number;
+  compareTo?: number;
+  // The same for the students reached chart.
+  studentsFrom?: number;
+  studentsTo?: number;
   periodLabel: string;
   bookings: BookingRequestView[];
   reports: ReportSummary[];
@@ -148,9 +160,59 @@ export function OperationsAnalytics({
   )
     .filter((value) => Number.isFinite(value) && value >= 2000 && value <= year)
     .sort((left, right) => left - right);
-  const selectedAnalyticsYear = availableAnalyticsYears.includes(analyticsYear ?? year)
-    ? (analyticsYear ?? year)
+  // The charts follow the period picked at the top (last year, a past year, a
+  // custom range's end year); the year arrows can still browse other years.
+  const rangeYear =
+    range === "lastyear"
+      ? year - 1
+      : range.startsWith("year:")
+        ? Number(range.slice(5))
+        : range === "custom" && customRange
+          ? nzYear(`${customRange.to}T12:00:00+13:00`)
+          : year;
+  const preferredAnalyticsYear = analyticsYear ?? rangeYear;
+  const selectedAnalyticsYear = availableAnalyticsYears.includes(preferredAnalyticsYear)
+    ? preferredAnalyticsYear
     : (availableAnalyticsYears.at(-1) ?? year);
+  // A year still in progress is compared with the same point last year.
+  const comparisonCutoffFor = (value: number) =>
+    value === year ? new Date(new Date(now).setFullYear(now.getFullYear() - 1)) : now;
+  // The presentations chart compares any two years typed in on it; it starts
+  // on the period's year against the one before.
+  const presentationsToYear = compareTo ?? selectedAnalyticsYear;
+  const presentationsFromYear = compareFrom ?? presentationsToYear - 1;
+  // A year in progress is compared with the same point in the other year.
+  const presentationsCutoff =
+    presentationsToYear === year
+      ? new Date(new Date(now).setFullYear(presentationsFromYear))
+      : now;
+  const studentsToYear = studentsTo ?? selectedAnalyticsYear;
+  const studentsFromYear = studentsFrom ?? studentsToYear - 1;
+  const studentsCutoff =
+    studentsToYear === year ? new Date(new Date(now).setFullYear(studentsFromYear)) : now;
+  // Everything on the page address that a chart's own year form must keep.
+  const pageParams: Record<string, string | undefined> = {
+    range,
+    analyticsYear: analyticsYear ? String(analyticsYear) : undefined,
+    from: customRange?.from,
+    to: customRange?.to,
+    compareFrom: compareFrom ? String(compareFrom) : undefined,
+    compareTo: compareTo ? String(compareTo) : undefined,
+    studentsFrom: studentsFrom ? String(studentsFrom) : undefined,
+    studentsTo: studentsTo ? String(studentsTo) : undefined
+  };
+  const keptParams = (...ownNames: string[]) =>
+    Object.fromEntries(
+      Object.entries(pageParams).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined && !ownNames.includes(entry[0])
+      )
+    );
+  const studentsYearsHref = (fromValue: number, toValue: number) =>
+    `${basePath}?${new URLSearchParams({
+      ...keptParams("studentsFrom", "studentsTo"),
+      studentsFrom: String(fromValue),
+      studentsTo: String(toValue)
+    }).toString()}`;
   const selectedYearIndex = availableAnalyticsYears.indexOf(selectedAnalyticsYear);
   const olderAnalyticsYear =
     selectedYearIndex > 0 ? availableAnalyticsYears[selectedYearIndex - 1] : undefined;
@@ -202,7 +264,12 @@ export function OperationsAnalytics({
   const currentYearBookings = bookings.filter(
     (booking) => nzYear(bookingActivityDate(booking)) === year
   );
-  const activity = buildYearlyActivity(bookings, allSessions, selectedAnalyticsYear);
+  const activity = buildPresentationsComparison(
+    bookings,
+    presentationsFromYear,
+    presentationsToYear,
+    presentationsCutoff
+  );
   const sources = buildSourceBreakdown(analyticsYearBookings);
   const bookingStatuses = buildBookingStatusBreakdown(analyticsYearBookings);
   const previousYearSources = buildSourceBreakdown(
@@ -210,14 +277,25 @@ export function OperationsAnalytics({
       (booking) => nzYear(bookingActivityDate(booking)) === selectedAnalyticsYear - 1
     )
   );
-  const yearStudents = buildYearlyStudentSeries(allSessions, selectedAnalyticsYear, now);
+  const yearStudents = buildYearlyStudentSeries(allSessions, studentsToYear, now);
   const studentSeries = yearStudents.series;
   const yearStudentsTotal = yearStudents.total;
+  const lastYearStudents = buildYearlyStudentSeries(allSessions, studentsFromYear, now);
   const lastYearStudentsTotal = buildYearlyStudentSeries(
     allSessions,
-    selectedAnalyticsYear - 1,
-    now
+    studentsFromYear,
+    studentsCutoff
   ).total;
+  const comparisonLabel =
+    studentsToYear === year ? `vs the same point in ${studentsFromYear}` : `vs ${studentsFromYear}`;
+  // Every year's total, newest first, each against the year before it.
+  const studentsByYear = [...availableAnalyticsYears].reverse().map((value) => ({
+    year: value,
+    total: buildYearlyStudentSeries(allSessions, value, now).total,
+    previousTotal: availableAnalyticsYears.includes(value - 1)
+      ? buildYearlyStudentSeries(allSessions, value - 1, comparisonCutoffFor(value)).total
+      : null
+  }));
   const yearSchoolsReached = yearStudents.schoolsReached;
 
   const paymentSummary = buildPaymentSummary(payments, year);
@@ -376,14 +454,37 @@ export function OperationsAnalytics({
           />
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(250px,0.775fr)_minmax(250px,0.775fr)]">
-          <ChartPanel title={`Bookings and sessions over time (${selectedAnalyticsYear})`}>
+          <ChartPanel
+            title={`Presentations delivered (${presentationsFromYear} vs ${presentationsToYear})`}
+            action={
+              <YearCompareForm
+                action={basePath}
+                keep={keptParams("compareFrom", "compareTo")}
+                fromName="compareFrom"
+                toName="compareTo"
+                fromYear={presentationsFromYear}
+                toYear={presentationsToYear}
+              />
+            }
+          >
             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
-              <LegendDot color="#18a83b" label="Bookings" />
-              <LegendDot color="#246bff" label="Sessions" />
+              <LegendDot color="#b8c1cf" label={String(presentationsFromYear)} />
+              <LegendDot color="#246bff" label={String(presentationsToYear)} />
             </div>
-            <DualLineChart series={activity.series} />
+            <ComparisonLineChart
+              series={activity.series}
+              fromYear={presentationsFromYear}
+              toYear={presentationsToYear}
+            />
             <ChartFootnote icon={<ArrowRight className="h-4 w-4 text-[color:var(--green)]" />}>
-              {activity.trendNote}
+              {activity.total.toLocaleString("en-NZ")}{" "}
+              {activity.total === 1 ? "presentation" : "presentations"} on completed bookings in{" "}
+              {presentationsToYear}
+              {activity.previousTotal > 0
+                ? ` · ${formatSignedDelta(activity.total - activity.previousTotal)} vs ${
+                    presentationsToYear === year ? "the same point in " : ""
+                  }${presentationsFromYear}`
+                : ""}
             </ChartFootnote>
           </ChartPanel>
 
@@ -446,15 +547,14 @@ export function OperationsAnalytics({
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionKicker label={`Students reached (${selectedAnalyticsYear})`} />
-          <YearNavigator
-            year={selectedAnalyticsYear}
-            olderHref={
-              olderAnalyticsYear ? analyticsYearHref(olderAnalyticsYear) : undefined
-            }
-            newerHref={
-              newerAnalyticsYear ? analyticsYearHref(newerAnalyticsYear) : undefined
-            }
+          <SectionKicker label={`Students reached (${studentsFromYear} vs ${studentsToYear})`} />
+          <YearCompareForm
+            action={basePath}
+            keep={keptParams("studentsFrom", "studentsTo")}
+            fromName="studentsFrom"
+            toName="studentsTo"
+            fromYear={studentsFromYear}
+            toYear={studentsToYear}
           />
         </div>
         <div className="mt-5 grid gap-6 xl:grid-cols-[0.32fr_0.68fr] xl:items-center">
@@ -472,16 +572,61 @@ export function OperationsAnalytics({
               {yearStudentsTotal > 0 || lastYearStudentsTotal > 0 ? (
                 <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef4ff] px-3 py-1.5 text-xs font-semibold text-[#1d4dbb]">
                   <ArrowRight className="h-3.5 w-3.5" />
-                  {formatSignedDelta(yearStudentsTotal - lastYearStudentsTotal)} vs last year
+                  {formatSignedDelta(yearStudentsTotal - lastYearStudentsTotal)} {comparisonLabel}
                 </span>
               ) : null}
             </div>
+            {studentsByYear.length > 1 ? (
+              <div className="mt-6 border-t border-[color:rgba(4,15,75,0.08)] pt-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
+                  By year
+                </p>
+                <div className="mt-2 grid gap-1">
+                  {studentsByYear.map((entry) => (
+                    <Link
+                      key={entry.year}
+                      href={studentsYearsHref(entry.year - 1, entry.year)}
+                      scroll={false}
+                      aria-current={entry.year === studentsToYear ? "true" : undefined}
+                      className={cn(
+                        "grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-3 rounded-[10px] px-2.5 py-1.5 text-sm transition hover:bg-[#f3f7fd]",
+                        entry.year === studentsToYear && "bg-[#eef4ff]"
+                      )}
+                    >
+                      <span className="font-semibold text-[color:var(--navy)]">
+                        {entry.year}
+                        {entry.year === year ? (
+                          <span className="ml-1 text-xs font-normal text-[color:var(--text-soft)]">so far</span>
+                        ) : null}
+                      </span>
+                      <span className="text-right font-semibold text-[color:var(--navy)]">
+                        {entry.total.toLocaleString("en-NZ")}
+                      </span>
+                      <span className="w-28 text-right text-xs text-[color:var(--text-soft)]">
+                        {entry.previousTotal !== null && entry.previousTotal > 0
+                          ? `${formatSignedDelta(entry.total - entry.previousTotal)} vs ${entry.year - 1}`
+                          : ""}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <div>
-            <MonthlyBarChart series={studentSeries} />
+            <div className="mb-3 flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
+              <LegendDot color="#d3dae5" label={String(studentsFromYear)} />
+              <LegendDot color="#246bff" label={String(studentsToYear)} />
+            </div>
+            <MonthlyBarChart
+              series={studentSeries}
+              previous={lastYearStudents.series}
+              fromYear={studentsFromYear}
+              toYear={studentsToYear}
+            />
             <ChartFootnote icon={<UsersRound className="h-4 w-4 text-[#246bff]" />}>
               Actual students on completed bookings, or expected where none was recorded (Jan – Dec{" "}
-              {selectedAnalyticsYear})
+              {studentsToYear})
             </ChartFootnote>
           </div>
         </div>
@@ -1012,11 +1157,14 @@ function ChartPanel({
   title,
   tone = "blue",
   className,
+  action,
   children
 }: {
   title: string;
   tone?: "blue" | "green";
   className?: string;
+  // A control shown on the heading row, such as the year form.
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -1029,9 +1177,71 @@ function ChartPanel({
         className
       )}
     >
-      <p className="text-sm font-semibold text-[color:var(--navy)]">{title}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-[color:var(--navy)]">{title}</p>
+        {action}
+      </div>
       <div className="mt-4">{children}</div>
     </div>
+  );
+}
+
+// Two typed-in years for a chart to compare. A plain GET form: the years join
+// the page address next to everything in `keep`, without jumping to the top.
+function YearCompareForm({
+  action,
+  keep,
+  fromName,
+  toName,
+  fromYear,
+  toYear
+}: {
+  action: string;
+  keep: Record<string, string>;
+  fromName: string;
+  toName: string;
+  fromYear: number;
+  toYear: number;
+}) {
+  return (
+    <Form
+      action={action}
+      scroll={false}
+      className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[color:var(--text-soft)]"
+    >
+      {Object.entries(keep).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
+      <label className="flex items-center gap-1.5">
+        From
+        <Input
+          key={`${fromName}-${fromYear}`}
+          type="number"
+          name={fromName}
+          min={2000}
+          max={2100}
+          required
+          defaultValue={fromYear}
+          className="w-[84px]"
+        />
+      </label>
+      <label className="flex items-center gap-1.5">
+        To
+        <Input
+          key={`${toName}-${toYear}`}
+          type="number"
+          name={toName}
+          min={2000}
+          max={2100}
+          required
+          defaultValue={toYear}
+          className="w-[84px]"
+        />
+      </label>
+      <Button type="submit" variant="secondary">
+        Compare
+      </Button>
+    </Form>
   );
 }
 
@@ -1083,70 +1293,89 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-function DualLineChart({
-  series
+function ComparisonLineChart({
+  series,
+  fromYear,
+  toYear
 }: {
-  series: Array<{ label: string; bookings: number; sessions: number }>;
+  series: Array<{ label: string; current: number; previous: number }>;
+  fromYear: number;
+  toYear: number;
 }) {
-  const width = 560;
-  const height = 240;
-  const paddingX = 18;
+  const width = 720;
+  const height = 260;
+  const paddingX = 24;
   const paddingY = 20;
+  const labelSpace = 24;
   const chartWidth = width - paddingX * 2;
-  const chartHeight = height - paddingY * 2;
+  const chartHeight = height - paddingY * 2 - labelSpace;
+  const baseline = paddingY + chartHeight;
   const maxValue = Math.max(
-    ...series.map((point) => Math.max(point.bookings, point.sessions)),
+    ...series.map((point) => Math.max(point.current, point.previous)),
     1
   );
 
   const pointX = (index: number) =>
     paddingX + (series.length === 1 ? chartWidth / 2 : (chartWidth / (series.length - 1)) * index);
-  const pointY = (value: number) => height - paddingY - (value / maxValue) * chartHeight;
-  const linePoints = (key: "bookings" | "sessions") =>
+  const pointY = (value: number) => baseline - (value / maxValue) * chartHeight;
+  const linePoints = (key: "current" | "previous") =>
     series.map((point, index) => `${pointX(index)},${pointY(point[key])}`).join(" ");
 
   return (
     <div className="mt-3">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[240px] w-full">
-        {[0.25, 0.5, 0.75, 1].map((marker) => (
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full">
+        {[0, 0.25, 0.5, 0.75, 1].map((marker) => (
           <line
             key={marker}
             x1={paddingX}
             x2={width - paddingX}
-            y1={height - paddingY - chartHeight * marker}
-            y2={height - paddingY - chartHeight * marker}
+            y1={baseline - chartHeight * marker}
+            y2={baseline - chartHeight * marker}
             stroke="rgba(4,15,75,0.07)"
-            strokeDasharray="5 7"
           />
         ))}
         <polyline
           fill="none"
-          stroke="#18a83b"
+          stroke="#b8c1cf"
+          strokeDasharray="6 6"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="3.5"
-          points={linePoints("bookings")}
+          strokeWidth="2"
+          points={linePoints("previous")}
         />
         <polyline
           fill="none"
           stroke="#246bff"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="3.5"
-          points={linePoints("sessions")}
+          strokeWidth="3"
+          points={linePoints("current")}
         />
         {series.map((point, index) => (
           <g key={point.label}>
-            <circle cx={pointX(index)} cy={pointY(point.bookings)} r="4" fill="#18a83b" stroke="white" strokeWidth="2.5" />
-            <circle cx={pointX(index)} cy={pointY(point.sessions)} r="4" fill="#246bff" stroke="white" strokeWidth="2.5" />
+            <title>
+              {`${point.label}: ${point.previous} in ${fromYear}, ${point.current} in ${toYear}`}
+            </title>
+            {/* A wide invisible column so the month is easy to hover. */}
+            <rect
+              x={pointX(index) - chartWidth / 24}
+              y={paddingY}
+              width={chartWidth / 12}
+              height={chartHeight}
+              fill="transparent"
+            />
+            <circle cx={pointX(index)} cy={pointY(point.current)} r="4" fill="#246bff" stroke="white" strokeWidth="2" />
+            <text
+              x={pointX(index)}
+              y={height - 6}
+              textAnchor="middle"
+              className="fill-[color:var(--text-soft)] text-[11px] font-semibold uppercase tracking-[0.1em]"
+            >
+              {point.label}
+            </text>
           </g>
         ))}
       </svg>
-      <div className="mt-2 grid grid-cols-12 text-center text-[10px] font-semibold uppercase tracking-[0.1em] text-[color:var(--text-soft)]">
-        {series.map((point) => (
-          <span key={point.label}>{point.label}</span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1220,25 +1449,51 @@ function DonutChart({
   );
 }
 
-function MonthlyBarChart({ series }: { series: Array<{ label: string; value: number }> }) {
-  const maxValue = Math.max(...series.map((point) => point.value), 1);
+function MonthlyBarChart({
+  series,
+  previous,
+  fromYear,
+  toYear
+}: {
+  series: Array<{ label: string; value: number }>;
+  previous: Array<{ label: string; value: number }>;
+  fromYear: number;
+  toYear: number;
+}) {
+  const maxValue = Math.max(
+    ...series.map((point) => point.value),
+    ...previous.map((point) => point.value),
+    1
+  );
+  const barHeight = (value: number) => (value > 0 ? Math.max(8, (value / maxValue) * 100) : 2);
 
   return (
     <div className="rounded-[24px] border border-[color:rgba(4,15,75,0.08)] bg-[linear-gradient(180deg,rgba(244,249,255,0.7),rgba(255,255,255,0.95))] px-4 py-5">
       <div className="flex h-[170px] items-end gap-2 md:gap-3">
-        {series.map((point) => {
-          const barHeight = point.value > 0 ? Math.max(8, (point.value / maxValue) * 100) : 2;
+        {series.map((point, index) => {
+          const previousValue = previous[index]?.value ?? 0;
+
           return (
-            <div key={point.label} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
+            <div
+              key={point.label}
+              title={`${point.label}: ${previousValue.toLocaleString("en-NZ")} in ${fromYear}, ${point.value.toLocaleString("en-NZ")} in ${toYear}`}
+              className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
+            >
               {point.value > 0 ? (
                 <span className="text-[10px] font-semibold text-[color:var(--navy)]">
                   {point.value}
                 </span>
               ) : null}
-              <div
-                className="w-full max-w-7 rounded-t-[6px] bg-[linear-gradient(180deg,#4d8bff,#246bff)]"
-                style={{ height: `${barHeight}%` }}
-              />
+              <div className="flex h-full w-full max-w-9 items-end justify-center gap-0.5">
+                <div
+                  className="w-1/2 max-w-3 rounded-t-[4px] bg-[#d3dae5]"
+                  style={{ height: `${barHeight(previousValue)}%` }}
+                />
+                <div
+                  className="w-1/2 max-w-4 rounded-t-[4px] bg-[linear-gradient(180deg,#4d8bff,#246bff)]"
+                  style={{ height: `${barHeight(point.value)}%` }}
+                />
+              </div>
               <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--text-soft)]">
                 {point.label}
               </span>
@@ -1596,61 +1851,51 @@ function buildBookingPipeline(
   };
 }
 
-function monthOf(value: string, year: number) {
-  const date = nzYearMonth(value);
-  return date.year === year ? date.month : null;
-}
-
-function buildYearlyActivity(
+// Presentations delivered per month: every non-cancelled session of a completed
+// booking, by its session date, for two years. The earlier year's total stops
+// at `previousCutoff` so a year in progress compares like for like.
+function buildPresentationsComparison(
   bookings: BookingRequestView[],
-  sessions: BookingSessionView[],
-  year: number
+  fromYear: number,
+  year: number,
+  previousCutoff: Date
 ) {
-  const bookingCounts = Array.from({ length: 12 }, () => 0);
-  const sessionCounts = Array.from({ length: 12 }, () => 0);
-  let lastYearActivity = 0;
+  const current = Array.from({ length: 12 }, () => 0);
+  const previous = Array.from({ length: 12 }, () => 0);
+  let previousTotal = 0;
 
   for (const booking of bookings) {
-    const month = monthOf(bookingActivityDate(booking), year);
-    if (month !== null) {
-      bookingCounts[month] += 1;
-    } else if (nzYear(bookingActivityDate(booking)) === year - 1) {
-      lastYearActivity += 1;
-    }
-  }
-
-  for (const session of sessions) {
-    if (isCancelledSession(session)) {
+    if (!isCompletedBooking(booking)) {
       continue;
     }
 
-    const month = monthOf(session.startsAt, year);
-    if (month !== null) {
-      sessionCounts[month] += 1;
-    } else if (nzYear(session.startsAt) === year - 1) {
-      lastYearActivity += 1;
+    for (const session of booking.sessions) {
+      if (isCancelledSession(session)) {
+        continue;
+      }
+
+      const { year: sessionYear, month } = nzYearMonth(session.startsAt);
+
+      if (sessionYear === year) {
+        current[month] += 1;
+      } else if (sessionYear === fromYear) {
+        previous[month] += 1;
+
+        if (new Date(session.startsAt).getTime() < previousCutoff.getTime()) {
+          previousTotal += 1;
+        }
+      }
     }
   }
-
-  const thisYearActivity =
-    bookingCounts.reduce((total, count) => total + count, 0) +
-    sessionCounts.reduce((total, count) => total + count, 0);
-  const trendNote =
-    lastYearActivity > 0
-      ? `Activity ${thisYearActivity >= lastYearActivity ? "increased" : "decreased"} ${Math.abs(
-          Math.round(((thisYearActivity - lastYearActivity) / lastYearActivity) * 100)
-        )}% vs last year`
-      : thisYearActivity > 0
-        ? `${thisYearActivity} bookings and sessions recorded this year`
-        : "No booking activity recorded yet this year";
 
   return {
     series: MONTH_LABELS.map((label, index) => ({
       label,
-      bookings: bookingCounts[index],
-      sessions: sessionCounts[index]
+      current: current[index],
+      previous: previous[index]
     })),
-    trendNote
+    total: current.reduce((sum, count) => sum + count, 0),
+    previousTotal
   };
 }
 
