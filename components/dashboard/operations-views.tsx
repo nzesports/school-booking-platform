@@ -37,17 +37,16 @@ import type {
   School
 } from "@/lib/domain/types";
 import {
+  bookingStatusGroup,
   buildSchoolDeliverySummaries,
   filterBookingsByLifecycle,
-  isCancelledSession,
-  isCompletedBooking,
   isDeliveredSession,
   sessionInRange,
   type BookingLifecycleView,
+  type BookingStatusGroup,
   type DashboardCustomRange,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
-import { isReschedulingSession, isWithdrawalSession } from "@/lib/session-status";
 import { cn } from "@/lib/utils";
 
 export function BookingLifecyclePanel({
@@ -79,42 +78,21 @@ export function BookingLifecyclePanel({
     sessions: booking.sessions.filter(session => sessionInRange(session, range, now, customRange))
   })).filter(booking => booking.sessions.length > 0);
   // Same delivered rule as the dashboard: a delivered-capable status whose
-  // session has ended. Confirmed means confirmed/assigned and still to come.
+  // session has ended. Used by the report and student-number filters.
   const isCompleted = (session: BookingSessionView) => isDeliveredSession(session, now);
-  const isCancelled = (session: BookingSessionView) => isCancelledSession(session);
-  // Sessions waiting on a reschedule (requested, or a date the school moved
-  // that staff haven't confirmed) or an ambassador withdrawal get their own
-  // groups so they never hide inside Confirmed or Pending.
-  const isRescheduling = (session: BookingSessionView) =>
-    isReschedulingSession(session) && !isCompleted(session) && !isCancelled(session);
-  const isWithdrawal = (session: BookingSessionView) =>
-    isWithdrawalSession(session) && !isCompleted(session);
-  const isConfirmed = (session: BookingSessionView) =>
-    ["confirmed", "ambassador_assigned"].includes(session.status) &&
-    !isCompleted(session) &&
-    !isRescheduling(session);
-  const isPending = (session: BookingSessionView) =>
-    !isCompleted(session) &&
-    !isCancelled(session) &&
-    !isConfirmed(session) &&
-    !isRescheduling(session) &&
-    !isWithdrawal(session);
   const hasReport = (status: string) => ["submitted", "reviewed"].includes(status);
   // Same rule as the dashboard's "no student number" flag.
   const isMissingStudents = (session: BookingSessionView) =>
     isCompleted(session) &&
     !(Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0) > 0);
-  // Completed counts bookings by their own status, the same as the dashboard's
-  // completed bookings; the other tiles count sessions.
-  const completedBookings = periodBookings.filter(isCompletedBooking);
-  const metricBookings = metric === "all" ? periodBookings : metric === "completed" ? completedBookings : periodBookings.map(booking => ({
+  // The status tiles count bookings, each in exactly one group, the same
+  // grouping as the dashboard's booking status chart, so they add up to All.
+  const statusGroups = new Set<string>(["completed", "confirmed", "rescheduling", "withdrawal", "pending", "cancelled"]);
+  const groupCount = (group: BookingStatusGroup) =>
+    periodBookings.filter((booking) => bookingStatusGroup(booking) === group).length;
+  const metricBookings = metric === "all" ? periodBookings : statusGroups.has(metric) ? periodBookings.filter((booking) => bookingStatusGroup(booking) === metric) : periodBookings.map(booking => ({
     ...booking,
     sessions: booking.sessions.filter(session => {
-      if (metric === "cancelled") return isCancelled(session);
-      if (metric === "pending") return isPending(session);
-      if (metric === "confirmed") return isConfirmed(session);
-      if (metric === "rescheduling") return isRescheduling(session);
-      if (metric === "withdrawal") return isWithdrawal(session);
       if (metric === "reports") return hasReport(session.reportStatus);
       if (metric === "missing-reports") return isCompleted(session) && !hasReport(session.reportStatus);
       if (metric === "missing-students") return isMissingStudents(session);
@@ -129,12 +107,12 @@ export function BookingLifecyclePanel({
   };
   const sessions = periodBookings.flatMap((booking) => booking.sessions);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
-  const completedCount = completedBookings.length;
-  const cancelledCount = sessions.filter(isCancelled).length;
-  const confirmedCount = sessions.filter(isConfirmed).length;
-  const pendingCount = sessions.filter(isPending).length;
-  const reschedulingCount = sessions.filter(isRescheduling).length;
-  const withdrawalCount = sessions.filter(isWithdrawal).length;
+  const completedCount = groupCount("completed");
+  const cancelledCount = groupCount("cancelled");
+  const confirmedCount = groupCount("confirmed");
+  const pendingCount = groupCount("pending");
+  const reschedulingCount = groupCount("rescheduling");
+  const withdrawalCount = groupCount("withdrawal");
 
   return (
     <div className="grid gap-5">
@@ -159,7 +137,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#f5f1fd] hover:bg-[#f1edfd]"
           label="Confirmed"
           value={String(confirmedCount)}
-          info="Confirmed or ambassador assigned, still to come"
+          info="Bookings confirmed with the school or with an ambassador assigned"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#ea580c]"
@@ -170,7 +148,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fff5ec] hover:bg-[#fff1e6]"
           label="Rescheduling"
           value={String(reschedulingCount)}
-          info="A school asked to move the date, or moved it themselves and the new date needs confirming"
+          info="Bookings where the school asked to move the date, or moved it and the new date needs confirming"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#db2777]"
@@ -181,7 +159,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fdf2f8] hover:bg-[#fdf0f6]"
           label="Withdrawal"
           value={String(withdrawalCount)}
-          info="The assigned ambassador asked to withdraw and staff need to decide"
+          info="Bookings where the assigned ambassador asked to withdraw and staff need to decide"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#d97706]"
@@ -192,7 +170,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fff9eb] hover:bg-[#fff5df]"
           label="Pending"
           value={String(pendingCount)}
-          info="Requested, tentative or applied: not confirmed with the school yet"
+          info="Bookings requested, tentative or applied for: not confirmed with the school yet"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#dc2626]"
@@ -203,7 +181,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fef2f2] hover:bg-[#feecec]"
           label="Cancelled"
           value={String(cancelledCount)}
-          info="Cancelled or declined"
+          info="Bookings cancelled or declined"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#2563eb]"
@@ -212,9 +190,9 @@ export function BookingLifecyclePanel({
           href={metricHref("all")}
           active={metric === "all"}
           activeClassName="bg-[#eef4fd] hover:bg-[#e8f1fd]"
-          label="All sessions"
-          value={String(sessions.length)}
-          info="Every session in the selected period, whatever its status"
+          label="All bookings"
+          value={String(periodBookings.length)}
+          info="Every booking with a session in the selected period. The tiles add up to this, and it matches the total on the dashboard's booking status chart."
         />
       </div>
 

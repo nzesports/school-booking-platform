@@ -10,6 +10,7 @@ import type {
   School,
   SchoolFeedbackSummary
 } from "@/lib/domain/types";
+import { isReschedulingSession, isWithdrawalSession } from "@/lib/session-status";
 import { formatDateOnly, formatShortDate } from "@/lib/utils";
 
 export type DashboardRange =
@@ -910,4 +911,29 @@ export function buildFilteredDashboardData(
     metrics: buildRangeMetrics(rangeBookings, createdBookings, ambassadors, activityLogs),
     sourceMetrics: buildSourceMetrics(rangeBookings)
   };
+}
+
+// Every booking lands in exactly one group, so the groups always add up to the
+// total. The dashboard's booking status chart and the Bookings page tiles both
+// use this. An open booking with a session awaiting a withdrawal or reschedule
+// decision counts there first, so a confirmed booking never reads as pending.
+export type BookingStatusGroup =
+  | "completed"
+  | "confirmed"
+  | "rescheduling"
+  | "withdrawal"
+  | "pending"
+  | "cancelled";
+
+export function bookingStatusGroup(booking: BookingRequestView): BookingStatusGroup {
+  if (cancelledStatuses.has(booking.status)) return "cancelled";
+  if (isCompletedBooking(booking)) return "completed";
+  if (booking.status === "withdrawal_requested" || booking.sessions.some(isWithdrawalSession)) {
+    return "withdrawal";
+  }
+  if (booking.status === "reschedule_requested" || booking.sessions.some(isReschedulingSession)) {
+    return "rescheduling";
+  }
+  if (booking.status === "confirmed" || booking.status === "ambassador_assigned") return "confirmed";
+  return "pending";
 }

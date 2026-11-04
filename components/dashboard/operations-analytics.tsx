@@ -49,6 +49,7 @@ import {
   averageReportRating,
   bookingActivityDate,
   bookingInRange,
+  bookingStatusGroup,
   buildYearGroupCoverage,
   isCancelledSession,
   isCompletedBooking,
@@ -60,11 +61,11 @@ import {
   reviewInRange,
   sessionInRange,
   summarizeStudentReach,
+  type BookingStatusGroup,
   type DashboardCustomRange,
   type DashboardRange
 } from "@/lib/services/dashboard-insights";
 import type { ResourceRecord } from "@/lib/services/portal";
-import { isReschedulingSession, isWithdrawalSession } from "@/lib/session-status";
 import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { cn, formatCurrency, formatTime, formatWeekdayDate } from "@/lib/utils";
 
@@ -258,9 +259,17 @@ export function OperationsAnalytics({
   const pipeline = buildBookingPipeline(rangeBookings, rangeSessions, now);
   const studentReachRange = summarizeStudentReach(rangeReports, deliveredRangeSessions);
 
-  const analyticsYearBookings = bookings.filter(
-    (booking) => nzYear(bookingActivityDate(booking)) === selectedAnalyticsYear
-  );
+  // A year's bookings are those with a session in it, keeping only those
+  // sessions: the same population as the Bookings page for that year, so the
+  // charts' totals match its tiles.
+  const bookingsInYear = (value: number) =>
+    bookings
+      .map((booking) => ({
+        ...booking,
+        sessions: booking.sessions.filter((session) => nzYear(session.startsAt) === value)
+      }))
+      .filter((booking) => booking.sessions.length > 0);
+  const analyticsYearBookings = bookingsInYear(selectedAnalyticsYear);
   const currentYearBookings = bookings.filter(
     (booking) => nzYear(bookingActivityDate(booking)) === year
   );
@@ -272,11 +281,7 @@ export function OperationsAnalytics({
   );
   const sources = buildSourceBreakdown(analyticsYearBookings);
   const bookingStatuses = buildBookingStatusBreakdown(analyticsYearBookings);
-  const previousYearSources = buildSourceBreakdown(
-    bookings.filter(
-      (booking) => nzYear(bookingActivityDate(booking)) === selectedAnalyticsYear - 1
-    )
-  );
+  const previousYearSources = buildSourceBreakdown(bookingsInYear(selectedAnalyticsYear - 1));
   const yearStudents = buildYearlyStudentSeries(allSessions, studentsToYear, now);
   const studentSeries = yearStudents.series;
   const yearStudentsTotal = yearStudents.total;
@@ -1916,58 +1921,23 @@ function buildSourceBreakdown(yearBookings: BookingRequestView[]) {
 }
 
 function buildBookingStatusBreakdown(yearBookings: BookingRequestView[]) {
-  const cancelled = yearBookings.filter((booking) =>
-    BOOKING_CANCELLED_STATUSES.has(booking.status)
-  );
-  const cancelledIds = new Set(cancelled.map((booking) => booking.id));
-  const completed = yearBookings.filter(
-    (booking) =>
-      !cancelledIds.has(booking.id) && isCompletedBooking(booking)
-  );
-  const completedIds = new Set(completed.map((booking) => booking.id));
-  const open = yearBookings.filter(
-    (booking) => !completedIds.has(booking.id) && !cancelledIds.has(booking.id)
-  );
-  // Open bookings split the same way as the Bookings page tiles, so a
-  // confirmed booking never reads as "Pending". A booking with a session
-  // awaiting a withdrawal or reschedule decision counts there first.
-  const withdrawal = open.filter(
-    (booking) =>
-      booking.status === "withdrawal_requested" || booking.sessions.some(isWithdrawalSession)
-  );
-  const withdrawalIds = new Set(withdrawal.map((booking) => booking.id));
-  const rescheduling = open.filter(
-    (booking) =>
-      !withdrawalIds.has(booking.id) &&
-      (booking.status === "reschedule_requested" || booking.sessions.some(isReschedulingSession))
-  );
-  const reschedulingIds = new Set(rescheduling.map((booking) => booking.id));
-  const confirmed = open.filter(
-    (booking) =>
-      !withdrawalIds.has(booking.id) &&
-      !reschedulingIds.has(booking.id) &&
-      BOOKING_CONFIRMED_STATUSES.has(booking.status)
-  );
-  const confirmedIds = new Set(confirmed.map((booking) => booking.id));
-  const pending = open.filter(
-    (booking) =>
-      !withdrawalIds.has(booking.id) && !reschedulingIds.has(booking.id) && !confirmedIds.has(booking.id)
-  );
+  const count = (group: BookingStatusGroup) =>
+    yearBookings.filter((booking) => bookingStatusGroup(booking) === group).length;
   const total = yearBookings.length;
   const percent = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
   const segments = [
-    { label: "Completed", value: completed.length, color: "#18a83b" },
-    { label: "Confirmed", value: confirmed.length, color: "#7c3aed" },
-    { label: "Rescheduling", value: rescheduling.length, color: "#ea580c" },
-    { label: "Withdrawal", value: withdrawal.length, color: "#db2777" },
-    { label: "Pending", value: pending.length, color: "#98a2b3" },
-    { label: "Cancelled", value: cancelled.length, color: "#d75b52" }
+    { label: "Completed", value: count("completed"), color: "#18a83b" },
+    { label: "Confirmed", value: count("confirmed"), color: "#7c3aed" },
+    { label: "Rescheduling", value: count("rescheduling"), color: "#ea580c" },
+    { label: "Withdrawal", value: count("withdrawal"), color: "#db2777" },
+    { label: "Pending", value: count("pending"), color: "#98a2b3" },
+    { label: "Cancelled", value: count("cancelled"), color: "#d75b52" }
   ].map((segment) => ({ ...segment, percent: percent(segment.value) }));
 
   return {
     total,
     segments,
-    completionRate: percent(completed.length)
+    completionRate: percent(count("completed"))
   };
 }
 
