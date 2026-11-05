@@ -176,7 +176,7 @@ export function ManualBookingDialog({
                   </Field>
                   <Field label="Status" icon={<ListChecks className={iconClassName} />} required>
                     <select name="status" defaultValue="confirmed" className={fieldClassName}>
-                      <option value="tentative">Tentative / pending</option>
+                      <option value="tentative">Pending</option>
                       <option value="applied">Applied</option>
                       <option value="ambassador_assigned">Ambassador assigned</option>
                       <option value="confirmed">Confirmed</option>
@@ -268,7 +268,7 @@ export function ManualBookingDialog({
                 <p className="text-xs italic leading-5 text-[color:var(--text-soft)]">
                   {recordOnly
                     ? "Past sessions are saved as delivered, reported and settled, so no report or payment is requested. Future sessions follow the normal flow without any emails; any invoice can be sent to finance by hand from Payments."
-                    : "Tentative / pending bookings without an ambassador send a pending booking email. Confirmed bookings send a confirmation email, even if an ambassador is unassigned. Both emails include the booking reference and session details."}
+                    : "Pending bookings without an ambassador send a pending booking email. Confirmed bookings send a confirmation email, even if an ambassador is unassigned. Both emails include the booking reference and session details."}
                 </p>
 
                 <div className="flex flex-wrap justify-end gap-3 border-t border-[rgba(4,15,75,0.08)] pt-5">

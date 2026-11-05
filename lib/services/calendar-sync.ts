@@ -18,8 +18,8 @@ import { escapeHtml } from "./email-triggers";
 const REMOVED_STATUSES = new Set(["cancelled", "declined"]);
 const TENTATIVE_STATUSES = new Set(["requested", "tentative", "applied", "reschedule_requested"]);
 const STATUS_LABELS: Record<string, string> = {
-  requested: "Requested",
-  tentative: "Tentative – needs review",
+  requested: "Pending – needs review",
+  tentative: "Pending – needs review",
   applied: "Ambassador applied – needs review",
   ambassador_assigned: "Ambassador assigned",
   confirmed: "Confirmed",
@@ -165,7 +165,7 @@ async function syncChunk(admin: Admin, sessionIds: string[], counts: CalendarSyn
       : [session.location_address || school?.address, school?.city].filter(Boolean).join(", ") || schoolName;
     const result = await syncOutlookCalendarEvent(
       {
-        title: `${tentative ? "[Tentative] " : ""}Esports Session - ${schoolName}${isOnline ? " (online)" : ""}`,
+        title: `${tentative ? "[Pending] " : ""}Esports Session - ${schoolName}${isOnline ? " (online)" : ""}`,
         startsAt: session.starts_at as string,
         endsAt: session.ends_at as string,
         description,

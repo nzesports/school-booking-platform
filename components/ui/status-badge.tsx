@@ -42,7 +42,7 @@ export function schoolBookingStatusLabel(value: string) {
 export function StatusBadge({ value, label }: { value: StatusValue; label?: string }) {
   return (
     <Badge className={toneMap[value] ?? "bg-[color:var(--blue-soft)] text-[color:var(--navy)]"}>
-      {label ?? value.replace(/_/g, " ")}
+      {label ?? (value === "tentative" || value === "requested" ? "pending" : value.replace(/_/g, " "))}
     </Badge>
   );
 }

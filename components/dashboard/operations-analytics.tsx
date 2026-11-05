@@ -395,7 +395,7 @@ export function OperationsAnalytics({
 
       <Card className="rounded-[32px] border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(247,251,255,0.9))]">
         <SectionKicker label="Bookings overview" />
-        <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+        <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <PipelineCard
             icon={<FilePlus2 className="h-5 w-5 text-[#246bff]" />}
             label="New bookings"
@@ -412,17 +412,11 @@ export function OperationsAnalytics({
           />
           <PipelineCard
             icon={<ShieldCheck className="h-5 w-5 text-[color:var(--green)]" />}
-            label="Confirmed bookings"
-            value={pipeline.confirmed}
-            href={bookingsHref("future")}
-            withArrow
-          />
-          <PipelineCard
-            icon={<CalendarDays className="h-5 w-5 text-[#246bff]" />}
-            label="Confirmed upcoming"
-            value={pipeline.upcomingSessions}
+            label="Confirmed presentations"
+            value={pipeline.confirmedPresentations}
             href={calendarHref ?? bookingsHref("future")}
             withArrow
+            info="Upcoming sessions that are confirmed, counting each session of a multi-session booking. Pending and tentative sessions aren't included."
           />
           <PipelineCard
             icon={<Hourglass className="h-5 w-5 text-[#c07a12]" />}
@@ -2068,9 +2062,14 @@ function buildBookingPipeline(
   const confirmed = rangeBookings.filter((booking) =>
     BOOKING_CONFIRMED_STATUSES.has(booking.status)
   );
-  const confirmedUpcoming = confirmed.flatMap((booking) =>
+  // Each session to come, confirmed on both its booking and itself, so a
+  // tentative session inside a confirmed booking isn't counted.
+  const confirmedPresentations = confirmed.flatMap((booking) =>
     booking.sessions.filter(
-      (session) => rangeSessionIds.has(session.id) && isFutureSession(session, now)
+      (session) =>
+        rangeSessionIds.has(session.id) &&
+        isFutureSession(session, now) &&
+        BOOKING_CONFIRMED_STATUSES.has(session.status)
     )
   );
 
@@ -2080,8 +2079,7 @@ function buildBookingPipeline(
       return createdAt >= sevenDaysAgo && createdAt <= now.getTime();
     }).length,
     needsReview: needsReview.length,
-    confirmed: confirmed.length,
-    upcomingSessions: confirmedUpcoming.length,
+    confirmedPresentations: confirmedPresentations.length,
     pending: rangeBookings.filter((booking) => BOOKING_PENDING_STATUSES.has(booking.status)).length,
     completed: completed.length,
     presentationsDelivered: presentationsDelivered.length,

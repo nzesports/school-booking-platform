@@ -286,7 +286,7 @@ export function StatusPill({ value }: { value: string }) {
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {value === "requested"
+      {value === "requested" || value === "tentative"
         ? "Pending"
         : value === "closed"
           ? "Completed"
@@ -1591,7 +1591,7 @@ function BookingsCalendar({
   const legend: Array<{ tone: CalendarTone; label: string }> = [
     { tone: "green", label: "Confirmed / delivered" },
     { tone: "blue", label: "Assigned / applied" },
-    { tone: "amber", label: "Tentative / awaiting assignment" },
+    { tone: "amber", label: "Pending / awaiting assignment" },
     { tone: "red", label: "Cancelled" }
   ];
 

@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 
 export const BOOKING_STATUS_OPTIONS = [
   ["requested", "Pending"],
-  ["tentative", "Tentative"],
   ["applied", "Applied"],
   ["ambassador_assigned", "Ambassador assigned"],
   ["confirmed", "Confirmed"],
@@ -30,7 +29,13 @@ export const COMPLETION_STATUSES = new Set([
   "closed"
 ]);
 
+// Stored statuses that people see as one: public requests are saved as
+// tentative, and both read as Pending.
 export function schoolBookingStatus(status: string) {
+  if (status === "tentative") {
+    return "requested";
+  }
+
   return COMPLETION_STATUSES.has(status) ? "closed" : status;
 }
 
