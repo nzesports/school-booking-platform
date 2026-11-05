@@ -473,8 +473,8 @@ export function OperationsAnalytics({
             }
           >
             <div className="flex flex-wrap items-center gap-5 text-xs font-semibold text-[color:var(--text-soft)]">
-              <LegendDot color="#18a83b" label={String(presentationsFromYear)} />
-              <LegendDot color="#246bff" label={String(presentationsToYear)} />
+              <LegendDot color="#8fadf2" dashed label={String(presentationsFromYear)} />
+              <LegendDot color="#18a83b" label={String(presentationsToYear)} />
             </div>
             <ComparisonLineChart
               series={activity.series}
@@ -1289,10 +1289,25 @@ function ChartFootnote({ icon, children }: { icon: ReactNode; children: ReactNod
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+function LegendDot({
+  color,
+  label,
+  dashed = false
+}: {
+  color: string;
+  label: string;
+  dashed?: boolean;
+}) {
   return (
     <span className="flex items-center gap-2">
-      <span className="h-1 w-5 rounded-full" style={{ backgroundColor: color }} />
+      <span
+        className="h-1 w-5 rounded-full"
+        style={
+          dashed
+            ? { backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 6px, transparent 6px 10px)` }
+            : { backgroundColor: color }
+        }
+      />
       {label}
     </span>
   );
@@ -1341,15 +1356,16 @@ function ComparisonLineChart({
         ))}
         <polyline
           fill="none"
-          stroke="#18a83b"
+          stroke="#8fadf2"
+          strokeDasharray="6 6"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="3"
+          strokeWidth="2"
           points={linePoints("previous")}
         />
         <polyline
           fill="none"
-          stroke="#246bff"
+          stroke="#18a83b"
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth="3"
@@ -1368,8 +1384,8 @@ function ComparisonLineChart({
               height={chartHeight}
               fill="transparent"
             />
-            <circle cx={pointX(index)} cy={pointY(point.previous)} r="4" fill="#18a83b" stroke="white" strokeWidth="2" />
-            <circle cx={pointX(index)} cy={pointY(point.current)} r="4" fill="#246bff" stroke="white" strokeWidth="2" />
+            <circle cx={pointX(index)} cy={pointY(point.previous)} r="3" fill="#8fadf2" stroke="white" strokeWidth="1.5" />
+            <circle cx={pointX(index)} cy={pointY(point.current)} r="4" fill="#18a83b" stroke="white" strokeWidth="2" />
             <text
               x={pointX(index)}
               y={height - 6}
