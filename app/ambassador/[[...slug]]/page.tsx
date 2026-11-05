@@ -53,10 +53,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { PaymentRecord } from "@/lib/domain/types";
 import { describePaymentAmount, isAwaitingCustomReview } from "@/lib/payment-breakdown";
-import { groupSameDaySessions, sessionGroupSummary } from "@/lib/same-day-sessions";
+import {
+  groupReportVisits,
+  groupSameDaySessions,
+  reportVisitKey,
+  sessionGroupSummary
+} from "@/lib/same-day-sessions";
 import { requirePortalAccess } from "@/lib/services/auth";
 import {
   averageReportRating,
+  isCountedPresentation,
   isDeliveredSession,
   isFutureSession
 } from "@/lib/services/dashboard-insights";
@@ -112,13 +118,16 @@ export default async function AmbassadorPortalPage({
   // never-confirmed sessions don't count as presentations completed.
   const upcomingSessions = ownedSessions.filter((session) => isFutureSession(session, now));
   const completedSessions = ownedSessions.filter((session) => isDeliveredSession(session, now));
-  // Mirrors the statuses submitAmbassadorReportAction accepts.
+  // Mirrors the statuses submitAmbassadorReportAction accepts. One report covers
+  // a school visit, so it opens once the visit's last session has finished.
+  const unfinishedVisits = new Set(upcomingSessions.map(reportVisitKey));
   const reportableSessions = completedSessions.filter(
     (session) =>
       session.reportStatus === "not_submitted" &&
-      (session.status === "confirmed" || session.status === "completed_pending_report")
+      (session.status === "confirmed" || session.status === "completed_pending_report") &&
+      !unfinishedVisits.has(reportVisitKey(session))
   );
-  const outstandingReportCount = groupSameDaySessions(reportableSessions).length;
+  const outstandingReportCount = groupReportVisits(reportableSessions).length;
   const nextReportSession = reportableSessions[0];
   const ambassadorPayments = portal.payments;
   const sessionsById = new Map(ownedSessions.map((session) => [session.id, session]));
@@ -144,7 +153,7 @@ export default async function AmbassadorPortalPage({
   const notice = getAmbassadorNotice(resolvedSearchParams, payoutLabels.sourced);
   const reportRating = averageReportRating(portal.reports);
   const profileStats = {
-    schoolVisits: completedSessions.length,
+    schoolVisits: ownedSessions.filter(isCountedPresentation).length,
     invoicesGeneratedCount: ambassadorPayments.filter(
       (payment) => payment.invoiceNumber || payment.invoiceGeneratedAt
     ).length,
@@ -500,7 +509,7 @@ export default async function AmbassadorPortalPage({
           ) : null}
 
           {route === "reports" ? (
-            <AmbassadorReportsWorkspace completedSessions={completedSessions} reports={portal.reports} />
+            <AmbassadorReportsWorkspace completedSessions={completedSessions} upcomingSessions={upcomingSessions} reports={portal.reports} />
           ) : null}
         </AmbassadorPayRatesProvider>
       </DashboardShell>
@@ -737,7 +746,7 @@ function getAmbassadorNotice(
   if (error === "group-already-reported") {
     return {
       tone: "error",
-      message: "A report already exists for this booking on that day. Contact the team to review any additional payment."
+      message: "A report already exists for this school on that day. Contact the team to review any additional payment."
     };
   }
 
@@ -745,7 +754,7 @@ function getAmbassadorNotice(
     return {
       tone: "error",
       message:
-        "One report covers all of that day's back-to-back sessions, so submit it once the last session has finished."
+        "One report covers your whole visit to this school this week, so submit it once your last session has finished."
     };
   }
 

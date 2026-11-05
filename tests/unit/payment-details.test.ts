@@ -258,17 +258,21 @@ describe("loadPaymentDetails — legacy and single sessions", () => {
   });
 });
 
+describe("loadPaymentDetails — separate bookings on one day", () => {
+  it("covers a same-day session at the same school from another booking", async () => {
+    sessions.set(FIRST, session(FIRST, ...FIRST_TIMES, { booking_request_id: OTHER_BOOKING }));
+    logs = [coverage(FIRST, { booking_request_id: OTHER_BOOKING })];
+
+    expect((await loadPaymentDetails(PAYMENT_ID))?.sessionDescription).toContain("2 sessions");
+  });
+});
+
 describe("loadPaymentDetails — refuses rather than guessing", () => {
   it.each<[string, () => void]>([
     ["coverage names another paid session", () => (logs = [coverage(FIRST, {}, { reported_session_id: NEXT_WEEK })])],
-    ["coverage belongs to another booking", () => (logs = [coverage(FIRST, { booking_request_id: OTHER_BOOKING })])],
     ["coverage has no covered session", () => (logs = [coverage(null)])],
     ["coverage points at the paid session itself", () => (logs = [coverage(ANCHOR)])],
     ["a covered session was deleted", () => sessions.delete(FIRST)],
-    [
-      "a covered session is in another booking",
-      () => sessions.set(FIRST, session(FIRST, ...FIRST_TIMES, { booking_request_id: OTHER_BOOKING }))
-    ],
     [
       "a covered session belongs to another ambassador",
       () => sessions.set(FIRST, session(FIRST, ...FIRST_TIMES, { assigned_ambassador_id: OTHER_AMB }))

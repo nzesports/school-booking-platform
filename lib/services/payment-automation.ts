@@ -231,10 +231,6 @@ async function loadCoveredSessions(
     failIf(entry.details?.report_id !== report.id, "a coverage record names another report");
     failIf(entry.details?.reported_session_id !== anchorSessionId, "a coverage record names another paid session");
     failIf(!entry.booking_session_id || entry.booking_session_id === anchorSessionId, "a coverage record has no covered session");
-    failIf(
-      !anchorSession.booking_request_id || entry.booking_request_id !== anchorSession.booking_request_id,
-      "a coverage record belongs to another booking"
-    );
     // Duplicate rows for one sibling describe the same session once.
     siblingIds.add(entry.booking_session_id as string);
   }
@@ -259,7 +255,6 @@ async function loadCoveredSessions(
   const anchorDay = nzDay.format(new Date(anchorSession.starts_at));
 
   for (const row of covered) {
-    failIf(row.booking_request_id !== anchorSession.booking_request_id, "a covered session belongs to another booking");
     failIf(row.school_id !== anchorSession.school_id, "a covered session belongs to another school");
     failIf(row.assigned_ambassador_id !== ambassadorProfileId, "a covered session is not the paid ambassador's");
     failIf(nzDay.format(new Date(row.starts_at)) !== anchorDay, "a covered session is on another New Zealand day");

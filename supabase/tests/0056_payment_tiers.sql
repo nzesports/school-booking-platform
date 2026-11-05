@@ -12,6 +12,8 @@
 --   3+ sessions, overlapping, missing/invalid times            review
 --
 -- Sessions are placed on yesterday's NZ date (now() is fixed per transaction).
+-- Since 0059 a report covers a whole school day, so each scenario has its own
+-- school.
 
 begin;
 
@@ -50,16 +52,18 @@ language plpgsql as $$
 #variable_conflict use_column
 declare
   v_day date := (now() at time zone 'Pacific/Auckland')::date - 1;
+  v_school uuid;
   v_booking uuid;
   v_second_start timestamptz;
   v_second uuid;
 begin
-  insert into public.booking_requests (school_id, status) values (p_school, 'confirmed') returning id into v_booking;
+  insert into public.schools (name) values ('0056 Pair School') returning id into v_school;
+  insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_booking;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_booking, p_school, p_amb, 'confirmed', pg_temp.nzt(v_day, '08:00'), pg_temp.nzt(v_day, '09:00'));
+    values (v_booking, v_school, p_amb, 'confirmed', pg_temp.nzt(v_day, '08:00'), pg_temp.nzt(v_day, '09:00'));
   v_second_start := pg_temp.nzt(v_day, '09:00') + make_interval(mins => p_gap_minutes, secs => p_extra_seconds);
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_booking, p_school, p_amb, 'confirmed', v_second_start, v_second_start + interval '30 minutes')
+    values (v_booking, v_school, p_amb, 'confirmed', v_second_start, v_second_start + interval '30 minutes')
     returning id into v_second;
 
   return query
@@ -177,6 +181,7 @@ begin
   end loop;
 
   -- 3. Single sessions: $250, sourced $300, no additional amount.
+  insert into public.schools (name) values ('0056 Scenario School') returning id into v_school;
   insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_booking;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
     values (v_booking, v_school, v_amb, 'confirmed', pg_temp.nzt(v_day, '14:00'), pg_temp.nzt(v_day, '15:00'))
@@ -189,6 +194,7 @@ begin
   end if;
 
   -- 4. Three sessions: one delivery fee, one bonus, review, nothing guessed.
+  insert into public.schools (name) values ('0056 Scenario School') returning id into v_school;
   insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_booking;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
     values (v_booking, v_school, v_amb, 'confirmed', pg_temp.nzt(v_day, '08:00'), pg_temp.nzt(v_day, '09:00')),
@@ -210,6 +216,7 @@ begin
   if v_count <> 1 then raise exception 'FAIL 4: % payments for one report', v_count; end if;
 
   -- 5. Invalid times (a zero-length session) go to review.
+  insert into public.schools (name) values ('0056 Scenario School') returning id into v_school;
   insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_booking;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
     values (v_booking, v_school, v_amb, 'confirmed', pg_temp.nzt(v_day, '12:00'), pg_temp.nzt(v_day, '12:00'));
@@ -336,6 +343,7 @@ begin
 
   -- 10. A payment from before 0056 (no tier, flat second-session amount)
   --     keeps its amount through approval: nothing is repriced.
+  insert into public.schools (name) values ('0056 Scenario School') returning id into v_school;
   insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_booking;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, report_status, starts_at, ends_at)
     values (v_booking, v_school, v_amb, 'report_submitted', 'submitted', pg_temp.nzt(v_day, '16:00'), pg_temp.nzt(v_day, '17:00'))

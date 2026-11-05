@@ -1,3 +1,4 @@
+import { reportDayKey } from "@/lib/same-day-sessions";
 import type {
   AmbassadorProfile,
   BookingActivityLogSummary,
@@ -369,6 +370,29 @@ export function averageReportRating(reports: ReportSummary[]) {
 // - expected: the expected student count on every session, for comparison.
 // - reported: attendance ambassadors entered in their session reports.
 // Pass reports and delivered sessions scoped to the same period.
+// Students reached per session. A day's report records the whole day's
+// attendance on one session, so the day's other sessions count as 0 rather
+// than adding their expected numbers on top. A day with nothing reported falls
+// back to the expected numbers.
+export function studentsReachedBySession(sessions: BookingSessionView[]) {
+  const reportedDays = new Set(
+    sessions
+      .filter((session) => session.actualStudentCount !== null && session.actualStudentCount !== undefined)
+      .map(reportDayKey)
+  );
+
+  return new Map(
+    sessions.map((session) => [
+      session.id,
+      Number(
+        session.actualStudentCount ??
+          (reportedDays.has(reportDayKey(session)) ? 0 : session.expectedStudentCount) ??
+          0
+      )
+    ])
+  );
+}
+
 export function summarizeStudentReach(
   reports: ReportSummary[],
   deliveredSessions: BookingSessionView[]
@@ -377,8 +401,8 @@ export function summarizeStudentReach(
     reports.map((report) => report.bookingSessionId).filter(Boolean)
   );
   const expectedOf = (session: BookingSessionView) => Number(session.expectedStudentCount ?? 0);
-  const reachedOf = (session: BookingSessionView) =>
-    Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0);
+  const reachedBySession = studentsReachedBySession(deliveredSessions);
+  const reachedOf = (session: BookingSessionView) => reachedBySession.get(session.id) ?? 0;
   const sum = (sessions: BookingSessionView[], value: (session: BookingSessionView) => number) =>
     sessions.reduce((total, session) => total + value(session), 0);
 
@@ -481,6 +505,14 @@ export function isDeliveredSession(session: BookingSessionView, now = new Date()
     deliveredCapableStatuses.has(session.status) &&
     new Date(session.endsAt).getTime() < now.getTime()
   );
+}
+
+// The one rule behind every "delivered" number people read: a session that
+// isn't cancelled, on a booking whose own status says completed. Workflow
+// checks, such as who can file a report or leave feedback, use
+// isDeliveredSession instead.
+export function isCountedPresentation(session: BookingSessionView) {
+  return completedBookingStatuses.has(session.bookingStatus ?? "") && !isCancelledSession(session);
 }
 
 export function isCancelledSession(session: BookingSessionView) {
@@ -769,7 +801,7 @@ export function formatYearGroups(years: number[]) {
 }
 
 export function buildYearGroupCoverage(sessions: BookingSessionView[]) {
-  const delivered = sessions.filter((session) => isDeliveredSession(session));
+  const delivered = sessions.filter(isCountedPresentation);
   const reached = Array.from(
     new Set(delivered.flatMap((session) => extractYearNumbers(session.yearLevels)))
   ).filter((year) => targetYearGroups.includes(year));
@@ -788,14 +820,15 @@ export function buildSchoolDeliverySummaries(schools: School[], bookings: Bookin
 
   return schools.map((school) => {
     const schoolSessions = sessions.filter((session) => session.schoolId === school.id);
-    const delivered = schoolSessions.filter((session) => isDeliveredSession(session));
+    const delivered = schoolSessions.filter(isCountedPresentation);
     const upcoming = schoolSessions.filter((session) => isFutureSession(session));
     const cancelled = schoolSessions.filter(isCancelledSession);
     const presentationsDelivered = Array.from(
       new Set(delivered.map((session) => session.presentationTitle))
     );
+    const reachedBySession = studentsReachedBySession(delivered);
     const studentCount = delivered.reduce(
-      (total, session) => total + Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0),
+      (total, session) => total + (reachedBySession.get(session.id) ?? 0),
       0
     );
     const yearGroups = Array.from(
@@ -844,7 +877,7 @@ export function buildPresentationPerformance(
     const presentationSessions = sessions.filter(
       (session) => session.presentationTypeId === presentation.id
     );
-    const delivered = presentationSessions.filter((session) => isDeliveredSession(session));
+    const delivered = presentationSessions.filter(isCountedPresentation);
     const presentationReports = reports.filter(
       (report) => report.presentationTypeId === presentation.id
     );

@@ -35,9 +35,19 @@ describe("outstanding report list", () => {
       { id: "b", bookingRequestId: "visit", schoolName: "Grouped QA School", presentationTitle: "Esports Pathways", startsAt: "2026-10-27T00:10:00Z", endsAt: "2026-10-27T00:20:00Z", reportStatus: "not_submitted" },
       { id: "c", bookingRequestId: "another", schoolName: "Separate QA School", presentationTitle: "Digital Wellbeing", startsAt: "2026-10-27T02:00:00Z", endsAt: "2026-10-27T02:10:00Z", reportStatus: "not_submitted" }
     ] as BookingSessionView[];
-    render(<AmbassadorReportsWorkspace completedSessions={sessions} reports={[]} />);
+    render(<AmbassadorReportsWorkspace completedSessions={sessions} upcomingSessions={[]} reports={[]} />);
     expect(screen.getAllByRole("link", { name: "Submit report" })).toHaveLength(2);
     expect(screen.getByText("Digital Wellbeing + Esports Pathways")).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Grouped QA School" })).toHaveLength(1);
+  });
+
+  it("holds a visit's report until its last session of the week has finished", () => {
+    const finished = { id: "a", schoolName: "Two Day QA School", presentationTitle: "Digital Wellbeing", startsAt: "2026-10-26T21:00:00Z", endsAt: "2026-10-26T21:10:00Z", reportStatus: "not_submitted" } as BookingSessionView;
+    const tomorrow = { id: "b", schoolName: "Two Day QA School", presentationTitle: "Digital Wellbeing", startsAt: "2026-10-27T21:00:00Z", endsAt: "2026-10-27T21:10:00Z", reportStatus: "not_submitted" } as BookingSessionView;
+
+    render(<AmbassadorReportsWorkspace completedSessions={[finished]} upcomingSessions={[tomorrow]} reports={[]} />);
+
+    expect(screen.queryByRole("link", { name: "Submit report" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Opens after your last session/)).toBeInTheDocument();
   });
 });

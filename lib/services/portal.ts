@@ -37,10 +37,11 @@ import type {
 import { unstable_cache } from "next/cache";
 
 import { loadSessionRescheduleHistory } from "@/lib/services/session-change-history";
+import { isOtherRegionSlug } from "@/lib/domain/regions";
 import { PLATFORM_DATA_TAG } from "@/lib/services/cache-tags";
 import { splitContentLines } from "@/lib/services/presentations";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
+import { isCountedPresentation, isFutureSession } from "@/lib/services/dashboard-insights";
 import { fetchAllRows } from "@/lib/supabase/fetch-all-rows";
 import { nzDayKey } from "@/lib/same-day-sessions";
 import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
@@ -754,8 +755,13 @@ function mapBookingRequests(data: NonNullable<RawPlatformData>) {
 
   for (const session of data.bookingSessions) {
     const bookingId = session.booking_request_id as string;
-    const region = regionsById.get(session.region_id as string);
     const school = schoolsById.get(session.school_id as string);
+    const sessionRegion = regionsById.get(session.region_id as string);
+    // A session with no real region of its own follows its school.
+    const region =
+      !sessionRegion || isOtherRegionSlug(sessionRegion.slug as string)
+        ? (regionsById.get(school?.region_id as string) ?? sessionRegion)
+        : sessionRegion;
     const presentation = presentationsById.get(session.presentation_type_id as string);
     const ambassadorProfile = ambassadorProfilesById.get(session.assigned_ambassador_id as string);
     const ambassadorUser = ambassadorProfile
@@ -1121,11 +1127,13 @@ function mapReports(data: NonNullable<RawPlatformData>) {
     value === null || value === undefined ? undefined : Boolean(value);
 
   const sameDaySessionCount = countSameDaySessions(data);
-  // A report covers its ambassador's sessions of one booking on one NZ day
-  // (submit_ambassador_report_group), so a double session shows as both.
+  // A report covers its ambassador's sessions at one school on one NZ day
+  // (submit_ambassador_report_group), so a double session shows as both. A
+  // session with its own report is never shown as covered by another.
+  const reportedSessionIds = new Set(data.reports.map((report) => report.booking_session_id as string));
   const coveredSessionsByDay = new Map<string, Array<{ id: string; startsAt: string; endsAt?: string }>>();
   const coveredDayKey = (session: (typeof data.bookingSessions)[number]) =>
-    `${session.booking_request_id}|${session.assigned_ambassador_id}|${nzDayKey(session.starts_at as string)}`;
+    `${session.school_id}|${session.assigned_ambassador_id}|${nzDayKey(session.starts_at as string)}`;
 
   for (const session of data.bookingSessions) {
     if (!session.booking_request_id || !session.starts_at || ["cancelled", "declined"].includes(String(session.status))) {
@@ -1147,9 +1155,9 @@ function mapReports(data: NonNullable<RawPlatformData>) {
     const session = sessionsById.get(report.booking_session_id as string);
     const coveredSessions =
       session?.booking_request_id && session.starts_at
-        ? (coveredSessionsByDay.get(coveredDayKey(session)) ?? []).sort((left, right) =>
-            left.startsAt.localeCompare(right.startsAt)
-          )
+        ? (coveredSessionsByDay.get(coveredDayKey(session)) ?? [])
+            .filter((covered) => covered.id === session.id || !reportedSessionIds.has(covered.id))
+            .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
         : [];
     const school = session ? schoolsById.get(session.school_id as string) : null;
     const presentation = session ? presentationsById.get(session.presentation_type_id as string) : null;
@@ -1283,10 +1291,9 @@ function withApplicantTrackRecords(
   }
 
   const trackRecords = new Map<string, { deliveredSessions: number; ratings: number[] }>();
-  const now = new Date();
 
   for (const session of sessions) {
-    if (!session.assignedAmbassadorId || !isDeliveredSession(session, now)) {
+    if (!session.assignedAmbassadorId || !isCountedPresentation(session)) {
       continue;
     }
 

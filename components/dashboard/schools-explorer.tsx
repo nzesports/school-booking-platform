@@ -25,9 +25,14 @@ import { createPortal } from "react-dom";
 import { StatusPill } from "@/components/dashboard/bookings-explorer";
 import { SessionDetailsButton } from "@/components/dashboard/session-details-dialog";
 import { BookingDialogShell } from "@/components/site/booking-dialog-shell";
-import type { BookingRequestView, School } from "@/lib/domain/types";
-import { isDeliveredSession, isFutureSession } from "@/lib/services/dashboard-insights";
-import { cn, formatShortDate, formatTime, titleCase } from "@/lib/utils";
+import type { BookingRequestView, BookingSessionView, PaymentStatus, School } from "@/lib/domain/types";
+import { groupSameDaySessions, nzDayKey } from "@/lib/same-day-sessions";
+import {
+  isCancelledSession,
+  isCountedPresentation,
+  isFutureSession
+} from "@/lib/services/dashboard-insights";
+import { cn, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
 const schoolTableColumns = [
@@ -643,179 +648,51 @@ function SchoolBookingsDialog({
   );
   const sessions = sorted.flatMap((booking) => booking.sessions);
   // Same rules as the schools table row, so the dialog never disagrees with it.
-  const deliveredSessions = sessions.filter((session) => isDeliveredSession(session));
+  const deliveredSessions = sessions.filter((session) => isCountedPresentation(session));
   const upcomingSessions = sessions.filter((session) => isFutureSession(session));
+  const daysVisited = new Set(deliveredSessions.map((session) => nzDayKey(session.startsAt))).size;
+  const schoolAddress = sessions.find((session) => session.schoolAddress)?.schoolAddress;
 
   return (
     <BookingDialogShell
       kicker="School bookings"
       title={school.name}
-      description={`${sorted.length} booking request${sorted.length === 1 ? "" : "s"} and ${sessions.length} session${sessions.length === 1 ? "" : "s"} on record`}
+      description={schoolAddress}
       onClose={onClose}
       maxWidthClassName="max-w-[980px]"
       overlayClassName="z-[80]"
       compact
     >
-      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <BookingMetric label="Booking requests" value={String(sorted.length)} />
-        <BookingMetric label="Sessions" value={String(sessions.length)} />
-        <BookingMetric label="Delivered" value={String(deliveredSessions.length)} tone="green" />
+      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        <BookingMetric label="Presentations delivered" value={String(deliveredSessions.length)} tone="green" />
+        <BookingMetric label="Days visited" value={String(daysVisited)} />
         <BookingMetric label="Upcoming" value={String(upcomingSessions.length)} tone="blue" />
+        <BookingMetric label="Bookings" value={String(sorted.length)} />
       </div>
 
       <div className="mt-4 grid gap-4">
         {school.profileNotes ? (
-          <div className="rounded-[16px] border border-[#f0d8a8] bg-[#fffaf0] px-4 py-3.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9a5a00]">
-              Notes from the school
-            </p>
-            <p className="mt-1.5 whitespace-pre-line text-sm leading-6 text-[color:var(--navy)]">
+          <div className="rounded-[14px] border border-[#f0d8a8] bg-[#fffaf0] px-4 py-3">
+            <p className="text-xs font-semibold text-[#9a5a00]">Notes from the school</p>
+            <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[color:var(--navy)]">
               {school.profileNotes}
             </p>
           </div>
         ) : null}
 
         {sorted.length === 0 ? (
-          <p className="rounded-[16px] border border-dashed border-[color:var(--border-soft)] bg-white/80 px-4 py-6 text-sm text-[color:var(--text-soft)]">
+          <p className="rounded-[14px] border border-dashed border-[color:var(--border-soft)] bg-white/80 px-4 py-6 text-sm text-[color:var(--text-soft)]">
             No bookings on record for this school yet.
           </p>
         ) : null}
 
         {sorted.map((booking) => (
-          <article
+          <SchoolBookingCard
             key={booking.id}
-            className="overflow-hidden rounded-[22px] border border-[color:var(--border-soft)] bg-white/92"
-          >
-            <div className="border-b border-[color:rgba(4,15,75,0.07)] bg-[#fbfcfe] p-4 md:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-base font-semibold text-[color:var(--navy)]">
-                    {titleCase(booking.source)} request
-                    {booking.referenceCode ? ` · ${booking.referenceCode}` : ""}
-                  </p>
-                  <p className="mt-1 text-xs text-[color:var(--text-soft)]">
-                    Created {formatShortDate(booking.createdAt)}
-                  </p>
-                </div>
-                <StatusPill value={booking.status} />
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <BookingMeta label="School contact">
-                  <p className="truncate font-semibold text-[color:var(--navy)]">
-                    {booking.primaryContactName || "No contact name"}
-                  </p>
-                  {booking.primaryContactEmail ? (
-                    <a
-                      href={`mailto:${booking.primaryContactEmail}`}
-                      className="mt-0.5 block truncate text-[#1e4fae] hover:underline"
-                      title={booking.primaryContactEmail}
-                    >
-                      {booking.primaryContactEmail}
-                    </a>
-                  ) : (
-                    <p className="mt-0.5 text-[color:var(--text-soft)]">No contact email</p>
-                  )}
-                </BookingMeta>
-                <BookingMeta label="Booking source">
-                  <p className="font-semibold text-[color:var(--navy)]">
-                    {titleCase(booking.source)}
-                  </p>
-                  <p className="mt-0.5 truncate text-[color:var(--text-soft)]">
-                    {booking.sourcedByAmbassadorName
-                      ? `Sourced by ${booking.sourcedByAmbassadorName}`
-                      : "No ambassador sourcing attribution"}
-                  </p>
-                </BookingMeta>
-              </div>
-
-              {booking.schoolNotes || booking.internalNotes ? (
-                <div className="mt-3 grid gap-1.5 rounded-[14px] border border-[#e7ebf1] bg-white px-3.5 py-3 text-xs leading-5 text-[color:var(--text-soft)]">
-                  {booking.schoolNotes ? (
-                    <p>
-                      <span className="font-semibold text-[color:var(--navy)]">School notes: </span>
-                      {booking.schoolNotes}
-                    </p>
-                  ) : null}
-                  {booking.internalNotes ? (
-                    <p>
-                      <span className="font-semibold text-[color:var(--navy)]">Internal notes: </span>
-                      {booking.internalNotes}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="grid gap-3 p-4 md:p-5">
-              {booking.sessions.length === 0 ? (
-                <p className="rounded-[16px] border border-dashed border-[color:var(--border-soft)] px-4 py-5 text-sm text-[color:var(--text-soft)]">
-                  This request does not have any sessions attached yet.
-                </p>
-              ) : null}
-
-              {[...booking.sessions]
-                .sort(
-                  (left, right) =>
-                    new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
-                )
-                .map((session) => (
-                <section
-                  key={session.id}
-                  className="rounded-[18px] border border-[color:var(--border-soft)] bg-[#f8fafc] p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-[color:var(--navy)]">
-                        {session.presentationTitle}
-                      </p>
-                      <p className="mt-1 text-sm text-[color:var(--text-soft)]">
-                        {formatShortDate(session.startsAt, true)} · {formatTime(session.startsAt)}–{formatTime(session.endsAt)}
-                      </p>
-                    </div>
-                    <StatusPill value={session.status} />
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <SessionFact
-                      label="Presenting ambassador"
-                      value={session.assignedAmbassadorName ?? "Not assigned yet"}
-                      detail={session.assignedAmbassadorEmail ?? session.assignedAmbassadorPhone}
-                      href={
-                        session.assignedAmbassadorId
-                          ? `${basePath}/ambassadors/${session.assignedAmbassadorId}`
-                          : undefined
-                      }
-                    />
-                    <SessionFact
-                      label="Students"
-                      value={`${session.actualStudentCount ?? session.expectedStudentCount} student${(session.actualStudentCount ?? session.expectedStudentCount) === 1 ? "" : "s"}`}
-                      detail={session.actualStudentCount ? "Actual attendance" : "Expected attendance"}
-                    />
-                    <SessionFact label="Year groups" value={session.yearLevels || "Not recorded"} />
-                    <SessionFact
-                      label="Administration"
-                      value={`Report: ${titleCase(session.reportStatus)}`}
-                      detail={`Payment: ${titleCase(session.paymentStatus)}`}
-                    />
-                  </div>
-
-                  {session.locationAddress || session.schoolAddress ? (
-                    <p className="mt-3 flex min-w-0 items-start gap-2 rounded-[12px] bg-white px-3 py-2 text-xs leading-5 text-[color:var(--text-soft)]">
-                      <Landmark className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--navy)]" />
-                      <span>{session.locationAddress ?? session.schoolAddress}</span>
-                    </p>
-                  ) : null}
-
-                  <div className="mt-3 flex justify-end">
-                    <SessionDetailsButton
-                      session={session}
-                    />
-                  </div>
-                </section>
-              ))}
-            </div>
-          </article>
+            booking={booking}
+            basePath={basePath}
+            schoolAddress={schoolAddress}
+          />
         ))}
       </div>
 
@@ -832,6 +709,232 @@ function SchoolBookingsDialog({
   );
 }
 
+function SchoolBookingCard({
+  booking,
+  basePath,
+  schoolAddress
+}: {
+  booking: BookingRequestView;
+  basePath: string;
+  schoolAddress?: string;
+}) {
+  const days = groupSameDaySessions(
+    [...booking.sessions].sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+  );
+
+  return (
+    <article className="overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgba(4,15,75,0.07)] bg-[#fbfcfe] px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[color:var(--navy)]">
+            Booking {booking.referenceCode ? `#${booking.referenceCode}` : ""}
+          </p>
+          <p className="mt-0.5 text-xs text-[color:var(--text-soft)]">
+            {titleCase(booking.source)} request, created {formatShortDate(booking.createdAt)}
+            {booking.sourcedByAmbassadorName ? `, sourced by ${booking.sourcedByAmbassadorName}` : ""}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-[color:var(--text-soft)]">
+            {booking.primaryContactName || "No contact name"}
+            {booking.primaryContactEmail ? (
+              <>
+                {" · "}
+                <a href={`mailto:${booking.primaryContactEmail}`} className="text-[#1e4fae] hover:underline">
+                  {booking.primaryContactEmail}
+                </a>
+              </>
+            ) : null}
+          </p>
+        </div>
+        <StatusPill value={booking.status} />
+      </div>
+
+      {booking.schoolNotes || booking.internalNotes ? (
+        <div className="grid gap-1 border-b border-[color:rgba(4,15,75,0.07)] px-4 py-2.5 text-xs leading-5 text-[color:var(--text-soft)]">
+          {booking.schoolNotes ? (
+            <p className="whitespace-pre-line">
+              <span className="font-semibold text-[color:var(--navy)]">School notes: </span>
+              {booking.schoolNotes}
+            </p>
+          ) : null}
+          {booking.internalNotes ? (
+            <p className="whitespace-pre-line">
+              <span className="font-semibold text-[color:var(--navy)]">Internal notes: </span>
+              {booking.internalNotes}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="grid gap-2.5 p-3">
+        {days.length === 0 ? (
+          <p className="px-1 py-3 text-sm text-[color:var(--text-soft)]">
+            This request does not have any sessions attached yet.
+          </p>
+        ) : null}
+        {days.map((sessions) => (
+          <SchoolDayGroup
+            key={sessions[0].id}
+            sessions={sessions}
+            basePath={basePath}
+            schoolAddress={schoolAddress}
+          />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+const dayPaymentLabels: Record<PaymentStatus, string> = {
+  not_eligible: "No payment",
+  eligible: "Payment awaiting approval",
+  pending: "Payment awaiting approval",
+  approved: "Payment approved",
+  paid: "Paid"
+};
+const dayPaymentPriority: PaymentStatus[] = ["paid", "approved", "pending", "eligible"];
+
+// One report and one payment cover a day, so those live on the day, not on
+// each session: the other sessions of the day carry no report or payment of
+// their own, which isn't a problem worth showing.
+function dayAdminSummary(sessions: BookingSessionView[]) {
+  const report = sessions.some((session) => session.reportStatus === "reviewed")
+    ? "Report reviewed"
+    : sessions.some((session) => session.reportStatus === "submitted")
+      ? "Report submitted"
+      : "No report yet";
+  const payment =
+    dayPaymentPriority.find((status) => sessions.some((session) => session.paymentStatus === status)) ??
+    "not_eligible";
+
+  return `${report} · ${dayPaymentLabels[payment]}`;
+}
+
+function SchoolDayGroup({
+  sessions,
+  basePath,
+  schoolAddress
+}: {
+  sessions: BookingSessionView[];
+  basePath: string;
+  schoolAddress?: string;
+}) {
+  const active = sessions.filter((session) => !isCancelledSession(session));
+  const delivered = sessions.filter((session) => isCountedPresentation(session));
+  const isUpcoming = sessions.some((session) => isFutureSession(session));
+  // A day's report records the whole day's attendance on one session, so
+  // reported numbers are never added to the other sessions' expected numbers.
+  const reported = active.filter((session) => session.actualStudentCount);
+  const studentCount = (reported.length > 0 ? reported : active).reduce(
+    (total, session) => total + Number(session.actualStudentCount ?? session.expectedStudentCount ?? 0),
+    0
+  );
+  const sessionLabel = `${sessions.length} session${sessions.length === 1 ? "" : "s"}`;
+  const studentLabel =
+    studentCount > 0
+      ? `${studentCount} student${studentCount === 1 ? "" : "s"}${reported.length > 0 ? "" : " expected"}`
+      : null;
+  const state =
+    delivered.length > 0
+      ? { label: delivered.length === sessions.length ? "Delivered" : `${delivered.length} of ${sessions.length} delivered`, tone: "bg-[#e5f6e9] text-[#117a2e]" }
+      : active.length === 0
+        ? { label: "Cancelled", tone: "bg-[#f0f2f5] text-[#64748b]" }
+        : isUpcoming
+          ? { label: "Upcoming", tone: "bg-[#e8f0ff] text-[#1e4fae]" }
+          : { label: "Not completed", tone: "bg-[#fff3dd] text-[#9a5a00]" };
+
+  return (
+    <section className="overflow-hidden rounded-[14px] border border-[color:var(--border-soft)]">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-[#f6f8fb] px-3.5 py-2.5">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[color:var(--navy)]">
+            {formatWeekdayDate(sessions[0].startsAt)}
+          </p>
+          <p className="text-xs text-[color:var(--text-soft)]">
+            {[sessionLabel, studentLabel].filter(Boolean).join(" · ")}
+            {delivered.length > 0 ? ` · ${dayAdminSummary(sessions)}` : ""}
+          </p>
+        </div>
+        <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", state.tone)}>{state.label}</span>
+      </div>
+
+      <div className="divide-y divide-[color:rgba(4,15,75,0.06)]">
+        {sessions.map((session) => (
+          <SchoolSessionRow
+            key={session.id}
+            session={session}
+            basePath={basePath}
+            schoolAddress={schoolAddress}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SchoolSessionRow({
+  session,
+  basePath,
+  schoolAddress
+}: {
+  session: BookingSessionView;
+  basePath: string;
+  schoolAddress?: string;
+}) {
+  const isCancelled = isCancelledSession(session);
+  const isDelivered = isCountedPresentation(session);
+  const isUpcoming = isFutureSession(session);
+  const location = session.locationAddress ?? session.schoolAddress;
+
+  return (
+    <div
+      className={cn(
+        "grid items-center gap-x-3 gap-y-1 bg-white px-3.5 py-2.5 md:grid-cols-[8.75rem_minmax(0,1fr)_minmax(0,10rem)_auto]",
+        isCancelled && "opacity-60"
+      )}
+    >
+      <p className="flex items-center gap-2 text-sm font-semibold text-[color:var(--navy)]">
+        {isDelivered ? (
+          <CircleCheck className="h-4 w-4 shrink-0 text-[#18a83b]" aria-label="Delivered" />
+        ) : isCancelled ? (
+          <CircleMinus className="h-4 w-4 shrink-0 text-[#94a3b8]" aria-label="Cancelled" />
+        ) : isUpcoming ? (
+          <CalendarDays className="h-4 w-4 shrink-0 text-[#246bff]" aria-label="Upcoming" />
+        ) : (
+          <Hourglass className="h-4 w-4 shrink-0 text-[#c07a12]" aria-label="Not completed" />
+        )}
+        <span className={cn("whitespace-nowrap", isCancelled && "line-through")}>
+          {formatTime(session.startsAt)}
+        </span>
+      </p>
+      <div className="min-w-0">
+        <p className="truncate text-sm text-[color:var(--navy)]">
+          {session.presentationTitle}
+          {session.deliveryMode === "online" ? " (online)" : ""}
+        </p>
+        <p className="text-xs text-[color:var(--text-soft)]">{session.yearLevels || "Year groups not recorded"}</p>
+        {location && location !== schoolAddress ? (
+          <p className="text-xs text-[color:var(--text-soft)]">{location}</p>
+        ) : null}
+      </div>
+      {session.assignedAmbassadorId ? (
+        <Link
+          href={`${basePath}/ambassadors/${session.assignedAmbassadorId}`}
+          className="truncate text-sm font-semibold text-[#1e4fae] hover:underline"
+          title={session.assignedAmbassadorName}
+        >
+          {session.assignedAmbassadorName ?? "Ambassador"}
+        </Link>
+      ) : (
+        <p className="truncate text-sm text-[color:var(--text-soft)]">Not assigned</p>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        {!isDelivered ? <StatusPill value={session.status} /> : null}
+        <SessionDetailsButton session={session} label="View" />
+      </div>
+    </div>
+  );
+}
+
 function BookingMetric({
   label,
   value,
@@ -844,7 +947,7 @@ function BookingMetric({
   return (
     <div
       className={cn(
-        "rounded-[16px] border px-4 py-3",
+        "rounded-[14px] border px-3.5 py-2.5",
         tone === "green"
           ? "border-[#c9ead1] bg-[#f1fbf4]"
           : tone === "blue"
@@ -852,61 +955,8 @@ function BookingMetric({
             : "border-[color:var(--border-soft)] bg-white"
       )}
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function BookingMeta({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="min-w-0 rounded-[14px] border border-[color:var(--border-soft)] bg-white px-3.5 py-3 text-xs">
-      <p className="mb-1.5 font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-        {label}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function SessionFact({
-  label,
-  value,
-  detail,
-  href
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  href?: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-[13px] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--text-soft)]">
-        {label}
-      </p>
-      {href ? (
-        <Link
-          href={href}
-          className="mt-1 block truncate text-sm font-semibold text-[#1e4fae] hover:underline"
-          title={value}
-        >
-          {value}
-        </Link>
-      ) : (
-        <p className="mt-1 truncate text-sm font-semibold text-[color:var(--navy)]" title={value}>
-          {value}
-        </p>
-      )}
-      {detail ? (
-        <p className="mt-0.5 truncate text-xs text-[color:var(--text-soft)]" title={detail}>
-          {detail}
-        </p>
-      ) : null}
+      <p className="text-xs font-semibold text-[color:var(--text-soft)]">{label}</p>
+      <p className="mt-0.5 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">{value}</p>
     </div>
   );
 }

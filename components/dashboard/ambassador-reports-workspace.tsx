@@ -18,7 +18,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import type { BookingSessionView, ReportSummary } from "@/lib/domain/types";
-import { groupSameDaySessions, sessionGroupSummary } from "@/lib/same-day-sessions";
+import { groupReportVisits, reportVisitKey, sessionGroupSummary } from "@/lib/same-day-sessions";
 import { colourWithAlpha } from "@/lib/presentation-colors";
 import { formatShortDate, formatTime } from "@/lib/utils";
 
@@ -26,17 +26,31 @@ const REPORTS_PER_PAGE = 6;
 
 export function AmbassadorReportsWorkspace({
   completedSessions,
+  upcomingSessions,
   reports
 }: {
   completedSessions: BookingSessionView[];
+  upcomingSessions: BookingSessionView[];
   reports: ReportSummary[];
 }) {
-  const outstandingSessions = useMemo(
-    () => groupSameDaySessions(completedSessions
+  // A visit's report opens once its last session of the week has finished.
+  const { outstandingVisits, waitingVisits } = useMemo(() => {
+    const visits = groupReportVisits(completedSessions
       .filter((session) => session.reportStatus === "not_submitted")
-      .sort((a, b) => new Date(b.endsAt).getTime() - new Date(a.endsAt).getTime())),
-    [completedSessions]
-  );
+      .sort((a, b) => new Date(b.endsAt).getTime() - new Date(a.endsAt).getTime()));
+    const lastSession = (visit: BookingSessionView[][]) =>
+      upcomingSessions
+        .filter((session) => reportVisitKey(session) === reportVisitKey(visit[0][0]))
+        .sort((a, b) => b.endsAt.localeCompare(a.endsAt))[0];
+
+    return {
+      outstandingVisits: visits.filter((visit) => !lastSession(visit)),
+      waitingVisits: visits.flatMap((visit) => {
+        const last = lastSession(visit);
+        return last ? [{ visit, opensAfter: last.endsAt }] : [];
+      })
+    };
+  }, [completedSessions, upcomingSessions]);
   const submittedReports = useMemo(
     () => [...reports].sort(
       (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
@@ -66,7 +80,7 @@ export function AmbassadorReportsWorkspace({
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)] md:text-3xl">Report overview</h2>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2.5">
-            <ReportMetric icon={<FileText className="h-4 w-4" />} label="Reports due" value={outstandingSessions.length} tone="amber" />
+            <ReportMetric icon={<FileText className="h-4 w-4" />} label="Reports due" value={outstandingVisits.length} tone="amber" />
             <ReportMetric icon={<FileCheck2 className="h-4 w-4" />} label="Submitted" value={submittedReports.length} tone="green" />
             <ReportMetric icon={<ImageIcon className="h-4 w-4" />} label="Photos and media" value={mediaCount} tone="blue" />
           </div>
@@ -79,10 +93,13 @@ export function AmbassadorReportsWorkspace({
             </span>
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[color:var(--navy)] md:text-3xl">Reports to submit</h2>
           </div>
-          {outstandingSessions.length > 0 ? (
+          {outstandingVisits.length + waitingVisits.length > 0 ? (
             <div className="mt-4 grid gap-2.5">
-              {outstandingSessions.map((sessions) => (
-                <OutstandingReportRow key={sessions[0].id} sessions={sessions} />
+              {outstandingVisits.map((visit) => (
+                <OutstandingReportRow key={visit[0][0].id} visit={visit} />
+              ))}
+              {waitingVisits.map(({ visit, opensAfter }) => (
+                <OutstandingReportRow key={visit[0][0].id} visit={visit} opensAfter={opensAfter} />
               ))}
             </div>
           ) : (
@@ -134,7 +151,14 @@ export function AmbassadorReportsWorkspace({
   );
 }
 
-function OutstandingReportRow({ sessions }: { sessions: BookingSessionView[] }) {
+function OutstandingReportRow({
+  visit,
+  opensAfter
+}: {
+  visit: BookingSessionView[][];
+  opensAfter?: string;
+}) {
+  const sessions = visit.flat();
   const session = sessions[0];
   const { presentationTitles } = sessionGroupSummary(sessions);
   const accent = session.presentationAccentColor ?? "#18A83B";
@@ -149,14 +173,21 @@ function OutstandingReportRow({ sessions }: { sessions: BookingSessionView[] }) 
           <h3 className="mt-0.5 font-semibold text-[color:var(--navy)]">{session.schoolName}</h3>
           <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[color:var(--text-soft)]">
             <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            {formatShortDate(session.startsAt, true)} · {sessions.map((item) => formatTime(item.startsAt)).join(" & ")}
-            {sessions.length > 1 ? ` · ${sessions.length} sessions` : ""}
+            {visit.length > 1
+              ? `${visit.map((day) => formatShortDate(day[0].startsAt, true)).join(" & ")} · ${sessions.length} sessions`
+              : `${formatShortDate(session.startsAt, true)} · ${sessions.map((item) => formatTime(item.startsAt)).join(" & ")}${sessions.length > 1 ? ` · ${sessions.length} sessions` : ""}`}
           </p>
         </div>
-        <ButtonLink href={`/ambassador/report/${session.id}`} className="shrink-0">
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          Submit report
-        </ButtonLink>
+        {opensAfter ? (
+          <p className="shrink-0 text-xs text-[color:var(--text-soft)]">
+            Opens after your last session on {formatShortDate(opensAfter, true)}
+          </p>
+        ) : (
+          <ButtonLink href={`/ambassador/report/${session.id}`} className="shrink-0">
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            Submit report
+          </ButtonLink>
+        )}
     </article>
   );
 }

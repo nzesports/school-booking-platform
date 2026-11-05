@@ -82,6 +82,64 @@ function writesTo(table: string) {
   return fake.calls.filter((call) => call.table === table && call.operation !== "select");
 }
 
+describe("submitAmbassadorReportAction: a visit over two days", () => {
+  const SECOND_DAY_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  function visitForm() {
+    const form = reportForm({ attendeeCount: "0" });
+    form.append("reportDaySessionId", SESSION_ID);
+    form.append("reportDaySessionId", SECOND_DAY_ID);
+    form.set(`reportDayAttendees:${SESSION_ID}`, "220");
+    form.set(`reportDayAttendees:${SECOND_DAY_ID}`, "180");
+    return form;
+  }
+
+  beforeEach(() => {
+    bookingSource = { source: "public", ambassador_outreach_by: null };
+    rpcResult = {
+      data: [{ outcome: "submitted", report_id: "77777777-7777-4777-8777-777777777777", covered_session_ids: [], payment_status: "eligible", amount_cents: 25000 }]
+    };
+    fake = createFakeSupabase({
+      query: (call) => {
+        if (call.table === "ambassador_profiles" && call.single) return { data: { id: AMBASSADOR_ID } };
+        if (call.table === "booking_sessions" && call.single) {
+          return {
+            data: {
+              id: SESSION_ID,
+              booking_request_id: BOOKING_ID,
+              assigned_ambassador_id: AMBASSADOR_ID,
+              starts_at: "2026-10-19T20:00:00Z",
+              ends_at: "2026-10-19T21:00:00Z",
+              school_id: "school-1",
+              status: "confirmed",
+              report_status: "not_submitted"
+            }
+          };
+        }
+        if (call.table === "booking_requests" && call.single) return { data: bookingSource };
+        return undefined;
+      },
+      rpc: () => rpcResult
+    });
+    mocks.client = fake.client;
+  });
+
+  it("writes one report per day, each with its own attendance", async () => {
+    expect(await submit(visitForm())).toBe("/ambassador/reports?submitted=report");
+
+    expect(fake.rpcCalls.map((call) => (call.args as { p_session_id: string }).p_session_id)).toEqual([SESSION_ID, SECOND_DAY_ID]);
+    expect(fake.rpcCalls.map((call) => (call.args as { p_report: { attendee_count: number } }).p_report.attendee_count)).toEqual([220, 180]);
+  });
+
+  it("refuses a day with no attendance and writes nothing", async () => {
+    const form = visitForm();
+    form.delete(`reportDayAttendees:${SECOND_DAY_ID}`);
+
+    expect(await submit(form)).toContain("error=invalid-report");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+});
+
 describe("submitAmbassadorReportAction", () => {
   beforeEach(() => {
     bookingSource = { source: "public", ambassador_outreach_by: null };

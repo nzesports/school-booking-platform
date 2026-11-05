@@ -30,7 +30,7 @@ import { AmbassadorNotesPanel } from "@/components/dashboard/ambassador-notes-pa
 import { AmbassadorProfileTabs } from "@/components/dashboard/ambassador-profile-tabs";
 import type { AmbassadorNote } from "@/lib/services/ambassador-notes";
 import type { PortalLoginStatus } from "@/lib/services/portal-login-status";
-import { isDeliveredSession } from "@/lib/services/dashboard-insights";
+import { isCountedPresentation } from "@/lib/services/dashboard-insights";
 import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
 import { DataTable } from "@/components/dashboard/data-table";
 import { ReportDetailsButton } from "@/components/dashboard/report-details-dialog";
@@ -229,7 +229,7 @@ export function AmbassadorsWorkspace({
   const sourcedSchoolsByAmbassador = new Map<string, Set<string>>();
 
   for (const session of bookings.flatMap((booking) => booking.sessions)) {
-    if (session.assignedAmbassadorId && isDeliveredSession(session)) {
+    if (session.assignedAmbassadorId && isCountedPresentation(session)) {
       deliveredByAmbassador.set(session.assignedAmbassadorId, [
         ...(deliveredByAmbassador.get(session.assignedAmbassadorId) ?? []),
         session
@@ -693,7 +693,7 @@ export function AmbassadorProfileWorkspace({
   const deliveredSessions = allSessions
     .filter(
       (session) =>
-        session.assignedAmbassadorId === ambassador.id && isDeliveredSession(session)
+        session.assignedAmbassadorId === ambassador.id && isCountedPresentation(session)
     )
     .sort((left, right) => new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime());
   const ambassadorReports = reports

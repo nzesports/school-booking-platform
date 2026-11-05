@@ -24,8 +24,8 @@ import { TruncatedText } from "@/components/ui/truncated-text";
 import { Textarea } from "@/components/ui/textarea";
 import type { BookingSessionView } from "@/lib/domain/types";
 import { additionalCentsForTier, classifyReportGroup, reviewReasonLabel } from "@/lib/payment-breakdown";
-import { sameDayKey, sessionGroupSummary } from "@/lib/same-day-sessions";
-import { formatCurrency, formatDate, formatTime } from "@/lib/utils";
+import { groupReportVisits, sessionGroupSummary } from "@/lib/same-day-sessions";
+import { formatCurrency, formatDate, formatTime, formatWeekdayDate } from "@/lib/utils";
 
 // What the day's sessions add to the one delivery fee, if the report meets the
 // attendance threshold (0056 tiers, gap measured from the first session's end
@@ -108,15 +108,14 @@ export function AmbassadorReportForm({
   const initialSession = sessions.find((session) => session.id === initialSessionId) ?? sessions[0];
   const [selectedSessionId, setSelectedSessionId] = useState(initialSession?.id ?? "");
   const session = sessions.find((item) => item.id === selectedSessionId) ?? initialSession;
-  // Back-to-back sessions of one booking on the same day share one report.
-  const dayKey = sameDayKey;
-  const daySessions = (item: BookingSessionView) =>
-    sessions
-      .filter((other) => dayKey(other) === dayKey(item))
-      .sort((left, right) => left.startsAt.localeCompare(right.startsAt));
-  const options = sessions.filter((item) => daySessions(item)[0]?.id === item.id);
-  const sessionDay = session ? daySessions(session) : [];
-  const summary = sessionGroupSummary(sessionDay, true);
+  // Everything delivered at one school in one week goes on one report.
+  const visits = groupReportVisits(sessions);
+  const visit = visits.find((days) => days.flat().some((item) => item.id === session?.id)) ?? [];
+  const sessionDay = visit[0] ?? [];
+  const isMultiDay = visit.length > 1;
+  const visitSessions = visit.flat();
+  const summary = sessionGroupSummary(visitSessions, true);
+  const anchor = sessionDay[0] ?? session;
 
   if (!session) {
     return (
@@ -134,40 +133,50 @@ export function AmbassadorReportForm({
         {`${summary.presentationTitles.join(" + ")} at ${session.schoolName}`}
       </h2>
 
-      <form key={session.id} action={action} className="mt-5 grid gap-5">
-        <input type="hidden" name="bookingSessionId" value={session.id} />
+      <form key={anchor.id} action={action} className="mt-5 grid gap-5">
+        <input type="hidden" name="bookingSessionId" value={anchor.id} />
         <input type="hidden" name="returnTo" value="/ambassador/reports" />
 
         <ReportSection title="Completed school booking" icon={School2}>
           <label className="grid gap-1.5">
             <span className="text-sm font-semibold text-[color:var(--navy)]">Select the session you’re reporting on</span>
             <select
-              value={sessionDay[0]?.id ?? session.id}
+              value={anchor.id}
               onChange={(event) => setSelectedSessionId(event.target.value)}
               className="min-h-[36px] w-full rounded-[8px] border border-[color:var(--border-soft)] bg-white px-3 text-[12px] text-[color:var(--navy)] outline-none focus:border-[#9fd4ad]"
             >
-              {options.map((option) => {
-                const group = daySessions(option);
+              {visits.map((days) => {
+                const option = days[0][0];
 
                 return (
                   <option key={option.id} value={option.id}>
-                    {option.schoolName} · {formatDate(option.startsAt)}
-                    {group.length > 1
-                      ? ` · ${group.length} sessions (${group.map((item) => formatTime(item.startsAt)).join(" & ")})`
-                      : ` · ${option.presentationTitle}`}
+                    {option.schoolName} ·{" "}
+                    {days.length > 1
+                      ? `${days.length} days (${days.map((day) => formatDate(day[0].startsAt)).join(" & ")})`
+                      : formatDate(option.startsAt)}
+                    {days.length === 1 && days[0].length > 1
+                      ? ` · ${days[0].length} sessions (${days[0].map((item) => formatTime(item.startsAt)).join(" & ")})`
+                      : days.length === 1
+                        ? ` · ${option.presentationTitle}`
+                        : ""}
                   </option>
                 );
               })}
             </select>
           </label>
-          {sessionDay.length > 1 ? (
+          {isMultiDay ? (
+            <p className="rounded-[14px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
+              This one report covers your whole visit to {session.schoolName}: {visitSessions.length} sessions over{" "}
+              {visit.length} days. Enter the students for each day below, and each day is paid separately.
+            </p>
+          ) : sessionDay.length > 1 ? (
             <p className="rounded-[14px] border border-[#c8dcfb] bg-[#f5f9ff] px-4 py-3 text-sm text-[#1e4fae]">
               This one report covers all {sessionDay.length} sessions you delivered at {session.schoolName} on this
               day ({sessionDay.map((item) => formatTime(item.startsAt)).join(" and ")}). Enter the total number of
               students across them.
             </p>
           ) : null}
-          <GroupPaymentNote sessions={sessionDay} />
+          {isMultiDay ? null : <GroupPaymentNote sessions={sessionDay} />}
           <div className="grid gap-3 rounded-[18px] bg-[#f6f9fd] p-4 sm:grid-cols-2 lg:grid-cols-4">
             <BookingFact label="School" value={session.schoolName} />
             <BookingFact label="Presentation" value={summary.presentationTitles.join(" + ")} />
@@ -186,46 +195,78 @@ export function AmbassadorReportForm({
           </ReportField>
         </ReportSection>
 
-        <ReportSection title="When was the presentation delivered? *" icon={CalendarClock}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ReportField label="Date">
-              <Input
-                name="deliveredDate"
-                type="date"
-                defaultValue={nzDateValue(session.startsAt)}
-                required
-              />
-            </ReportField>
-            <ReportField label="Time">
-              <Input
-                name="deliveredTime"
-                type="time"
-                defaultValue={nzTimeValue(session.startsAt)}
-                required
-              />
-            </ReportField>
-          </div>
-        </ReportSection>
+        {isMultiDay ? (
+          <>
+            <input type="hidden" name="deliveredDate" value={nzDateValue(anchor.startsAt)} />
+            <input type="hidden" name="deliveredTime" value={nzTimeValue(anchor.startsAt)} />
+          </>
+        ) : (
+          <ReportSection title="When was the presentation delivered? *" icon={CalendarClock}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ReportField label="Date">
+                <Input
+                  name="deliveredDate"
+                  type="date"
+                  defaultValue={nzDateValue(session.startsAt)}
+                  required
+                />
+              </ReportField>
+              <ReportField label="Time">
+                <Input
+                  name="deliveredTime"
+                  type="time"
+                  defaultValue={nzTimeValue(session.startsAt)}
+                  required
+                />
+              </ReportField>
+            </div>
+          </ReportSection>
+        )}
 
         <ReportSection title="About the session" icon={Presentation}>
           <YesNoQuestion
             name="studentsCompeted"
             question="Did you have the students compete in an esports event? *"
           />
+          {isMultiDay ? (
+            <div className="grid gap-3">
+              <input type="hidden" name="attendeeCount" value="0" />
+              {visit.map((day) => (
+                <div key={day[0].id} className="grid gap-2 rounded-[14px] border border-[color:var(--border-soft)] bg-white p-3">
+                  <input type="hidden" name="reportDaySessionId" value={day[0].id} />
+                  <ReportField
+                    label={`${formatWeekdayDate(day[0].startsAt)} · ${day.map((item) => formatTime(item.startsAt)).join(" & ")} *`}
+                    hint="Students reached this day. The school’s estimate is prefilled, so confirm or correct it."
+                  >
+                    <Input
+                      name={`reportDayAttendees:${day[0].id}`}
+                      type="number"
+                      min={0}
+                      defaultValue={sessionGroupSummary(day, true).studentCount}
+                      required
+                    />
+                  </ReportField>
+                  <GroupPaymentNote sessions={day} />
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
-            <ReportField
-              label="Students reached *"
-              hint="The school’s booking estimate is prefilled. Confirm or correct the final attendance."
-            >
-              <Input
-                name="attendeeCount"
-                type="number"
-                min={0}
-                defaultValue={summary.studentCount}
-                placeholder="e.g. 230"
-                required
-              />
-            </ReportField>
+            {isMultiDay ? null : (
+              <ReportField
+                label="Students reached *"
+                hint="The school’s booking estimate is prefilled. Confirm or correct the final attendance."
+              >
+                <Input
+                  name="attendeeCount"
+                  type="number"
+                  min={0}
+                  defaultValue={summary.studentCount}
+                  placeholder="e.g. 230"
+                  required
+                />
+              </ReportField>
+            )}
             <ReportField label="What age groups were presented to? *">
               <Input
                 name="ageGroups"

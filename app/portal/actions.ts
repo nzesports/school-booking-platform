@@ -75,6 +75,8 @@ import {
 } from "@/lib/services/online-booking-link";
 import { allowPublicRequest } from "@/lib/services/public-rate-limit";
 import { scheduleEmail } from "@/lib/services/email-background";
+import { directoryLocationFor } from "@/lib/services/school-directory";
+import { nzWeekKey } from "@/lib/same-day-sessions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { relationOne } from "@/lib/supabase/relation";
 import { createClient } from "@/lib/supabase/server";
@@ -708,11 +710,16 @@ async function resolveManualBookingSchool(
     return null;
   }
 
+  const location = await directoryLocationFor(admin, schoolName);
   const { data: school } = await admin
     .from("schools")
     .insert({
       name: schoolName,
-      region_id: region.id,
+      region_id: location?.regionId ?? region.id,
+      address: location?.address ?? null,
+      suburb: location?.suburb ?? null,
+      city: location?.city ?? null,
+      postcode: location?.postcode ?? null,
       status: newSchoolStatus
     })
     .select("id, name, region_id, status")
@@ -742,6 +749,7 @@ const REPORT_SUBMISSION_ERRORS = new Set([
   "session-not-assigned",
   "session-not-finished",
   "report-already-submitted",
+  "group-already-reported",
   "report-day-not-finished",
   "payment-already-exists"
 ]);
@@ -1871,14 +1879,16 @@ export async function saveManualSchoolAction(formData: FormData) {
   }
 
   const admin = getAdminClientOrThrow();
+  const location = await directoryLocationFor(admin, parsed.data.name);
   const { data: school, error: schoolError } = await admin
     .from("schools")
     .insert({
       name: parsed.data.name,
-      region_id: parsed.data.regionId || null,
-      address: parsed.data.address || null,
-      city: parsed.data.city || null,
-      postcode: parsed.data.postcode || null,
+      region_id: location?.regionId ?? (parsed.data.regionId || null),
+      address: parsed.data.address || location?.address || null,
+      suburb: location?.suburb ?? null,
+      city: parsed.data.city || location?.city || null,
+      postcode: parsed.data.postcode || location?.postcode || null,
       website: parsed.data.website || null,
       roll_size: parsed.data.rollSize ?? null,
       notes: parsed.data.notes || null,
@@ -2398,6 +2408,27 @@ export async function saveAmbassadorBookingAction(formData: FormData) {
   redirect(appendSearchParam(parsed.data.returnTo, "created", "ambassador-booking"));
 }
 
+// The days one report form covers. A visit over several days sends each day's
+// first session and attendance; anything else is a single day.
+function readReportDays(formData: FormData, sessionId: string, attendeeCount: number) {
+  const sessionIds = formData.getAll("reportDaySessionId").map(String);
+
+  if (sessionIds.length <= 1) {
+    return [{ sessionId, attendeeCount }];
+  }
+
+  const days = sessionIds.map((id) => ({
+    sessionId: id,
+    attendeeCount: Number(formData.get(`reportDayAttendees:${id}`) || Number.NaN)
+  }));
+  const isValid =
+    days.length <= 7 &&
+    new Set(sessionIds).size === sessionIds.length &&
+    days.every((day) => z.uuid().safeParse(day.sessionId).success && Number.isInteger(day.attendeeCount) && day.attendeeCount >= 0);
+
+  return isValid ? days : null;
+}
+
 export async function submitAmbassadorReportAction(formData: FormData) {
   const actor = await requirePortalAccess("ambassador");
   const fallbackReturnTo = sanitizeReturnTo(
@@ -2461,35 +2492,65 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     redirect(appendSearchParam(parsed.data.returnTo, "error", "ambassador-not-found"));
   }
 
-  const { data: session } = await admin
-    .from("booking_sessions")
-    .select("id, booking_request_id, assigned_ambassador_id, starts_at, ends_at, school_id, status, report_status")
-    .eq("id", parsed.data.bookingSessionId)
-    .maybeSingle();
+  const reportDays = readReportDays(formData, parsed.data.bookingSessionId, parsed.data.attendeeCount);
 
-  if (!session || session.assigned_ambassador_id !== ambassadorProfile.id) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assigned"));
+  if (!reportDays) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-report"));
   }
+
+  // Every day is checked before anything is written.
+  const sessions = [];
+
+  for (const day of reportDays) {
+    const { data: daySession } = await admin
+      .from("booking_sessions")
+      .select("id, booking_request_id, assigned_ambassador_id, starts_at, ends_at, school_id, status, report_status")
+      .eq("id", day.sessionId)
+      .maybeSingle();
+
+    if (!daySession || daySession.assigned_ambassador_id !== ambassadorProfile.id) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-assigned"));
+    }
+
+    if (
+      !daySession.ends_at ||
+      new Date(daySession.ends_at as string).getTime() > Date.now() ||
+      !AMBASSADOR_REPORTABLE_SESSION_STATUSES.includes(String(daySession.status)) ||
+      daySession.report_status !== "not_submitted"
+    ) {
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
+    }
+
+    sessions.push(daySession);
+  }
+
+  const session = sessions[0];
+
+  if (sessions.some((item) => item.school_id !== session.school_id)) {
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "invalid-report"));
+  }
+
+  // One report covers the whole visit, so it waits for the week's last session
+  // at this school.
+  const visitWeek = nzWeekKey(session.starts_at as string);
+  const { data: laterSessions } = await admin
+    .from("booking_sessions")
+    .select("starts_at, status")
+    .eq("assigned_ambassador_id", ambassadorProfile.id)
+    .eq("school_id", session.school_id)
+    .gt("ends_at", new Date().toISOString());
 
   if (
-    !session.ends_at ||
-    new Date(session.ends_at as string).getTime() > Date.now() ||
-    !AMBASSADOR_REPORTABLE_SESSION_STATUSES.includes(String(session.status)) ||
-    session.report_status !== "not_submitted"
+    (laterSessions ?? []).some(
+      (later) =>
+        !["cancelled", "declined"].includes(String(later.status)) &&
+        nzWeekKey(later.starts_at as string) === visitWeek
+    )
   ) {
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "session-not-finished"));
+    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-day-not-finished"));
   }
 
-  const [
-    { data: bookingRequest },
-    { data: schoolRecord },
-    { data: schoolContact }
-  ] = await Promise.all([
-    admin
-      .from("booking_requests")
-      .select("source, ambassador_outreach_by")
-      .eq("id", session.booking_request_id)
-      .maybeSingle(),
+  const [{ data: schoolRecord }, { data: schoolContact }] = await Promise.all([
     admin
       .from("schools")
       .select("name, roll_size, address, suburb, city, postcode")
@@ -2521,14 +2582,12 @@ export async function submitAmbassadorReportAction(formData: FormData) {
     .filter(Boolean)
     .join(", ");
 
-  const reportFields = {
+  const sharedReportFields = {
     presenter_name: parsed.data.presenterName,
     school_roll_size: schoolRecord?.roll_size ?? null,
     primary_contact_name: canonicalContactName || null,
     primary_contact_email: canonicalContactEmail || null,
-    delivered_at: deliveredAtIso ?? session.starts_at ?? new Date().toISOString(),
     students_competed_in_esports: parsed.data.studentsCompeted === "yes",
-    attendee_count: parsed.data.attendeeCount,
     year_levels: parsed.data.ageGroups,
     age_groups: parsed.data.ageGroups,
     parents_present: parsed.data.parentsPresent === "yes",
@@ -2553,117 +2612,135 @@ export async function submitAmbassadorReportAction(formData: FormData) {
 
   const payoutRates = await loadPayoutRates();
   const eligibleThreshold = payoutRates.eligibleThreshold;
-  const isAmbassadorSourced =
-    bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
-    ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
 
-  // One transaction writes the report, marks the ambassador's other finished
-  // sessions of this booking that NZ day as covered, and creates the single
-  // payment: the delivery fee plus the sourcing bonus when sourced. The
-  // second-session add-on (+$50 / +$100) is chosen by staff at approval, so
-  // the tier amounts are passed as 0 here; the tier is still recorded and
-  // preselects that add-on. If any part fails nothing is saved, so the
-  // ambassador can simply resubmit.
-  const { data: submissionRows, error: submissionError } = await admin.rpc(
-    "submit_ambassador_report_group",
-    {
-      p_session_id: parsed.data.bookingSessionId,
-      p_ambassador_profile_id: ambassadorProfile.id,
-      p_actor_id: actor.id,
-      p_report: reportFields,
-      p_delivery_cents: payoutRates.deliveryCents,
-      p_sourcing_bonus_cents: payoutRates.sourcingBonusCents,
-      p_short_pair_cents: 0,
-      p_extended_pair_cents: 0,
-      p_eligible_threshold: eligibleThreshold,
-      p_is_sourced: isAmbassadorSourced
-    }
-  );
-  const submission = Array.isArray(submissionRows) ? submissionRows[0] : null;
+  // One report and one payment per day, so a visit over two days is paid by
+  // day and each day's attendance stands on its own. A failed day leaves the
+  // days before it saved; the rest stay due and can be resubmitted.
+  for (const [index, day] of reportDays.entries()) {
+    const daySession = sessions[index];
+    const { data: bookingRequest } = await admin
+      .from("booking_requests")
+      .select("source, ambassador_outreach_by")
+      .eq("id", daySession.booking_request_id)
+      .maybeSingle();
+    const isAmbassadorSourced =
+      bookingRequest?.ambassador_outreach_by === ambassadorProfile.id &&
+      ["ambassador", AMBASSADOR_BOOKING_SOURCE].includes(String(bookingRequest?.source));
+    const reportFields = {
+      ...sharedReportFields,
+      delivered_at:
+        reportDays.length > 1
+          ? daySession.starts_at
+          : (deliveredAtIso ?? daySession.starts_at ?? new Date().toISOString()),
+      attendee_count: day.attendeeCount
+    };
 
-  if (submissionError || !submission) {
-    console.error("[report] Grouped report submission failed", {
-      bookingSessionId: parsed.data.bookingSessionId,
-      code: submissionError?.code
-    });
-    redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
-  }
-
-  if (submission.outcome !== "submitted" || !submission.report_id) {
-    redirect(
-      appendSearchParam(
-        parsed.data.returnTo,
-        "error",
-        REPORT_SUBMISSION_ERRORS.has(String(submission.outcome))
-          ? String(submission.outcome)
-          : "report-save-failed"
-      )
+    // One transaction writes the report, marks the ambassador's other finished
+    // sessions at this school that NZ day as covered, and creates the single
+    // payment: the delivery fee plus the sourcing bonus when sourced. The
+    // second-session add-on (+$50 / +$100) is chosen by staff at approval, so
+    // the tier amounts are passed as 0 here; the tier is still recorded and
+    // preselects that add-on. If any part fails nothing is saved for that day.
+    const { data: submissionRows, error: submissionError } = await admin.rpc(
+      "submit_ambassador_report_group",
+      {
+        p_session_id: day.sessionId,
+        p_ambassador_profile_id: ambassadorProfile.id,
+        p_actor_id: actor.id,
+        p_report: reportFields,
+        p_delivery_cents: payoutRates.deliveryCents,
+        p_sourcing_bonus_cents: payoutRates.sourcingBonusCents,
+        p_short_pair_cents: 0,
+        p_extended_pair_cents: 0,
+        p_eligible_threshold: eligibleThreshold,
+        p_is_sourced: isAmbassadorSourced
+      }
     );
-  }
+    const submission = Array.isArray(submissionRows) ? submissionRows[0] : null;
 
-  const report = { id: submission.report_id as string };
-  const paymentStatus = String(submission.payment_status);
-  const isPaymentEligible = paymentStatus === "eligible";
-  const coveredSessionIds = (submission.covered_session_ids as string[] | null) ?? [];
-
-  // Presentation photos/videos and signed media release forms go into the
-  // media library, linked to this report for staff review. They can contain
-  // identifiable students, so they upload to the private `report-media`
-  // bucket and only surface through the auth-gated
-  // /portal/report-media/[mediaId] route (stored as the row's public_url so
-  // existing consumers keep a renderable link).
-  for (const media of mediaUploads) {
-    try {
-      const mediaId = randomUUID();
-      await admin.from("media_library").insert({
-        id: mediaId,
-        title: media.title,
-        media_type: media.mediaType,
-        storage_path: media.storagePath,
-        public_url: `/portal/report-media/${mediaId}`,
-        uploaded_by: actor.id,
-        school_id: session.school_id ?? null,
-        booking_session_id: parsed.data.bookingSessionId,
-        report_id: report.id,
-        consent_status: parsed.data.mediaConsentObtained ? "consent_confirmed" : "needs_consent_check"
+    if (submissionError || !submission) {
+      console.error("[report] Grouped report submission failed", {
+        bookingSessionId: day.sessionId,
+        code: submissionError?.code
       });
-    } catch {
-      // A failed media upload shouldn't lose the whole report submission.
+      redirect(appendSearchParam(parsed.data.returnTo, "error", "report-save-failed"));
     }
+
+    if (submission.outcome !== "submitted" || !submission.report_id) {
+      redirect(
+        appendSearchParam(
+          parsed.data.returnTo,
+          "error",
+          REPORT_SUBMISSION_ERRORS.has(String(submission.outcome))
+            ? String(submission.outcome)
+            : "report-save-failed"
+        )
+      );
+    }
+
+    const report = { id: submission.report_id as string };
+    const paymentStatus = String(submission.payment_status);
+    const isPaymentEligible = paymentStatus === "eligible";
+    const coveredSessionIds = (submission.covered_session_ids as string[] | null) ?? [];
+
+    // Presentation photos/videos and signed media release forms go into the
+    // media library, linked to the visit's first report for staff review. They
+    // can contain identifiable students, so they upload to the private
+    // `report-media` bucket and only surface through the auth-gated
+    // /portal/report-media/[mediaId] route (stored as the row's public_url so
+    // existing consumers keep a renderable link).
+    for (const media of index === 0 ? mediaUploads : []) {
+      try {
+        const mediaId = randomUUID();
+        await admin.from("media_library").insert({
+          id: mediaId,
+          title: media.title,
+          media_type: media.mediaType,
+          storage_path: media.storagePath,
+          public_url: `/portal/report-media/${mediaId}`,
+          uploaded_by: actor.id,
+          school_id: session.school_id ?? null,
+          booking_session_id: day.sessionId,
+          report_id: report.id,
+          consent_status: parsed.data.mediaConsentObtained ? "consent_confirmed" : "needs_consent_check"
+        });
+      } catch {
+        // A failed media upload shouldn't lose the whole report submission.
+      }
+    }
+
+    await admin.from("booking_activity_logs").insert({
+      booking_session_id: day.sessionId,
+      action: "report.submitted",
+      actor_id: actor.id,
+      actor_type: "ambassador",
+      details: {
+        attendee_count: day.attendeeCount,
+        payment_status: paymentStatus,
+        sourced_by_ambassador: isAmbassadorSourced,
+        covered_session_ids: coveredSessionIds,
+        payment_tier: isPaymentEligible ? (submission.payment_tier ?? null) : null,
+        payment_review_required: isPaymentEligible ? Boolean(submission.review_required) : false,
+        payment_review_reason: isPaymentEligible ? (submission.review_reason ?? null) : null,
+        // For a custom-review payment this is only the recognised part.
+        payment_amount_cents: isPaymentEligible ? Number(submission.amount_cents ?? 0) : 0,
+        delivery_payment_cents: isPaymentEligible ? payoutRates.deliveryCents : 0,
+        sourcing_bonus_cents:
+          isPaymentEligible && isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
+      }
+    });
+
+    await logAuditEvent(actor.id, "report.submitted", "ambassador_report", report.id);
   }
 
-  await admin.from("booking_activity_logs").insert({
-    booking_session_id: parsed.data.bookingSessionId,
-    action: "report.submitted",
-    actor_id: actor.id,
-    actor_type: "ambassador",
-    details: {
-      attendee_count: parsed.data.attendeeCount,
-      payment_status: paymentStatus,
-      sourced_by_ambassador: isAmbassadorSourced,
-      covered_session_ids: coveredSessionIds,
-      payment_tier: isPaymentEligible ? (submission.payment_tier ?? null) : null,
-      payment_review_required: isPaymentEligible ? Boolean(submission.review_required) : false,
-      payment_review_reason: isPaymentEligible ? (submission.review_reason ?? null) : null,
-      // For a custom-review payment this is only the recognised part.
-      payment_amount_cents: isPaymentEligible ? Number(submission.amount_cents ?? 0) : 0,
-      delivery_payment_cents: isPaymentEligible ? payoutRates.deliveryCents : 0,
-      sourcing_bonus_cents:
-        isPaymentEligible && isAmbassadorSourced ? payoutRates.sourcingBonusCents : 0
-    }
-  });
-
-  const { data: reportSchool } = session.school_id
-    ? await admin.from("schools").select("name").eq("id", session.school_id).maybeSingle()
-    : { data: null };
+  const attendeeTotal = reportDays.reduce((total, day) => total + day.attendeeCount, 0);
   void notifyStaff({
-    title: `Report submitted for ${(reportSchool?.name as string | null) ?? "a school"}`,
-    body: `${actor.fullName} submitted a session report with ${parsed.data.attendeeCount} attendees.`,
+    title: `Report submitted for ${canonicalSchoolName}`,
+    body: `${actor.fullName} submitted a session report with ${attendeeTotal} attendees.`,
     type: "ambassador_report_submitted",
     relatedUrl: "/staff/reports"
   }).catch(() => {});
 
-  await logAuditEvent(actor.id, "report.submitted", "ambassador_report", report.id);
   revalidatePath("/ambassador");
   revalidatePath("/staff");
   revalidatePath("/admin");
@@ -2776,10 +2853,16 @@ export async function logStaffFeedbackAction(formData: FormData) {
     let createdNewSchool = false;
 
     if (!school) {
+      const location = await directoryLocationFor(admin, parsed.data.manualSchoolName as string);
       const { data: createdSchool, error: schoolError } = await admin
         .from("schools")
         .insert({
           name: parsed.data.manualSchoolName,
+          region_id: location?.regionId ?? null,
+          address: location?.address ?? null,
+          suburb: location?.suburb ?? null,
+          city: location?.city ?? null,
+          postcode: location?.postcode ?? null,
           roll_size: parsed.data.schoolRollSize ?? null,
           status: "active",
           notes: "Created from a manually logged presentation session."

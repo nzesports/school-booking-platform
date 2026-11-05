@@ -17,6 +17,9 @@ begin;
 do $$
 declare
   v_school uuid;
+  v_school_b2 uuid;
+  v_school_b3 uuid;
+  v_school_b4 uuid;
   v_amb uuid;
   v_other_amb uuid;
   v_b1 uuid;
@@ -59,16 +62,21 @@ declare
   );
 begin
   insert into public.schools (name) values ('0054 Check School') returning id into v_school;
+  -- Since 0059 a report covers a whole school day, so each booking that is
+  -- reported on its own is at its own school.
+  insert into public.schools (name) values ('0054 Check School B2') returning id into v_school_b2;
+  insert into public.schools (name) values ('0054 Check School B3') returning id into v_school_b3;
+  insert into public.schools (name) values ('0054 Check School B4') returning id into v_school_b4;
   insert into public.ambassador_profiles (user_id, status, display_name)
     values (null, 'approved', '0054 Ambassador') returning id into v_amb;
   insert into public.ambassador_profiles (user_id, status, display_name)
     values (null, 'approved', '0054 Other Ambassador') returning id into v_other_amb;
 
   insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_b1;
-  insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_b2;
+  insert into public.booking_requests (school_id, status) values (v_school_b2, 'confirmed') returning id into v_b2;
   insert into public.booking_requests (school_id, status, source, ambassador_outreach_by)
-    values (v_school, 'confirmed', 'ambassador_booked', v_amb) returning id into v_b3;
-  insert into public.booking_requests (school_id, status) values (v_school, 'confirmed') returning id into v_b4;
+    values (v_school_b3, 'confirmed', 'ambassador_booked', v_amb) returning id into v_b3;
+  insert into public.booking_requests (school_id, status) values (v_school_b4, 'confirmed') returning id into v_b4;
 
   -- Booking 1, yesterday: two back-to-back sessions for v_amb, one for another
   -- ambassador, one cancelled, and one the next day.
@@ -87,20 +95,20 @@ begin
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
     values (v_b1, v_school, v_amb, 'confirmed', (v_day - 1 + time '09:00') at time zone 'Pacific/Auckland', (v_day - 1 + time '10:00') at time zone 'Pacific/Auckland')
     returning id into v_s5;
-  -- Booking 2: same school, ambassador and day, separate booking.
+  -- Booking 2: same ambassador and day, at another school.
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_b2, v_school, v_amb, 'confirmed', (v_day + time '13:00') at time zone 'Pacific/Auckland', (v_day + time '14:00') at time zone 'Pacific/Auckland')
+    values (v_b2, v_school_b2, v_amb, 'confirmed', (v_day + time '13:00') at time zone 'Pacific/Auckland', (v_day + time '14:00') at time zone 'Pacific/Auckland')
     returning id into v_s6;
   -- Booking 3: sourced by v_amb, two sessions.
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_b3, v_school, v_amb, 'confirmed', (v_day + time '14:00') at time zone 'Pacific/Auckland', (v_day + time '15:00') at time zone 'Pacific/Auckland')
+    values (v_b3, v_school_b3, v_amb, 'confirmed', (v_day + time '14:00') at time zone 'Pacific/Auckland', (v_day + time '15:00') at time zone 'Pacific/Auckland')
     returning id into v_s7;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_b3, v_school, v_amb, 'confirmed', (v_day + time '15:00') at time zone 'Pacific/Auckland', (v_day + time '16:00') at time zone 'Pacific/Auckland')
+    values (v_b3, v_school_b3, v_amb, 'confirmed', (v_day + time '15:00') at time zone 'Pacific/Auckland', (v_day + time '16:00') at time zone 'Pacific/Auckland')
     returning id into v_s8;
   -- Booking 4: a single session with a small group.
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_b4, v_school, v_amb, 'confirmed', (v_day + time '16:00') at time zone 'Pacific/Auckland', (v_day + time '17:00') at time zone 'Pacific/Auckland')
+    values (v_b4, v_school_b4, v_amb, 'confirmed', (v_day + time '16:00') at time zone 'Pacific/Auckland', (v_day + time '17:00') at time zone 'Pacific/Auckland')
     returning id into v_s9;
 
   -- 1. Reporting the second session covers the first: one $300 payment.
@@ -147,11 +155,11 @@ begin
   if v_count <> 1 then raise exception 'FAIL legacy: duplicate payment created'; end if;
   update public.booking_sessions set status='report_submitted', report_status='submitted' where id=v_s1;
 
-  -- 3. A separate booking at the same school and day is its own $250 report;
-  --    any adjustment is a manual staff extra at approval.
+  -- 3. A booking at another school that day is its own $250 report; any
+  --    adjustment is a manual staff extra at approval.
   select * into v_result from public.submit_ambassador_report_group(v_s6, v_amb, null, v_report, 25000, 5000, 5000, 10000, 100, false);
   if v_result.outcome <> 'submitted' or v_result.session_count <> 1 or v_result.amount_cents <> 25000 then
-    raise exception 'FAIL 3: separate booking %', row_to_json(v_result);
+    raise exception 'FAIL 3: other school %', row_to_json(v_result);
   end if;
 
   -- 4. Sourced pair: sourcing bonus stays separate. $250 + $50 + $50.
@@ -174,10 +182,10 @@ begin
   -- 6. A same-day session still running blocks the day's report.
   if (now() at time zone 'Pacific/Auckland')::time >= time '02:00' then
     insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-      values (v_b4, v_school, v_other_amb, 'confirmed', now() - interval '90 minutes', now() - interval '60 minutes')
+      values (v_b4, v_school_b4, v_other_amb, 'confirmed', now() - interval '90 minutes', now() - interval '60 minutes')
       returning id into v_s10;
     insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-      values (v_b4, v_school, v_other_amb, 'confirmed', now() - interval '30 minutes', now() + interval '30 minutes');
+      values (v_b4, v_school_b4, v_other_amb, 'confirmed', now() - interval '30 minutes', now() + interval '30 minutes');
     select * into v_result from public.submit_ambassador_report_group(v_s10, v_other_amb, null, v_report, 25000, 5000, 5000, 10000, 100, false);
     if v_result.outcome <> 'report-day-not-finished' then raise exception 'FAIL 6: %', v_result.outcome; end if;
   end if;
@@ -281,10 +289,10 @@ begin
 
   -- 12. Staff reschedules can't double-book the ambassador; touching is fine.
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at, reschedule_previous_status)
-    values (v_b2, v_school, v_other_amb, 'reschedule_requested', now() + interval '20 days', now() + interval '20 days 1 hour', 'confirmed')
+    values (v_b2, v_school_b2, v_other_amb, 'reschedule_requested', now() + interval '20 days', now() + interval '20 days 1 hour', 'confirmed')
     returning id into v_r1;
   insert into public.booking_sessions (booking_request_id, school_id, assigned_ambassador_id, status, starts_at, ends_at)
-    values (v_b3, v_school, v_other_amb, 'confirmed', now() + interval '30 days', now() + interval '30 days 1 hour')
+    values (v_b3, v_school_b3, v_other_amb, 'confirmed', now() + interval '30 days', now() + interval '30 days 1 hour')
     returning id into v_r2;
   select * into v_result from public.resolve_session_reschedule(
     v_r1, 'approve', now() + interval '30 days 30 minutes', now() + interval '30 days 90 minutes');

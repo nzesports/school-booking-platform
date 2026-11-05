@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/email-triggers";
 import { addContactToTeachersList } from "@/lib/services/brevo-contacts";
 import { notifyStaff } from "@/lib/services/notifications";
+import { directoryLocationFor } from "@/lib/services/school-directory";
 import { nzDateTimeToIso, slugify, titleCase } from "@/lib/utils";
 
 // Thrown when Supabase is configured but the service-role key is missing, so
@@ -98,12 +99,16 @@ export async function submitBookingRequest(input: BookingRequestInput) {
   const isNewSchool = !schoolId;
 
   if (!schoolId) {
+    const location = await directoryLocationFor(admin, input.schoolName);
     const { data: createdSchool, error: schoolError } = await admin
       .from("schools")
       .insert({
         name: input.schoolName,
-        city: "Pending",
-        region_id: resolvedRegionId,
+        address: location?.address ?? null,
+        suburb: location?.suburb ?? null,
+        city: location?.city ?? "Pending",
+        postcode: location?.postcode ?? null,
+        region_id: location?.regionId ?? resolvedRegionId,
         status: "pending_review"
       })
       .select("id")

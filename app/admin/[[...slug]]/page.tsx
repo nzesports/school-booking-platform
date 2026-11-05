@@ -99,7 +99,7 @@ import {
   readBookingLifecycleView,
   readDashboardCustomRange,
   readDashboardRange,
-  isDeliveredSession
+  isCountedPresentation
 } from "@/lib/services/dashboard-insights";
 import { getOnlineBookingUrl } from "@/lib/services/online-booking-link";
 import { getPaymentSettings } from "@/lib/services/payment-automation";
@@ -686,7 +686,7 @@ export default async function AdminPortalPage({
               reportsReturnTo={reportsReturnTo}
               initialTab={feedbackTab}
               deliveredSessions={filteredDashboard.sessions.filter((session) =>
-                isDeliveredSession(session)
+                isCountedPresentation(session)
               )}
               periodLabel={dashboardRangeLabel(dashboardRange, customRange)}
               showAmbassadorColumn

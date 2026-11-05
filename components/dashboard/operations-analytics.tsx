@@ -54,13 +54,14 @@ import {
   buildYearGroupCoverage,
   isCancelledSession,
   isCompletedBooking,
-  isDeliveredSession,
+  isCountedPresentation,
   isFutureSession,
   nzYearMonth,
   reportActivityDate,
   reportInRange,
   reviewInRange,
   sessionInRange,
+  studentsReachedBySession,
   summarizeStudentReach,
   type BookingStatusGroup,
   type DashboardCustomRange,
@@ -249,7 +250,7 @@ export function OperationsAnalytics({
   const rangeReviews = schoolReviews.filter((review) =>
     reviewInRange(review, range, now, customRange)
   );
-  const deliveredRangeSessions = rangeSessions.filter((session) => isDeliveredSession(session, now));
+  const deliveredRangeSessions = rangeSessions.filter(isCountedPresentation);
   const approvedAmbassadors = ambassadors.filter((ambassador) => ambassador.status === "approved");
   const pendingApplications = ambassadors.filter((ambassador) => ambassador.status === "applied");
   const publicPresentations = presentations.filter(
@@ -1555,6 +1556,7 @@ const OUTSTANDING_PAYMENTS_PAGE_SIZE = 4;
 
 // Shared by the area table's heading and rows so the columns line up.
 const COVERAGE_TABLE_COLUMNS = "grid grid-cols-[minmax(0,1fr)_3.5rem_3rem_4rem] items-center";
+const COVERAGE_TABLE_PAGE_SIZE = 8;
 
 function countLabel(count: number, noun: string) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -1575,6 +1577,13 @@ function CoverageMap({ regions, periodLabel }: { regions: CoverageRegion[]; peri
     const rankDifference = regionNorthToSouthRank(left) - regionNorthToSouthRank(right);
     return rankDifference || left.name.localeCompare(right.name);
   });
+  // The table leads with where the most presentations were delivered.
+  const tableRegions = [...orderedRegions].sort(
+    (left, right) =>
+      right.presentations - left.presentations ||
+      right.schools - left.schools ||
+      right.ambassadors.length - left.ambassadors.length
+  );
   const aucklandRegions = orderedRegions.filter((region) => isAucklandRegion(region));
   const otherRegions = regions.filter((region) => !isAucklandRegion(region));
   const points = [
@@ -1663,14 +1672,24 @@ function CoverageMap({ regions, periodLabel }: { regions: CoverageRegion[]; peri
           <span>Schools</span>
           <span>Ambassadors</span>
         </div>
-        <ol className="flex flex-1 flex-col rounded-[14px] border border-[#d7efdd] bg-[#f8fcf9]">
-          {orderedRegions.map((region, index) => (
-            <li
+        <div
+          className={cn(
+            "flex flex-1 flex-col rounded-[14px] border border-[#d7efdd] bg-[#f8fcf9]",
+            // The pager sits on the card's bottom edge on every page.
+            tableRegions.length > COVERAGE_TABLE_PAGE_SIZE &&
+              "[&>:last-child]:mt-auto [&>:last-child]:border-t [&>:last-child]:border-[#dfeee3] [&>:last-child]:p-3"
+          )}
+        >
+          <PagedList
+            pageSize={COVERAGE_TABLE_PAGE_SIZE}
+            itemLabel="areas"
+            rows={tableRegions.map((region, index) => (
+            <div
               key={region.slug}
               className={cn(
                 COVERAGE_TABLE_COLUMNS,
-                "flex-1 px-3 py-2.5",
-                index > 0 && "border-t border-[#dfeee3]"
+                "max-h-[64px] flex-1 px-3 py-2.5",
+                index % COVERAGE_TABLE_PAGE_SIZE > 0 && "border-t border-[#dfeee3]"
               )}
             >
               <span
@@ -1687,12 +1706,12 @@ function CoverageMap({ regions, periodLabel }: { regions: CoverageRegion[]; peri
               <CoverageBadge
                 count={region.presentations}
                 label={`${region.name}: ${countLabel(region.presentations, "presentation")} delivered`}
-                className="justify-self-center bg-[#e5f6e9] text-[#117a2e]"
+                className="bg-[#e5f6e9] text-[#117a2e]"
               />
               <CoverageBadge
                 count={region.schools}
                 label={`${region.name}: ${countLabel(region.schools, "school")}`}
-                className="justify-self-center bg-[#edf0f7] text-[color:var(--navy)]"
+                className="bg-[#edf0f7] text-[color:var(--navy)]"
               />
               <button
                 type="button"
@@ -1704,9 +1723,10 @@ function CoverageMap({ regions, periodLabel }: { regions: CoverageRegion[]; peri
                   <CoverageAmbassadorNames ambassadors={region.ambassadors} />
                 </CoverageTooltip>
               </button>
-            </li>
-          ))}
-        </ol>
+            </div>
+            ))}
+          />
+        </div>
       </div>
     </div>
   );
@@ -1761,7 +1781,7 @@ function CoverageBadge({
     <span
       aria-label={label}
       className={cn(
-        "flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold",
+        "flex h-7 w-fit min-w-7 items-center justify-center justify-self-center rounded-full px-2 text-xs font-bold",
         count > 0 ? className : "bg-[#f0f2f5] text-[color:var(--text-soft)]"
       )}
     >
@@ -1783,19 +1803,25 @@ function regionNorthToSouthRank(region: { slug: string; name: string }) {
     { terms: ["auckland central", "central auckland", "auckland city"], rank: 30 },
     { terms: ["south auckland"], rank: 40 },
     { terms: ["auckland"], rank: 35 },
-    { terms: ["waikato", "hamilton"], rank: 50 },
-    { terms: ["bay of plenty", "tauranga", "rotorua"], rank: 60 },
+    { terms: ["hamilton"], rank: 50 },
+    { terms: ["waikato"], rank: 55 },
+    { terms: ["tauranga"], rank: 60 },
+    { terms: ["bay of plenty", "rotorua"], rank: 65 },
     { terms: ["gisborne"], rank: 70 },
     { terms: ["taranaki", "new plymouth"], rank: 80 },
     { terms: ["hawke", "napier", "hastings"], rank: 90 },
-    { terms: ["manawat", "palmerston"], rank: 100 },
+    { terms: ["palmerston"], rank: 100 },
+    { terms: ["whanganui", "manawat"], rank: 105 },
     { terms: ["wellington"], rank: 110 },
     { terms: ["nelson"], rank: 120 },
     { terms: ["tasman"], rank: 130 },
     { terms: ["marlborough"], rank: 140 },
     { terms: ["west coast"], rank: 150 },
-    { terms: ["canterbury", "christchurch"], rank: 160 },
-    { terms: ["otago", "dunedin", "queenstown"], rank: 170 },
+    { terms: ["christchurch"], rank: 160 },
+    { terms: ["canterbury"], rank: 165 },
+    { terms: ["dunedin"], rank: 170 },
+    { terms: ["otago"], rank: 172 },
+    { terms: ["queenstown"], rank: 175 },
     { terms: ["southland", "invercargill"], rank: 180 }
   ];
   const match = regionsNorthToSouth.find(({ terms }) => terms.some((term) => value.includes(term)));
@@ -1806,17 +1832,25 @@ function regionMapPosition(region: { slug: string; name: string }) {
   const value = `${region.slug} ${region.name}`.toLowerCase();
   const positions: Array<{ terms: string[]; x: number; y: number }> = [
     { terms: ["northland", "whangarei"], x: 59, y: 9 },
-    { terms: ["waikato", "hamilton"], x: 73, y: 27 },
-    { terms: ["bay of plenty", "tauranga", "rotorua"], x: 83, y: 29 },
+    { terms: ["hamilton"], x: 73, y: 27 },
+    { terms: ["waikato"], x: 75, y: 33 },
+    { terms: ["tauranga"], x: 83, y: 29 },
+    { terms: ["bay of plenty", "rotorua"], x: 84, y: 35 },
     { terms: ["gisborne"], x: 91, y: 29 },
     { terms: ["taranaki", "new plymouth"], x: 64, y: 36 },
-    { terms: ["hawke", "napier", "hastings"], x: 84, y: 39 },
-    { terms: ["manawat", "palmerston"], x: 74, y: 40 },
+    { terms: ["hawke", "napier", "hastings"], x: 84, y: 41 },
+    { terms: ["palmerston"], x: 74, y: 40 },
+    { terms: ["whanganui", "manawat"], x: 67, y: 43 },
     { terms: ["wellington"], x: 72, y: 53 },
-    { terms: ["nelson", "tasman", "marlborough"], x: 57, y: 54 },
+    { terms: ["nelson"], x: 57, y: 54 },
+    { terms: ["tasman"], x: 51, y: 57 },
+    { terms: ["marlborough"], x: 63, y: 58 },
     { terms: ["west coast"], x: 36, y: 66 },
-    { terms: ["canterbury", "christchurch"], x: 47, y: 72 },
-    { terms: ["otago", "dunedin", "queenstown"], x: 30, y: 88 },
+    { terms: ["christchurch"], x: 47, y: 72 },
+    { terms: ["canterbury"], x: 40, y: 75 },
+    { terms: ["dunedin"], x: 35, y: 90 },
+    { terms: ["otago"], x: 29, y: 82 },
+    { terms: ["queenstown"], x: 22, y: 85 },
     { terms: ["southland", "invercargill"], x: 17, y: 90 }
   ];
   const match = positions.find(({ terms }) => terms.some((term) => value.includes(term)));
@@ -1977,11 +2011,7 @@ function buildBookingPipeline(
   );
   // Every session of those completed bookings in the period, so a multi-session
   // booking counts each presentation it delivered.
-  const presentationsDelivered = completed.flatMap((booking) =>
-    booking.sessions.filter(
-      (session) => rangeSessionIds.has(session.id) && !isCancelledSession(session)
-    )
-  );
+  const presentationsDelivered = rangeSessions.filter(isCountedPresentation);
   const confirmed = rangeBookings.filter((booking) =>
     BOOKING_CONFIRMED_STATUSES.has(booking.status)
   );
@@ -2101,16 +2131,18 @@ function buildYearlyStudentSeries(
   now: Date
 ) {
   const yearDeliveredSessions = sessions.filter(
-    (session) => nzYear(session.startsAt) === year && isDeliveredSession(session, now)
+    (session) =>
+      nzYear(session.startsAt) === year &&
+      isCountedPresentation(session) &&
+      new Date(session.endsAt).getTime() < now.getTime()
   );
   // Same students-reached figure as the glance strip, split by month.
   const summary = summarizeStudentReach([], yearDeliveredSessions);
   const counts = Array.from({ length: 12 }, () => 0);
+  const reachedBySession = studentsReachedBySession(yearDeliveredSessions);
 
   for (const session of yearDeliveredSessions) {
-    counts[nzYearMonth(session.startsAt).month] += Number(
-      session.actualStudentCount ?? session.expectedStudentCount ?? 0
-    );
+    counts[nzYearMonth(session.startsAt).month] += reachedBySession.get(session.id) ?? 0;
   }
 
   return {
@@ -2149,7 +2181,7 @@ function buildPaymentSummary(payments: PaymentRecord[], year: number) {
 }
 
 function buildRegionCoverage(
-  deliveredSessions: BookingSessionView[],
+  presentationSessions: BookingSessionView[],
   approvedAmbassadors: AmbassadorProfile[],
   regions: RegionSummary[]
 ): CoverageRegion[] {
@@ -2175,7 +2207,7 @@ function buildRegionCoverage(
     return tally;
   };
 
-  for (const session of deliveredSessions) {
+  for (const session of presentationSessions) {
     const tally = tallyFor(session.regionSlug);
     tally.schools.add(session.schoolId ?? session.schoolName);
     tally.presentations += 1;
@@ -2231,7 +2263,7 @@ function buildMonthlyImpact(reports: ReportSummary[], sessions: BookingSessionVi
     return date.year === target.getUTCFullYear() && date.month === target.getUTCMonth();
   };
   const deliveredIn = (monthsBack: number) =>
-    sessions.filter((session) => isDeliveredSession(session, now) && inMonth(session.startsAt, monthsBack));
+    sessions.filter((session) => isCountedPresentation(session) && inMonth(session.startsAt, monthsBack));
   const deliveredThisMonth = deliveredIn(0);
 
   return {
