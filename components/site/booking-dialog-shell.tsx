@@ -10,6 +10,7 @@ export function BookingDialogShell({
   kicker,
   description,
   descriptionDisplay = "text",
+  descriptionClassName,
   onClose,
   children,
   headerAside,
@@ -30,6 +31,7 @@ export function BookingDialogShell({
   // dialogs); "text" keeps it as a visible paragraph (public site, data lines,
   // and instructions the user must read before acting).
   descriptionDisplay?: "text" | "tooltip";
+  descriptionClassName?: string;
   onClose: () => void;
   children: ReactNode;
   headerAside?: ReactNode;
@@ -210,7 +212,12 @@ export function BookingDialogShell({
                 ) : null}
               </div>
               {description && descriptionDisplay === "text" ? (
-                <p className="mt-3 max-w-4xl text-base leading-8 text-[color:var(--text-soft)]">
+                <p
+                  className={cn(
+                    "mt-3 max-w-4xl text-base leading-8 text-[color:var(--text-soft)]",
+                    descriptionClassName
+                  )}
+                >
                   {description}
                 </p>
               ) : null}

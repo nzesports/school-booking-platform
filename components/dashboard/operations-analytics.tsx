@@ -69,7 +69,8 @@ import {
 } from "@/lib/services/dashboard-insights";
 import type { ResourceRecord } from "@/lib/services/portal";
 import { isAwaitingCustomReview } from "@/lib/payment-breakdown";
-import { cn, formatCurrency, formatTime, formatWeekdayDate } from "@/lib/utils";
+import { groupSameDaySessions } from "@/lib/same-day-sessions";
+import { cn, formatCurrency, formatTime } from "@/lib/utils";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -771,17 +772,11 @@ export function OperationsAnalytics({
           <ImpactCard title="Upcoming presentations">
             {upcomingSessions.length > 0 ? (
               <div className="mt-3 grid gap-2">
-                {upcomingSessions.slice(0, 2).map((session) => (
-                  <div key={session.id} className="rounded-[16px] bg-[color:var(--blue-soft)] px-3 py-2.5">
-                    <p className="text-sm font-semibold text-[color:var(--navy)]">
-                      {session.presentationTitle}
-                    </p>
-                    <p className="mt-0.5 text-xs text-[color:var(--text-soft)]">
-                      {formatWeekdayDate(session.startsAt, true)} · {formatTime(session.startsAt)} ·{" "}
-                      {session.schoolName}
-                    </p>
-                  </div>
-                ))}
+                {groupSameDaySessions(upcomingSessions)
+                  .slice(0, 3)
+                  .map((sessions) => (
+                    <UpcomingVisitRow key={sessions[0].id} sessions={sessions} />
+                  ))}
               </div>
             ) : (
               <div className="mt-3 grid justify-items-center gap-2 rounded-[16px] border border-dashed border-[color:rgba(4,15,75,0.1)] px-3 py-5 text-center">
@@ -833,13 +828,33 @@ export function OperationsAnalytics({
           </ImpactCard>
 
           <ImpactCard title="Year groups reached">
-            <p className="mt-3 text-lg font-semibold tracking-[-0.02em] text-[color:var(--navy)]">
-              {coverage.reachedLabel}
+            <div className="mt-3 grid grid-cols-4 gap-1.5">
+              {[...coverage.reached, ...coverage.gaps]
+                .sort((left, right) => left - right)
+                .map((year) => (
+                  <span
+                    key={year}
+                    className={cn(
+                      "flex h-10 items-center justify-center rounded-[10px] text-sm font-semibold",
+                      coverage.reached.includes(year)
+                        ? "bg-[#e5f6e9] text-[#117a2e]"
+                        : "border border-dashed border-[#c5cedb] text-[color:var(--text-soft)]"
+                    )}
+                  >
+                    Y{year}
+                  </span>
+                ))}
+            </div>
+            <p className="mt-3 flex items-center gap-1.5 text-sm font-semibold text-[color:var(--navy)]">
+              {coverage.gaps.length === 0 ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#18a83b]" />
+                  All year groups reached
+                </>
+              ) : (
+                `Not reached: ${coverage.gapLabel}`
+              )}
             </p>
-            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--text-soft)]">
-              Coverage gaps
-            </p>
-            <p className="mt-1 text-sm font-semibold text-[color:var(--navy)]">{coverage.gapLabel}</p>
           </ImpactCard>
 
           <ImpactCard title={`Student reach — ${periodLabel.toLowerCase()}`} tone="green">
@@ -1913,6 +1928,44 @@ function OpsTile({
       <p className="text-2xl font-semibold tracking-[-0.04em] text-[color:var(--navy)]">{value}</p>
       {detail ? <p className="text-xs text-[color:var(--text-soft)]">{detail}</p> : null}
     </Link>
+  );
+}
+
+const upcomingMonthFormatter = new Intl.DateTimeFormat("en-NZ", {
+  timeZone: "Pacific/Auckland",
+  month: "short"
+});
+const upcomingDayFormatter = new Intl.DateTimeFormat("en-NZ", {
+  timeZone: "Pacific/Auckland",
+  day: "numeric"
+});
+const upcomingWeekdayFormatter = new Intl.DateTimeFormat("en-NZ", {
+  timeZone: "Pacific/Auckland",
+  weekday: "short"
+});
+
+function UpcomingVisitRow({ sessions }: { sessions: BookingSessionView[] }) {
+  const first = new Date(sessions[0].startsAt);
+  const titles = Array.from(new Set(sessions.map((session) => session.presentationTitle)));
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-[12px] bg-[#e8f0ff] text-[#1e4fae]">
+        <span className="text-base font-semibold leading-none">{upcomingDayFormatter.format(first)}</span>
+        <span className="mt-0.5 text-[10px] font-semibold uppercase leading-none tracking-[0.06em]">
+          {upcomingMonthFormatter.format(first)}
+        </span>
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-[color:var(--navy)]" title={sessions[0].schoolName}>
+          {sessions[0].schoolName}
+        </p>
+        <p className="truncate text-xs text-[color:var(--text-soft)]">
+          {upcomingWeekdayFormatter.format(first)} {sessions.map((session) => formatTime(session.startsAt)).join(" & ")} ·{" "}
+          {titles.join(" + ")}
+        </p>
+      </div>
+    </div>
   );
 }
 

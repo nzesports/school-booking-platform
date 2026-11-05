@@ -14,9 +14,13 @@ import {
   Hourglass,
   Landmark,
   Mail,
+  MessageSquareText,
   Phone,
   Search,
-  UsersRound
+  StickyNote,
+  UserRound,
+  UsersRound,
+  type LucideIcon
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
@@ -32,7 +36,7 @@ import {
   isCountedPresentation,
   isFutureSession
 } from "@/lib/services/dashboard-insights";
-import { cn, formatShortDate, formatTime, formatWeekdayDate, titleCase } from "@/lib/utils";
+import { cn, formatShortDate, formatTime } from "@/lib/utils";
 
 const PAGE_SIZE = 8;
 const schoolTableColumns = [
@@ -343,7 +347,7 @@ export function SchoolsExplorer({
                       )}
                       <span className="min-w-0 flex-1">
                         <TruncatedText
-                          className="font-semibold text-[color:var(--navy)]"
+                          className="text-sm font-semibold text-[color:var(--navy)]"
                           title={summary.school.name}
                         />
                         <TruncatedText
@@ -658,6 +662,7 @@ function SchoolBookingsDialog({
       kicker="School bookings"
       title={school.name}
       description={schoolAddress}
+      descriptionClassName="mt-1 text-sm leading-6"
       onClose={onClose}
       maxWidthClassName="max-w-[980px]"
       overlayClassName="z-[80]"
@@ -670,7 +675,7 @@ function SchoolBookingsDialog({
         <BookingMetric label="Bookings" value={String(sorted.length)} />
       </div>
 
-      <div className="mt-4 grid gap-4">
+      <div className="mt-7 grid gap-4">
         {school.profileNotes ? (
           <div className="rounded-[14px] border border-[#f0d8a8] bg-[#fffaf0] px-4 py-3">
             <p className="text-xs font-semibold text-[#9a5a00]">Notes from the school</p>
@@ -723,49 +728,58 @@ function SchoolBookingCard({
   );
 
   return (
-    <article className="overflow-hidden rounded-[18px] border border-[color:var(--border-soft)] bg-white">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color:rgba(4,15,75,0.07)] bg-[#fbfcfe] px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[color:var(--navy)]">
+    <article className="overflow-hidden rounded-[18px] border border-[#cfd8e6] bg-white shadow-[0_8px_22px_rgba(11,24,77,0.06)]">
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3 px-4 py-3",
+          booking.status === "cancelled" ? "bg-[#f0f2f6]" : "bg-[#e6f4ea]"
+        )}
+      >
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+          <p className="text-base font-semibold text-[color:var(--navy)]">
             Booking {booking.referenceCode ? `#${booking.referenceCode}` : ""}
           </p>
-          <p className="mt-0.5 text-xs text-[color:var(--text-soft)]">
-            {titleCase(booking.source)} request, created {formatShortDate(booking.createdAt)}
-            {booking.sourcedByAmbassadorName ? `, sourced by ${booking.sourcedByAmbassadorName}` : ""}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-[color:var(--text-soft)]">
-            {booking.primaryContactName || "No contact name"}
-            {booking.primaryContactEmail ? (
-              <>
-                {" · "}
-                <a href={`mailto:${booking.primaryContactEmail}`} className="text-[#1e4fae] hover:underline">
-                  {booking.primaryContactEmail}
-                </a>
-              </>
-            ) : null}
-          </p>
+          <p className="text-xs text-[#55617a]">Created {formatShortDate(booking.createdAt)}</p>
         </div>
         <StatusPill value={booking.status} />
       </div>
 
+      <div className="grid divide-y divide-[#e3e9f2] border-b border-[#e3e9f2] md:auto-cols-fr md:grid-flow-col md:divide-x md:divide-y-0">
+        <BookingDetail label="Contact" icon={UserRound}>
+          <span className="font-semibold">{booking.primaryContactName || "No contact name"}</span>
+        </BookingDetail>
+        <BookingDetail label="Position" icon={BriefcaseBusiness}>{booking.primaryContactPosition || "Not recorded"}</BookingDetail>
+        <BookingDetail label="Email" icon={Mail}>
+          {booking.primaryContactEmail ? (
+            <a
+              href={`mailto:${booking.primaryContactEmail}`}
+              className="block truncate text-[#1e4fae] hover:underline"
+              title={booking.primaryContactEmail}
+            >
+              {booking.primaryContactEmail}
+            </a>
+          ) : (
+            "Not recorded"
+          )}
+        </BookingDetail>
+        {booking.sourcedByAmbassadorName ? (
+          <BookingDetail label="Sourced by" icon={HeartHandshake}>{booking.sourcedByAmbassadorName}</BookingDetail>
+        ) : null}
+      </div>
+
       {booking.schoolNotes || booking.internalNotes ? (
-        <div className="grid gap-1 border-b border-[color:rgba(4,15,75,0.07)] px-4 py-2.5 text-xs leading-5 text-[color:var(--text-soft)]">
-          {booking.schoolNotes ? (
-            <p className="whitespace-pre-line">
-              <span className="font-semibold text-[color:var(--navy)]">School notes: </span>
-              {booking.schoolNotes}
-            </p>
-          ) : null}
-          {booking.internalNotes ? (
-            <p className="whitespace-pre-line">
-              <span className="font-semibold text-[color:var(--navy)]">Internal notes: </span>
-              {booking.internalNotes}
-            </p>
-          ) : null}
+        <div
+          className={cn(
+            "grid divide-y divide-[#e3e9f2] border-b border-[#e3e9f2]",
+            booking.schoolNotes && booking.internalNotes && "md:grid-cols-2 md:divide-x md:divide-y-0"
+          )}
+        >
+          {booking.schoolNotes ? <BookingDetail label="School notes" icon={MessageSquareText}>{booking.schoolNotes}</BookingDetail> : null}
+          {booking.internalNotes ? <BookingDetail label="Internal notes" icon={StickyNote}>{booking.internalNotes}</BookingDetail> : null}
         </div>
       ) : null}
 
-      <div className="grid gap-2.5 p-3">
+      <div className="grid gap-2.5 px-3 pb-3 pt-5">
         {days.length === 0 ? (
           <p className="px-1 py-3 text-sm text-[color:var(--text-soft)]">
             This request does not have any sessions attached yet.
@@ -809,6 +823,34 @@ function dayAdminSummary(sessions: BookingSessionView[]) {
   return `${report} · ${dayPaymentLabels[payment]}`;
 }
 
+const dayTileWeekday = new Intl.DateTimeFormat("en-NZ", { timeZone: "Pacific/Auckland", weekday: "short" });
+const dayTileDay = new Intl.DateTimeFormat("en-NZ", { timeZone: "Pacific/Auckland", day: "numeric" });
+const dayTileMonthYear = new Intl.DateTimeFormat("en-NZ", {
+  timeZone: "Pacific/Auckland",
+  month: "short",
+  year: "numeric"
+});
+
+function BookingDetail({
+  label,
+  icon: Icon,
+  children
+}: {
+  label: string;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 px-4 py-2.5">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-[#55617a]">
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {label}
+      </p>
+      <div className="mt-0.5 whitespace-pre-line text-sm leading-6 text-[color:var(--navy)]">{children}</div>
+    </div>
+  );
+}
+
 function SchoolDayGroup({
   sessions,
   basePath,
@@ -835,37 +877,54 @@ function SchoolDayGroup({
       : null;
   const state =
     delivered.length > 0
-      ? { label: delivered.length === sessions.length ? "Delivered" : `${delivered.length} of ${sessions.length} delivered`, tone: "bg-[#e5f6e9] text-[#117a2e]" }
+      ? {
+          label: delivered.length === sessions.length ? "Delivered" : `${delivered.length} of ${sessions.length} delivered`,
+          tone: "bg-[#e5f6e9] text-[#117a2e]",
+          tileTone: "bg-[#e5f6e9] text-[#117a2e]"
+        }
       : active.length === 0
-        ? { label: "Cancelled", tone: "bg-[#f0f2f5] text-[#64748b]" }
+        ? { label: "Cancelled", tone: "bg-[#f0f2f5] text-[#64748b]", tileTone: "bg-[#f0f2f5] text-[#64748b]" }
         : isUpcoming
-          ? { label: "Upcoming", tone: "bg-[#e8f0ff] text-[#1e4fae]" }
-          : { label: "Not completed", tone: "bg-[#fff3dd] text-[#9a5a00]" };
+          ? { label: "Upcoming", tone: "bg-[#e8f0ff] text-[#1e4fae]", tileTone: "bg-[#e8f0ff] text-[#1e4fae]" }
+          : { label: "Not completed", tone: "bg-[#fff3dd] text-[#9a5a00]", tileTone: "bg-[#fff3dd] text-[#9a5a00]" };
+  const firstStart = new Date(sessions[0].startsAt);
 
   return (
-    <section className="overflow-hidden rounded-[14px] border border-[color:var(--border-soft)]">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-[#f6f8fb] px-3.5 py-2.5">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[color:var(--navy)]">
-            {formatWeekdayDate(sessions[0].startsAt)}
-          </p>
-          <p className="text-xs text-[color:var(--text-soft)]">
+    <section className="flex overflow-hidden rounded-[14px] border border-[#dbe2ec] bg-white">
+      <div
+        className={cn(
+          "flex w-[4.75rem] shrink-0 flex-col items-center justify-center px-2 py-3 text-center",
+          state.tileTone
+        )}
+      >
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">
+          {dayTileWeekday.format(firstStart)}
+        </span>
+        <span className="text-2xl font-semibold leading-tight tracking-[-0.03em]">
+          {dayTileDay.format(firstStart)}
+        </span>
+        <span className="text-[11px] font-semibold">{dayTileMonthYear.format(firstStart)}</span>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[#edf1f6] px-3.5 py-2.5">
+          <p className="min-w-0 text-sm text-[#55617a]">
             {[sessionLabel, studentLabel].filter(Boolean).join(" · ")}
             {delivered.length > 0 ? ` · ${dayAdminSummary(sessions)}` : ""}
           </p>
+          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", state.tone)}>{state.label}</span>
         </div>
-        <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", state.tone)}>{state.label}</span>
-      </div>
 
-      <div className="divide-y divide-[color:rgba(4,15,75,0.06)]">
-        {sessions.map((session) => (
-          <SchoolSessionRow
-            key={session.id}
-            session={session}
-            basePath={basePath}
-            schoolAddress={schoolAddress}
-          />
-        ))}
+        <div className="divide-y divide-[#edf1f6]">
+          {sessions.map((session) => (
+            <SchoolSessionRow
+              key={session.id}
+              session={session}
+              basePath={basePath}
+              schoolAddress={schoolAddress}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
