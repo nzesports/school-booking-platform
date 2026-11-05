@@ -30,6 +30,7 @@ import {
   UsersRound
 } from "lucide-react";
 
+import { PagedList } from "@/components/dashboard/list-pagination";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -304,7 +305,7 @@ export function OperationsAnalytics({
   const yearSchoolsReached = yearStudents.schoolsReached;
 
   const paymentSummary = buildPaymentSummary(payments, year);
-  const regionCoverage = buildRegionCoverage(approvedAmbassadors, regions);
+  const regionCoverage = buildRegionCoverage(deliveredRangeSessions, approvedAmbassadors, regions);
   const ambassadorFunnel = buildAmbassadorFunnel(currentYearBookings, now);
   const sessionsAssignedThisYear = allSessions.filter(
     (session) =>
@@ -677,12 +678,17 @@ export function OperationsAnalytics({
           />
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr] xl:grid-rows-[auto_auto]">
-          <ChartPanel title="Ambassador coverage by region" tone="green" className="xl:row-span-2">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] xl:grid-rows-[auto_1fr]">
+          <ChartPanel
+            title="Presentations delivered across NZ"
+            tone="green"
+            className="flex flex-col xl:row-span-2"
+            bodyClassName="flex flex-1 flex-col"
+          >
             {regionCoverage.length > 0 ? (
-              <AmbassadorCoverageMap regions={regionCoverage} />
+              <CoverageMap regions={regionCoverage} periodLabel={periodLabel} />
             ) : (
-              <EmptyStateCopy copy="No approved ambassadors are assigned to a region yet." />
+              <EmptyStateCopy copy="No schools or ambassadors to show for this period yet." />
             )}
           </ChartPanel>
 
@@ -703,8 +709,8 @@ export function OperationsAnalytics({
             </ChartFootnote>
           </ChartPanel>
 
-        <div className="rounded-[26px] border border-[color:rgba(4,15,75,0.08)] bg-white/92 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col rounded-[26px] border border-[color:rgba(4,15,75,0.08)] bg-white/92 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-[color:var(--navy)]">
               Outstanding payment submissions
             </p>
@@ -713,37 +719,45 @@ export function OperationsAnalytics({
               <ArrowRight className="h-4 w-4" />
             </ButtonLink>
           </div>
-          <div className="mt-4 grid gap-3">
-            {paymentSummary.outstanding.slice(0, 4).map((payment) => (
-              <div
-                key={payment.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-[linear-gradient(135deg,#fffaf2,#fdfdf6)] px-4 py-3.5 shadow-[inset_0_0_0_1px_rgba(192,122,18,0.14)]"
-              >
-                <div>
-                  <p className="font-semibold text-[color:var(--navy)]">{payment.ambassadorName}</p>
-                  <p className="mt-0.5 text-sm text-[color:var(--text-soft)]">
-                    {payment.invoiceNumber
-                      ? `Invoice ${payment.invoiceNumber} · ${payment.eligibilityReason}`
-                      : payment.eligibilityReason}
-                  </p>
+          <div
+            className={cn(
+              "mt-3 flex min-w-0 flex-1 flex-col gap-2",
+              // The pager stays on the panel's bottom edge on every page.
+              paymentSummary.outstanding.length > OUTSTANDING_PAYMENTS_PAGE_SIZE &&
+                "[&>:last-child]:mt-auto"
+            )}
+          >
+            <PagedList
+              pageSize={OUTSTANDING_PAYMENTS_PAGE_SIZE}
+              itemLabel="outstanding payments"
+              rows={paymentSummary.outstanding.map((payment) => (
+                <div
+                  key={payment.id}
+                  className="flex max-h-[88px] min-w-0 flex-1 items-center justify-between gap-3 rounded-[14px] bg-[linear-gradient(135deg,#fffaf2,#fdfdf6)] px-3 py-2 shadow-[inset_0_0_0_1px_rgba(192,122,18,0.14)]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[color:var(--navy)]">
+                      {payment.ambassadorName}
+                    </p>
+                    <p className="truncate text-xs text-[color:var(--text-soft)]" title={payment.eligibilityReason}>
+                      {payment.invoiceNumber
+                        ? `Invoice ${payment.invoiceNumber} · ${payment.eligibilityReason}`
+                        : payment.eligibilityReason}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    <p className="text-sm font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
+                      {formatCurrency(payment.amountCents)}
+                    </p>
+                    <span className="rounded-full bg-[#fff3dd] px-2 py-0.5 text-[11px] font-semibold text-[#c07a12]">
+                      {outstandingPaymentLabels[payment.status] ?? "Outstanding"}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-lg font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-                    {formatCurrency(payment.amountCents)}
-                  </p>
-                  <span className="rounded-full bg-[#fff3dd] px-3 py-1 text-xs font-semibold text-[#c07a12]">
-                    {outstandingPaymentLabels[payment.status] ?? "Outstanding"}
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))}
+            />
             {paymentSummary.outstanding.length === 0 ? (
               <EmptyStateCopy copy="No outstanding ambassador payments — every eligible submission has been paid." />
-            ) : null}
-            {paymentSummary.outstanding.length > 4 ? (
-              <p className="text-sm text-[color:var(--text-soft)]">
-                +{paymentSummary.outstanding.length - 4} more in the payment queue.
-              </p>
             ) : null}
           </div>
         </div>
@@ -1162,12 +1176,14 @@ function ChartPanel({
   title,
   tone = "blue",
   className,
+  bodyClassName,
   action,
   children
 }: {
   title: string;
   tone?: "blue" | "green";
   className?: string;
+  bodyClassName?: string;
   // A control shown on the heading row, such as the year form.
   action?: ReactNode;
   children: ReactNode;
@@ -1186,7 +1202,7 @@ function ChartPanel({
         <p className="text-sm font-semibold text-[color:var(--navy)]">{title}</p>
         {action}
       </div>
-      <div className="mt-4">{children}</div>
+      <div className={cn("mt-4", bodyClassName)}>{children}</div>
     </div>
   );
 }
@@ -1526,38 +1542,62 @@ function MonthlyBarChart({
   );
 }
 
-function AmbassadorCoverageMap({
-  regions
-}: {
-  regions: Array<{ slug: string; name: string; count: number }>;
-}) {
-  const aucklandRegions = regions.filter((region) => isAucklandRegion(region));
+type CoverageRegion = {
+  slug: string;
+  name: string;
+  schools: number;
+  presentations: number;
+  // Everyone who can cover the area: based there or willing to travel there.
+  ambassadors: Array<{ id: string; name: string }>;
+};
+
+const OUTSTANDING_PAYMENTS_PAGE_SIZE = 4;
+
+// Shared by the area table's heading and rows so the columns line up.
+const COVERAGE_TABLE_COLUMNS = "grid grid-cols-[minmax(0,1fr)_3.5rem_3rem_4rem] items-center";
+
+function countLabel(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// One ambassador can cover several areas, so combined counts are by person.
+function uniqueAmbassadors(regions: CoverageRegion[]) {
+  const byId = new Map(
+    regions.flatMap((region) => region.ambassadors).map((ambassador) => [ambassador.id, ambassador])
+  );
+  return Array.from(byId.values()).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function CoverageMap({ regions, periodLabel }: { regions: CoverageRegion[]; periodLabel: string }) {
+  const sum = (items: CoverageRegion[], key: "schools" | "presentations") =>
+    items.reduce((total, region) => total + region[key], 0);
+  const orderedRegions = [...regions].sort((left, right) => {
+    const rankDifference = regionNorthToSouthRank(left) - regionNorthToSouthRank(right);
+    return rankDifference || left.name.localeCompare(right.name);
+  });
+  const aucklandRegions = orderedRegions.filter((region) => isAucklandRegion(region));
   const otherRegions = regions.filter((region) => !isAucklandRegion(region));
   const points = [
     ...(aucklandRegions.length > 0
       ? [{
           slug: "auckland",
           name: "Auckland",
-          count: aucklandRegions.reduce((total, region) => total + region.count, 0),
-          breakdown: aucklandRegions,
+          presentations: sum(aucklandRegions, "presentations"),
+          areas: aucklandRegions,
           position: { x: 69, y: 19 }
         }]
       : []),
     ...otherRegions.map((region) => ({
       ...region,
-      breakdown: [region],
+      areas: [region],
       position: regionMapPosition(region)
     }))
   ];
-  const locatedPoints = points.filter((point) => point.position);
-  const orderedRegions = [...regions].sort((left, right) => {
-    const rankDifference = regionNorthToSouthRank(left) - regionNorthToSouthRank(right);
-    return rankDifference || left.name.localeCompare(right.name);
-  });
+  const locatedPoints = points.filter((point) => point.position && point.presentations > 0);
 
   return (
-    <div className="grid gap-5 md:grid-cols-[minmax(300px,1.15fr)_minmax(0,0.85fr)] md:items-start">
-      <div className="relative mx-auto h-[520px] w-full max-w-[440px]" aria-label="Map of ambassador coverage across New Zealand">
+    <div className="grid flex-1 gap-5 md:grid-cols-[minmax(300px,1.15fr)_minmax(0,0.85fr)]">
+      <div className="relative mx-auto aspect-[22/26] w-full max-w-[524px] md:self-center" aria-label="Map of presentations delivered across New Zealand">
         <Image
           src="/media/new-zealand-regions.svg"
           alt="Regional map of mainland New Zealand"
@@ -1571,64 +1611,162 @@ function AmbassadorCoverageMap({
           <button
             key={point.slug}
             type="button"
+            aria-label={`${point.name}: ${countLabel(point.presentations, "presentation")} delivered`}
             style={{ left: `${point.position?.x}%`, top: `${point.position?.y}%` }}
-            className="group absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(24,168,59,0.2)]"
-            aria-label={`${point.name}: ${point.count} active ambassador${point.count === 1 ? "" : "s"}`}
+            className="group absolute -translate-x-1/2 -translate-y-1/2 rounded-full hover:z-30 focus:outline-none focus-visible:z-30 focus-visible:ring-4 focus-visible:ring-[rgba(24,168,59,0.2)]"
           >
-            <span className="relative flex h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-[#18a83b] text-xs font-bold text-white shadow-[0_7px_18px_rgba(17,122,46,0.3)] transition group-hover:scale-110 group-focus-visible:scale-110">
-              {point.count}
-              <span className="absolute inset-0 -z-10 animate-pulse rounded-full bg-[#18a83b]/25" />
+            <span className="flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-white bg-[#18a83b] px-1.5 text-xs font-bold text-white shadow-[0_7px_18px_rgba(17,122,46,0.3)] transition group-hover:scale-110 group-focus-visible:scale-110">
+              {point.presentations}
             </span>
-            <span
-              className={cn(
-                "pointer-events-none absolute z-20 w-48 rounded-[14px] border border-[#cce8d3] bg-white p-3 text-left opacity-0 shadow-[0_14px_34px_rgba(4,15,75,0.16)] transition group-hover:opacity-100 group-focus-visible:opacity-100",
-                (point.position?.x ?? 0) > 58 ? "right-10 top-0" : "left-10 top-0"
-              )}
+            <CoverageTooltip
+              title={point.name}
+              className={(point.position?.x ?? 0) > 58 ? "right-10 top-0" : "left-10 top-0"}
             >
-              <span className="block text-sm font-semibold text-[color:var(--navy)]">{point.name}</span>
-              <span className="mt-1.5 grid gap-1">
-                {point.breakdown.map((region) => (
-                  <span key={region.slug} className="flex items-center justify-between gap-3 text-xs text-[color:var(--text-soft)]">
-                    <span>{region.name}</span>
-                    <span className="font-semibold text-[#117a2e]">{region.count}</span>
-                  </span>
-                ))}
+              <span className="mt-1 block text-xs text-[color:var(--text-soft)]">
+                {countLabel(point.presentations, "presentation")}
               </span>
-            </span>
+              {point.areas.length > 1
+                ? point.areas.map((area) => (
+                    <span key={area.slug} className="mt-1 flex items-baseline justify-between gap-3 text-xs text-[color:var(--navy)]">
+                      <span>{area.name}</span>
+                      <span className="font-semibold text-[#117a2e]">{area.presentations}</span>
+                    </span>
+                  ))
+                : null}
+            </CoverageTooltip>
           </button>
         ))}
       </div>
 
-      <div className="rounded-[20px] border border-[#d7efdd] bg-white/85 p-4">
+      <div className="flex flex-col rounded-[20px] border border-[#d7efdd] bg-white/85 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#117a2e]">Active coverage</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#117a2e]">{periodLabel}</p>
             <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[color:var(--navy)]">
-              {regions.length} {regions.length === 1 ? "area" : "areas"}
+              {countLabel(sum(regions, "presentations"), "presentation")} delivered
+            </p>
+            <p className="mt-1 text-sm text-[color:var(--text-soft)]">
+              {countLabel(sum(regions, "schools"), "school")} reached,{" "}
+              {countLabel(uniqueAmbassadors(regions).length, "ambassador")}
             </p>
           </div>
           <MapPinned className="h-6 w-6 text-[#18a83b]" />
         </div>
-        <ol className="mt-4 overflow-hidden rounded-[14px] border border-[#d7efdd] bg-[#f8fcf9]">
+        <div
+          className={cn(
+            COVERAGE_TABLE_COLUMNS,
+            "mt-4 px-[13px] pb-1.5 text-center text-[10px] font-semibold text-[color:var(--text-soft)]"
+          )}
+        >
+          <span className="text-left">Area</span>
+          <span>Delivered</span>
+          <span>Schools</span>
+          <span>Ambassadors</span>
+        </div>
+        <ol className="flex flex-1 flex-col rounded-[14px] border border-[#d7efdd] bg-[#f8fcf9]">
           {orderedRegions.map((region, index) => (
             <li
               key={region.slug}
               className={cn(
-                "flex items-center justify-between gap-4 px-3 py-2.5",
+                COVERAGE_TABLE_COLUMNS,
+                "flex-1 px-3 py-2.5",
                 index > 0 && "border-t border-[#dfeee3]"
               )}
             >
-              <span className="min-w-0 truncate text-sm font-semibold text-[color:var(--navy)]">
-                {region.name}
+              <span
+                tabIndex={0}
+                className="group relative mr-2 min-w-0 rounded-[6px] hover:z-30 focus:outline-none focus-visible:z-30 focus-visible:ring-2 focus-visible:ring-[rgba(24,168,59,0.3)]"
+              >
+                <span className="block truncate text-sm font-semibold text-[color:var(--navy)]">
+                  {region.name}
+                </span>
+                <CoverageTooltip title={region.name} className="bottom-full left-0 mb-2">
+                  <CoverageAmbassadorNames ambassadors={region.ambassadors} />
+                </CoverageTooltip>
               </span>
-              <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-[#e5f6e9] px-2 text-xs font-bold text-[#117a2e]">
-                {region.count}
-              </span>
+              <CoverageBadge
+                count={region.presentations}
+                label={`${region.name}: ${countLabel(region.presentations, "presentation")} delivered`}
+                className="justify-self-center bg-[#e5f6e9] text-[#117a2e]"
+              />
+              <CoverageBadge
+                count={region.schools}
+                label={`${region.name}: ${countLabel(region.schools, "school")}`}
+                className="justify-self-center bg-[#edf0f7] text-[color:var(--navy)]"
+              />
+              <button
+                type="button"
+                aria-label={`${region.name}: ${countLabel(region.ambassadors.length, "ambassador")}`}
+                className="group relative justify-self-center rounded-full hover:z-30 focus:outline-none focus-visible:z-30 focus-visible:ring-2 focus-visible:ring-[rgba(24,168,59,0.3)]"
+              >
+                <CoverageBadge count={region.ambassadors.length} className="bg-[#e8f0ff] text-[#246bff]" />
+                <CoverageTooltip title={region.name} className="bottom-full right-0 mb-2">
+                  <CoverageAmbassadorNames ambassadors={region.ambassadors} />
+                </CoverageTooltip>
+              </button>
             </li>
           ))}
         </ol>
       </div>
     </div>
+  );
+}
+
+function CoverageTooltip({
+  title,
+  className,
+  children
+}: {
+  title: string;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "pointer-events-none absolute z-20 w-56 rounded-[14px] border border-[#cce8d3] bg-white p-3 text-left opacity-0 shadow-[0_14px_34px_rgba(4,15,75,0.16)] transition group-hover:opacity-100 group-focus-visible:opacity-100",
+        className
+      )}
+    >
+      <span className="block text-sm font-semibold text-[color:var(--navy)]">{title}</span>
+      {children}
+    </span>
+  );
+}
+
+function CoverageAmbassadorNames({ ambassadors }: { ambassadors: CoverageRegion["ambassadors"] }) {
+  if (ambassadors.length === 0) {
+    return (
+      <span className="mt-1 block text-xs text-[color:var(--text-soft)]">No ambassadors cover this area</span>
+    );
+  }
+
+  return ambassadors.map((ambassador) => (
+    <span key={ambassador.id} className="mt-0.5 block text-xs text-[color:var(--navy)]">
+      {ambassador.name}
+    </span>
+  ));
+}
+
+function CoverageBadge({
+  count,
+  label,
+  className
+}: {
+  count: number;
+  label?: string;
+  className: string;
+}) {
+  return (
+    <span
+      aria-label={label}
+      className={cn(
+        "flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-bold",
+        count > 0 ? className : "bg-[#f0f2f5] text-[color:var(--text-soft)]"
+      )}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -1689,7 +1827,7 @@ function StageBarChart({ stages }: { stages: Array<{ label: string; value: numbe
   const maxValue = Math.max(...stages.map((stage) => stage.value), 1);
 
   return (
-    <div className="flex h-[170px] items-end gap-8 px-4">
+    <div className="flex h-[110px] items-end gap-4 px-2">
       {stages.map((stage) => {
         const barHeight = stage.value > 0 ? Math.max(10, (stage.value / maxValue) * 100) : 2;
         return (
@@ -2010,23 +2148,59 @@ function buildPaymentSummary(payments: PaymentRecord[], year: number) {
   };
 }
 
-function buildRegionCoverage(approvedAmbassadors: AmbassadorProfile[], regions: RegionSummary[]) {
+function buildRegionCoverage(
+  deliveredSessions: BookingSessionView[],
+  approvedAmbassadors: AmbassadorProfile[],
+  regions: RegionSummary[]
+): CoverageRegion[] {
   const regionNamesBySlug = new Map(regions.map((region) => [region.slug, region.name]));
-  const counts = new Map<string, number>();
+  const tallies = new Map<
+    string,
+    {
+      schools: Set<string>;
+      presentations: number;
+      ambassadors: CoverageRegion["ambassadors"];
+    }
+  >();
+  // Anything without a known region shares one row, so the totals still add up.
+  const tallyFor = (regionSlug: string) => {
+    const slug =
+      regionSlug === "online" || regionNamesBySlug.has(regionSlug) ? regionSlug : "unassigned";
+    const tally = tallies.get(slug) ?? {
+      schools: new Set<string>(),
+      presentations: 0,
+      ambassadors: [] as CoverageRegion["ambassadors"]
+    };
+    tallies.set(slug, tally);
+    return tally;
+  };
+
+  for (const session of deliveredSessions) {
+    const tally = tallyFor(session.regionSlug);
+    tally.schools.add(session.schoolId ?? session.schoolName);
+    tally.presentations += 1;
+  }
 
   for (const ambassador of approvedAmbassadors) {
-    const slugs = new Set([ambassador.regionSlug, ...ambassador.travelRegions]);
-    for (const slug of slugs) {
-      if (!regionNamesBySlug.has(slug)) {
-        continue;
-      }
-      counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    const coveredSlugs = new Set(
+      [ambassador.regionSlug, ...ambassador.travelRegions].filter((slug) =>
+        regionNamesBySlug.has(slug)
+      )
+    );
+    const person = { id: ambassador.id, name: ambassador.name };
+
+    for (const slug of coveredSlugs.size > 0 ? coveredSlugs : ["unassigned"]) {
+      tallyFor(slug).ambassadors.push(person);
     }
   }
 
-  return Array.from(counts.entries())
-    .map(([slug, count]) => ({ slug, name: regionNamesBySlug.get(slug) ?? slug, count }))
-    .sort((left, right) => right.count - left.count);
+  return Array.from(tallies.entries()).map(([slug, tally]) => ({
+    slug,
+    name: slug === "online" ? "Online" : (regionNamesBySlug.get(slug) ?? "No region set"),
+    schools: tally.schools.size,
+    presentations: tally.presentations,
+    ambassadors: [...tally.ambassadors].sort((left, right) => left.name.localeCompare(right.name))
+  }));
 }
 
 function buildAmbassadorFunnel(yearBookings: BookingRequestView[], now: Date) {
