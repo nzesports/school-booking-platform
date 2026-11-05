@@ -137,7 +137,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#f5f1fd] hover:bg-[#f1edfd]"
           label="Confirmed"
           value={String(confirmedCount)}
-          info="Bookings confirmed with the school or with an ambassador assigned"
+          info="Bookings confirmed with the school or with an ambassador assigned. Each booking counts once, even with several sessions."
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#ea580c]"
