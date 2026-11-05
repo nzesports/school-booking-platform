@@ -254,7 +254,7 @@ export function SettingsWorkspace({
                 </p>
                 <InfoTooltip label="Microsoft 365">
                   Bookings are kept in the schools@esf.nz Outlook calendar automatically: pending ones
-                  show as tentative for follow-up, and cancelled ones are removed. &quot;Sync bookings
+                  are marked for follow-up, and cancelled ones are removed. &quot;Sync bookings
                   to Outlook&quot; catches up every booking, past and future, in batches, and is safe to
                   press again. &quot;Test Microsoft connection&quot; checks Teams links can be created.
                 </InfoTooltip>

@@ -113,7 +113,7 @@ export function BookingRequestForm({
             Tell us about your school.
           </h2>
           <p className="mt-3 text-sm leading-7 text-[color:var(--text-soft)]">
-            Every request starts as tentative. Staff will review availability and ambassador
+            Every request starts as pending. Staff will review availability and ambassador
             coverage before confirming.
           </p>
 
@@ -352,7 +352,7 @@ export function BookingRequestForm({
               Add another session
             </button>
 
-            <Button type="submit">Submit tentative booking request</Button>
+            <Button type="submit">Submit booking request</Button>
           </div>
         </div>
       </div>

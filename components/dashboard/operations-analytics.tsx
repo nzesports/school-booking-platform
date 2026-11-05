@@ -411,19 +411,19 @@ export function OperationsAnalytics({
             withArrow
           />
           <PipelineCard
-            icon={<ShieldCheck className="h-5 w-5 text-[color:var(--green)]" />}
-            label="Confirmed presentations"
-            value={pipeline.confirmedPresentations}
-            href={calendarHref ?? bookingsHref("future")}
-            withArrow
-            info="Upcoming sessions that are confirmed, counting each session of a multi-session booking. Pending and tentative sessions aren't included."
-          />
-          <PipelineCard
             icon={<Hourglass className="h-5 w-5 text-[#c07a12]" />}
             label="Pending bookings"
             value={pipeline.pending}
             href={bookingsHref("current")}
             withArrow
+          />
+          <PipelineCard
+            icon={<ShieldCheck className="h-5 w-5 text-[color:var(--green)]" />}
+            label="Confirmed bookings"
+            value={pipeline.confirmedPresentations}
+            href={calendarHref ?? bookingsHref("future")}
+            withArrow
+            info="Upcoming confirmed bookings, including single and multi-session bookings, with each session counted. Excludes pending."
           />
           <PipelineCard
             icon={<Home className="h-5 w-5 text-[color:var(--green)]" />}
@@ -1156,14 +1156,14 @@ function PipelineCard({
 const PIPELINE_STAGES = [
   { label: "Submitted", color: "#246bff" },
   { label: "Needs review", color: "#f5a623" },
+  { label: "Pending", color: "#f5a623" },
   { label: "Confirmed", color: "#18a83b" },
-  { label: "Upcoming", color: "#246bff" },
   { label: "Completed", color: "#18a83b" }
 ];
 
 function PipelineTimeline() {
   return (
-    <div className="mt-6 hidden grid-cols-5 gap-3 xl:grid">
+    <div className="mt-6 hidden grid-cols-6 gap-3 xl:grid">
       {PIPELINE_STAGES.map((stage, index) => (
         <div key={stage.label} className="relative grid justify-items-center gap-2 text-center">
           {index > 0 ? (

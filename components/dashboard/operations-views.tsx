@@ -170,7 +170,7 @@ export function BookingLifecyclePanel({
           activeClassName="bg-[#fff9eb] hover:bg-[#fff5df]"
           label="Pending"
           value={String(pendingCount)}
-          info="Bookings requested, tentative or applied for: not confirmed with the school yet"
+          info="Bookings that are pending or applied for: not confirmed with the school yet"
         />
         <LifecycleStatTile
           accentClassName="border-l-[3px] border-l-[#dc2626]"

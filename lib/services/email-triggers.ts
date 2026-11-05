@@ -182,7 +182,7 @@ export async function sendStaffBookingRequestAlert(opts: {
     includeUnsubscribe: false,
     subject: `New ${opts.online ? "online " : ""}booking request: ${opts.schoolName} (ref ${reference})`,
     html: `
-      <p><strong>${escapeHtml(opts.schoolName)}</strong> has requested ${sessionCount} ${opts.online ? "online " : ""}${sessionCount === 1 ? "session" : "sessions"}. It's waiting for review as a tentative booking.</p>
+      <p><strong>${escapeHtml(opts.schoolName)}</strong> has requested ${sessionCount} ${opts.online ? "online " : ""}${sessionCount === 1 ? "session" : "sessions"}. It's waiting for review as a pending booking.</p>
       <p><a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background-color:#18a83b;color:#ffffff;padding:12px 26px;border-radius:10px;font-weight:bold;text-decoration:none;">Open the booking</a></p>
       <p>Contact: ${escapeHtml(opts.contactName)}${opts.contactPosition ? ` (${escapeHtml(opts.contactPosition)})` : ""} · ${escapeHtml(opts.contactEmail)} · ${escapeHtml(opts.contactPhone)}<br>Reply to this email to write to them directly.</p>
       ${summary}
